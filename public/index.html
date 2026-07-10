@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>HiPass Platform</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-mark">H</span>
+        <div>
+          <strong>HiPass Platform</strong>
+          <span>의료영상 동의·조회 중계</span>
+        </div>
+      </div>
+      <nav class="header-actions" aria-label="외부 서비스">
+        <a href="http://localhost:8042" target="_blank" rel="noreferrer">Orthanc</a>
+        <button id="refresh" type="button">새로고침</button>
+      </nav>
+    </header>
+
+    <main class="app-shell">
+      <aside class="role-sidebar" aria-label="역할 선택">
+        <div class="role-sidebar-heading">
+          <span>Role</span>
+          <strong id="active-role-label">PATIENT</strong>
+        </div>
+        <button class="role-tab active" type="button" data-role="PATIENT">PATIENT</button>
+        <button class="role-tab" type="button" data-role="DOCTOR">DOCTOR</button>
+        <button class="role-tab" type="button" data-role="HOSPITAL_ADMIN">HOSPITAL_ADMIN</button>
+        <button class="role-tab" type="button" data-role="SECURITY_ADMIN">SECURITY_ADMIN</button>
+        <button class="role-tab" type="button" data-role="PLATFORM_ADMIN">PLATFORM_ADMIN</button>
+        <p class="role-note">화면 전환은 사용자 경험용입니다. 서버 측 권한 검증은 이후 단계에서 구현합니다.</p>
+      </aside>
+
+      <section class="workspace">
+        <section class="top-summary" aria-label="현재 데모 상태">
+          <div>
+            <span>영상검사</span>
+            <strong id="metric-studies">0</strong>
+          </div>
+          <div>
+            <span>감사로그</span>
+            <strong id="metric-logs">0</strong>
+          </div>
+          <div>
+            <span>전송량</span>
+            <strong id="metric-transfer">0 MB</strong>
+          </div>
+          <div>
+            <span>DB 상태</span>
+            <strong id="metric-health">확인 중</strong>
+          </div>
+        </section>
+
+        <section class="role-panel active" data-role-panel="PATIENT" aria-labelledby="patient-title">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">Patient Portal</p>
+              <h1 id="patient-title">환자 포털</h1>
+            </div>
+            <span id="patient-status" class="status-pill">동의 대기</span>
+          </div>
+          <nav class="view-tabs" aria-label="환자 화면">
+            <button class="view-tab active" type="button" data-view-target="patient-dashboard">Dashboard</button>
+            <button class="view-tab" type="button" data-view-target="patient-studies">내 의료영상</button>
+            <button class="view-tab" type="button" data-view-target="patient-consent-view">공유 동의</button>
+            <button class="view-tab" type="button" data-view-target="patient-history">동의 내역</button>
+          </nav>
+
+          <div class="view-panel active" id="patient-dashboard">
+            <div class="dashboard-grid">
+              <article class="panel">
+                <p class="panel-kicker">Profile</p>
+                <h2>가상환자-1001</h2>
+                <div class="kv-list">
+                  <span>환자 ID</span><strong>P-1001</strong>
+                  <span>기본 병원</span><strong>가상 병원 A</strong>
+                  <span>동의 상태</span><strong id="patient-dashboard-status">대기</strong>
+                </div>
+              </article>
+              <article class="panel">
+                <p class="panel-kicker">Consent Flow</p>
+                <h2>동의 기반 공유</h2>
+                <p class="panel-copy">환자는 제공 병원, 수신 병원, 대상 Study, 목적, 권한을 선택합니다.</p>
+              </article>
+            </div>
+          </div>
+
+          <div class="view-panel" id="patient-studies">
+            <article class="panel">
+              <div class="panel-heading">
+                <h2>내 의료영상</h2>
+              </div>
+              <div id="studies" class="list"></div>
+            </article>
+          </div>
+
+          <div class="view-panel" id="patient-consent-view">
+            <article class="phone-shell">
+              <div class="phone-top"><span></span></div>
+              <div class="phone-content">
+                <p class="panel-kicker">환자 앱</p>
+                <h2>영상 공유 동의</h2>
+                <div class="patient-card">
+                  <span>환자</span>
+                  <strong id="patient-name">가상환자-1001</strong>
+                </div>
+                <div class="consent-summary">
+                  <label>
+                    <span>제공 병원</span>
+                    <select id="source-hospital-select" aria-label="제공 병원 선택">
+                      <option value="HOSP-A">가상 병원 A</option>
+                      <option value="HOSP-B">가상 병원 B</option>
+                      <option value="HOSP-C">가상 병원 C</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>수신 병원</span>
+                    <select id="target-hospital-select" aria-label="수신 병원 선택">
+                      <option value="HOSP-B">가상 병원 B</option>
+                      <option value="HOSP-C">가상 병원 C</option>
+                      <option value="HOSP-A">가상 병원 A</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>대상 영상</span>
+                    <select id="patient-study-select" aria-label="대상 영상 선택"></select>
+                  </label>
+                  <label>
+                    <span>Series 범위</span>
+                    <select id="patient-series-select" aria-label="Series 범위 선택">
+                      <option value="">Study 전체</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>공유 목적</span>
+                    <select id="access-purpose-select" aria-label="공유 목적 선택">
+                      <option value="TREATMENT">진료</option>
+                      <option value="TRANSFER">전원</option>
+                      <option value="CONSULTATION">협진</option>
+                      <option value="RESEARCH">연구</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>시작일</span>
+                    <input id="consent-valid-from" type="datetime-local" aria-label="공유 시작일">
+                  </label>
+                  <label>
+                    <span>종료일</span>
+                    <input id="consent-valid-until" type="datetime-local" aria-label="공유 종료일">
+                  </label>
+                  <label>
+                    <span>권한</span>
+                    <select id="access-mode-select" aria-label="권한 선택">
+                      <option value="VIEW_ONLY">조회 전용</option>
+                      <option value="DOWNLOAD_ALLOWED">다운로드 허용</option>
+                    </select>
+                  </label>
+                </div>
+                <button id="patient-consent" class="primary-action" type="button">휴대폰에서 동의하기</button>
+                <button id="patient-revoke" class="secondary-action" type="button">동의 철회</button>
+              </div>
+            </article>
+          </div>
+
+          <div class="view-panel" id="patient-history">
+            <article class="panel">
+              <div class="panel-heading">
+                <h2>동의 내역</h2>
+              </div>
+              <div id="patient-consent-history" class="list compact"></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="role-panel" data-role-panel="DOCTOR" aria-labelledby="doctor-title">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">Doctor Workspace</p>
+              <h1 id="doctor-title">의료진 화면</h1>
+            </div>
+            <span id="viewer-status" class="status-pill">토큰 대기</span>
+          </div>
+          <nav class="view-tabs" aria-label="의료진 화면">
+            <button class="view-tab active" type="button" data-view-target="doctor-dashboard">Dashboard</button>
+            <button class="view-tab" type="button" data-view-target="doctor-search">환자 검색</button>
+            <button class="view-tab" type="button" data-view-target="doctor-access">영상 접근 요청</button>
+            <button class="view-tab" type="button" data-view-target="doctor-viewer">Viewer 진입</button>
+          </nav>
+
+          <div class="view-panel active" id="doctor-dashboard">
+            <div class="dashboard-grid">
+              <article class="panel">
+                <p class="panel-kicker">Care Team</p>
+                <h2>가상의사-B-01</h2>
+                <div class="kv-list">
+                  <span>의사 ID</span><strong>DOC-B-01</strong>
+                  <span>소속</span><strong>가상 병원 B</strong>
+                  <span>현재 권한</span><strong>서버 검증 예정</strong>
+                </div>
+              </article>
+              <article class="panel">
+                <p class="panel-kicker">Access Policy</p>
+                <h2>동의 후 접근</h2>
+                <p class="panel-copy">의료진은 환자 동의와 Study/Series 범위가 맞을 때만 토큰을 요청해야 합니다.</p>
+              </article>
+            </div>
+          </div>
+
+          <div class="view-panel" id="doctor-search">
+            <article class="panel">
+              <div class="panel-heading"><h2>환자 검색</h2></div>
+              <label class="search-box">
+                <span>환자 ID</span>
+                <input type="search" value="P-1001" aria-label="환자 ID 검색">
+              </label>
+              <div class="list">
+                <article class="item">
+                  <strong>가상환자-1001</strong>
+                  <div class="meta">P-1001 / 가상 병원 A / 의료영상 2건</div>
+                </article>
+              </div>
+            </article>
+          </div>
+
+          <div class="view-panel" id="doctor-access">
+            <article class="panel">
+              <div class="panel-heading"><h2>영상 접근 요청</h2></div>
+              <div class="doctor-actions">
+                <button id="doctor-request-token" type="button">접근토큰 발급</button>
+                <button id="doctor-open-series" type="button">환자 영상 조회</button>
+              </div>
+              <p class="panel-copy">접근 허용 여부는 서버 측 RBAC/ABAC 정책 엔진에서 검증합니다.</p>
+            </article>
+          </div>
+
+          <div class="view-panel" id="doctor-viewer">
+            <article class="doctor-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="panel-kicker">Viewer</p>
+                  <h2>환자 영상 조회</h2>
+                </div>
+              </div>
+              <div class="viewer-shell">
+                <div class="viewer-toolbar">
+                  <span id="viewer-study-title">Brain MRI</span>
+                  <span id="viewer-study-meta">MR / BRAIN</span>
+                </div>
+                <div id="viewer-alert" class="viewer-alert" role="status" aria-live="polite">접근토큰 발급 후 Study 메타데이터부터 조회합니다.</div>
+                <div class="scan-layout">
+                  <div class="scan-image" aria-label="의료영상 미리보기">
+                    <img id="viewer-image" alt="선택한 Series 이미지" hidden>
+                    <span id="viewer-placeholder"></span>
+                    <div id="instance-detail" class="instance-detail" hidden></div>
+                  </div>
+                  <div class="viewer-side">
+                    <div class="viewer-actions">
+                      <button id="load-studies" type="button">Study 메타데이터</button>
+                      <button id="load-instances" type="button">Instance 조회</button>
+                      <button id="download-instance" type="button" disabled>다운로드</button>
+                    </div>
+                    <div class="series-list" id="series-list">
+                      <div class="empty-state">Series 조회 전</div>
+                    </div>
+                    <div class="instance-list" id="instance-list">
+                      <div class="empty-state">Instance는 Series 선택 후 조회합니다.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="role-panel" data-role-panel="HOSPITAL_ADMIN" aria-labelledby="hospital-admin-title">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">Hospital Admin</p>
+              <h1 id="hospital-admin-title">병원 관리자</h1>
+            </div>
+          </div>
+          <div class="operations-grid admin-grid">
+            <article class="panel">
+              <h2>병원 관리</h2>
+              <div id="hospital-list" class="list compact"></div>
+            </article>
+            <article class="panel">
+              <h2>Gateway 상태</h2>
+              <div id="gateway-list" class="list compact"></div>
+            </article>
+            <article class="panel">
+              <h2>감사로그</h2>
+              <div id="hospital-audit-logs" class="list compact"></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="role-panel" data-role-panel="SECURITY_ADMIN" aria-labelledby="security-admin-title">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">Security Admin</p>
+              <h1 id="security-admin-title">보안 관리자</h1>
+            </div>
+          </div>
+          <div class="operations-grid admin-grid">
+            <article class="panel">
+              <h2>감사로그</h2>
+              <div class="filter-row" aria-label="Audit filters">
+                <select id="audit-result-filter" aria-label="Audit result filter">
+                  <option value="">ALL</option>
+                  <option value="SUCCESS">SUCCESS</option>
+                  <option value="FAIL">FAIL</option>
+                  <option value="ALERT">ALERT</option>
+                </select>
+                <select id="audit-action-filter" aria-label="Audit action filter">
+                  <option value="">ALL ACTIONS</option>
+                  <option value="ACCESS_ALLOWED">ACCESS_ALLOWED</option>
+                  <option value="ACCESS_DENIED">ACCESS_DENIED</option>
+                  <option value="TOKEN_ISSUED">TOKEN_ISSUED</option>
+                  <option value="TOKEN_EXPIRED">TOKEN_EXPIRED</option>
+                  <option value="TOKEN_INVALID">TOKEN_INVALID</option>
+                  <option value="IMAGE_VIEWED">IMAGE_VIEWED</option>
+                  <option value="IMAGE_DOWNLOADED">IMAGE_DOWNLOADED</option>
+                </select>
+              </div>
+              <div id="security-audit-logs" class="list compact"></div>
+            </article>
+            <article class="panel">
+              <h2>이상행위</h2>
+              <div id="anomaly-list" class="list compact"></div>
+            </article>
+            <article class="panel">
+              <h2>정책 주의사항</h2>
+              <p class="panel-copy">감사로그와 이상행위 화면은 조회 UI 초안입니다. 서버 권한 검증과 탐지 룰은 이후 단계에서 구현합니다.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="role-panel" data-role-panel="PLATFORM_ADMIN" aria-labelledby="platform-admin-title">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">Platform Admin</p>
+              <h1 id="platform-admin-title">플랫폼 관리자</h1>
+            </div>
+          </div>
+          <div class="operations-grid admin-grid">
+            <article class="panel">
+              <h2>병원 관리</h2>
+              <div id="platform-hospital-list" class="list compact"></div>
+            </article>
+            <article class="panel">
+              <h2>Gateway 상태</h2>
+              <div id="platform-gateway-list" class="list compact"></div>
+            </article>
+            <article class="panel">
+              <h2>이상행위</h2>
+              <div id="platform-anomaly-list" class="list compact"></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="result-panel">
+          <div class="panel-heading">
+            <h2>최근 API 응답</h2>
+          </div>
+          <pre id="output">{}</pre>
+        </section>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

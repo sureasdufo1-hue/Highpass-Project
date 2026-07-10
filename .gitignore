@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+node_modules/
+.pnpm-store/
+tmp/
+data/
+.agents/
+.codex/
+npm-debug.log*
+docker-compose.override.yml
