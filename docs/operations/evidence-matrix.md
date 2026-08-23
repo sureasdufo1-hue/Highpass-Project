@@ -17,3 +17,10 @@
 | OPS-VULN-001 | Vulnerability Exception Expiry | `ops:expiry`, container gate | PASS | 0 expired exceptions at test time |
 | OPS-ROLLBACK-001 | Rollback Validation | isolated rollback image | PASS | `artifacts/operations/rollback-recovery-20260823-155621/summary.json`; rollback and roll-forward health PASS |
 | OPS-BACKUP-ENC-001 | Backup Encryption | AES-256-GCM encrypt/decrypt/restore | PASS | wrong-key and corrupt backup rejected; DB/Orthanc restore PASS |
+| OPS-BROWSER-001 | Browser Authorization | Chrome CDP trace over trusted HTTPS | PASS | Authorization Bearer present on QIDO/WADO; token not present in URL |
+| OPS-HOSTED-CI-001 | Hosted Security Gate | GitHub Actions run `32624417918` | PASS | head SHA `c67488deead6b8a2caad5d5a4f608504bbe3b1ff`, conclusion `success` |
+| OPS-BRANCH-001 | Branch Protection Review | GitHub branch protection API | PARTIAL | default branch `master`; branch protection API returned `Branch not protected` |
+
+## RTO / RPO Status
+
+Technical test RTO is measured for the local PoC failure drills. Technical test RPO is partially validated through point-in-time backup and restore consistency. Business-approved RTO/RPO remains `NOT VERIFIED`.

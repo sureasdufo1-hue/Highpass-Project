@@ -67,8 +67,8 @@ Backup encryption was validated for the synthetic PostgreSQL and Orthanc backup 
 
 Evidence:
 
-- `artifacts/operations/encrypted-backup-20260823-152902/summary.json`
-- `artifacts/operations/encrypted-backup-20260823-152902/orthanc-retest.json`
+- `artifacts/operations/encrypted-backup-20260823-152901/summary.json`
+- `artifacts/operations/encrypted-backup-20260823-152901/orthanc-retest.json`
 
 Validated:
 
