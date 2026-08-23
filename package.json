@@ -15,6 +15,7 @@
     "security:readiness": "node scripts/production-readiness-check.js",
     "security:gate": "node scripts/security-gate.js",
     "security:container": "node scripts/container-vulnerability-gate.js",
+    "ops:expiry": "node scripts/operations-expiry-check.js",
     "sbom": "node scripts/generate-sbom.js"
   },
   "dependencies": {
