@@ -43,6 +43,7 @@
 | REL-PROMOTE-001 | Promotion Governance | LEVEL 7 validation | PARTIAL | checklist documented; production promotion not executed |
 | MON-HUMAN-001 | Human Notification | `pnpm run staging:smoke` command hook | BLOCKED | no external email, Slack, or Teams delivery configured |
 | DR-STAGING-001 | Staging DR Exercise | `pnpm run staging:smoke` command hook | BLOCKED | no independent recovery environment executed |
+| L7C-DISCOVERY-001 | External Resource Discovery | GitHub vars/secrets and local environment review | BLOCKED | no external staging vars or secrets configured; see `docs/integration/level-7c-closure-report.md` |
 
 ## RTO / RPO Status
 
