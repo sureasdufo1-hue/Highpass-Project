@@ -1,29 +1,43 @@
-# HiPass Platform MVP
+# HiPass Platform
 
-환자 동의 기반 의료영상 보안 중계 플랫폼 MVP입니다. PDF 설계의 핵심인 Control Plane / Data Plane 분리, 동의 관리, 단기 DICOM 접근 토큰, 감사로그, 전송량 로깅, DICOMweb Gateway 시뮬레이션을 구현합니다.
+환자 동의를 기준으로 병원 간 의료영상을 안전하게 조회하는 PoC입니다.
 
-## 현재 구성
+CD로 영상을 옮기는 흐름을 줄이고, 필요한 병원과 의료진에게 필요한 Study/Series 범위만 열어주는 구조를 실험합니다. 실제 환자정보나 실제 병원 PACS에는 연결하지 않습니다.
 
-- `hipass-control-api`: Node.js 기반 Control Plane API와 웹 포털
-- `postgres`: PostgreSQL 저장소
-- `hospital-a-orthanc`: A병원 PACS/Gateway 역할의 Orthanc + DICOMweb
-- `hospital-b-viewer`: B병원 Viewer 역할의 OHIF
-- Docker 웹 포털: `http://localhost:3300`
-- 로컬 Node 웹 포털: `http://localhost:3000`
-- OHIF Viewer: `http://localhost:3001`
-- 기본 데모 환자: `P-1001`
-- 기본 데모 병원: `HOSP-A`, `HOSP-B`, `HOSP-C`
+## 지금 들어있는 것
 
-## Docker Compose 실행
+- 환자 동의 생성, 조회, 철회
+- RBAC + ABAC 접근정책 검증
+- 5분 단기 DICOMweb 접근 토큰
+- DICOMweb Gateway
+- Orthanc 기반 가상 PACS
+- OHIF 기반 Viewer
+- 감사로그와 이상행위 탐지
+- 연구용 가명처리 시뮬레이션
+- Docker Compose 실행 환경
+- GitHub Security Gate와 운영 증적 문서
 
-개발용 기본값은 `.env.development`에 있다. 반복 실행하려면 로컬 전용 `.env`를 만든다. `.env`는 Git에 저장하지 않는다.
+## 실행
+
+개발용 환경 파일을 먼저 만듭니다. `.env`는 Git에 올리지 않습니다.
 
 ```bash
 cp .env.development .env
 ```
 
+Docker로 전체 스택을 올립니다.
+
 ```bash
 docker compose up -d --build
+```
+
+접속 주소:
+
+```text
+웹 포털: https://localhost:3443
+HTTP 진입점: http://localhost:3000
+Viewer 경로: https://localhost:3443/hipass/
+Health Check: https://localhost:3443/api/health
 ```
 
 상태 확인:
@@ -44,133 +58,150 @@ docker compose stop
 docker compose down
 ```
 
-DB 볼륨까지 초기화하는 명령은 기존 검증 데이터를 삭제한다. 명시적으로 초기화할 때만 사용한다.
+검증 데이터를 포함한 DB/Orthanc 볼륨까지 지울 때만 사용합니다.
 
 ```bash
 docker compose down -v
 ```
 
-Orthanc는 host port로 직접 공개하지 않는다. 샘플 DICOM 로딩은 `hospital-a-orthanc-seed` 서비스가 내부 Docker network에서 수행한다.
+## 로컬 Node 실행
 
-## 로컬 실행
-
-JSON 파일 저장소로 실행:
+JSON 파일 저장소로 간단히 실행할 수 있습니다.
 
 ```powershell
-npm install
+pnpm install
 $env:PORT="3000"
 $env:HIPASS_STORE="json"
 $env:HIPASS_DB_PATH="data\hipass-local-server.json"
 $env:AUTH_MODE="DEVELOPMENT_MOCK"
 $env:DICOM_TOKEN_SECRET="local-node-server-32-byte-minimum-secret"
 $env:DICOM_TOKEN_TTL_MINUTES="5"
-npm start
+pnpm start
 ```
 
-로컬 PostgreSQL로 실행:
+PostgreSQL로 실행하려면 DB만 먼저 올립니다.
 
 ```bash
-npm install
+pnpm install
 docker compose up -d postgres
-npm run start:postgres
+pnpm run start:postgres
 ```
 
-서버 시작 시 `db/schema.sql`과 같은 구조의 테이블을 자동 생성하고, 데이터가 비어 있으면 데모 시드 데이터를 넣습니다.
+서버는 시작할 때 필요한 테이블을 만들고, 비어 있으면 가상 병원과 가상 환자 데이터를 넣습니다.
 
-## Environment
-
-주요 환경변수:
+## 주요 환경변수
 
 - `NODE_ENV`: `development`, `test`, `production`
 - `AUTH_MODE`: `DEVELOPMENT_MOCK`, `TEST`, `OIDC`
 - `DATABASE_URL`: PostgreSQL 연결 문자열
 - `DICOM_TOKEN_SECRET`: 단기 DICOMweb 토큰 서명 secret
-- `HIPASS_INTERNAL_SERVICE_TOKEN`: 내부 서비스용 감사로그/Gateway 토큰
+- `DICOM_TOKEN_TTL_MINUTES`: 토큰 유효시간. 기본 5분
+- `HIPASS_INTERNAL_SERVICE_TOKEN`: 내부 서비스 호출용 토큰
 - `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_PUBLIC_KEY`: OIDC/JWT 검증 설정
-- `ORTHANC_REST_URL`, `ORTHANC_USERNAME`, `ORTHANC_PASSWORD`: Gateway에서 Orthanc로 접근할 때 사용하는 설정
+- `ORTHANC_REST_URL`: Gateway가 바라보는 Orthanc 주소
+- `ORTHANC_TLS_CA_FILE`, `ORTHANC_TLS_CERT_FILE`, `ORTHANC_TLS_KEY_FILE`: mTLS 파일 경로
 
-Production에서는 `NODE_ENV=production`과 `AUTH_MODE=DEVELOPMENT_MOCK` 조합으로 서버가 시작되지 않는다.
+`NODE_ENV=production`에서 `AUTH_MODE=DEVELOPMENT_MOCK`으로는 시작하지 않습니다.
 
 ## 테스트
 
+기본 테스트:
+
 ```bash
-npm test
+pnpm test
 ```
 
 보안 게이트:
 
 ```bash
-npm run security:secrets
-npm run security:gate
+pnpm run security:secrets
+pnpm run security:gate
+pnpm run security:network
+pnpm run security:readiness
+pnpm run security:container
 ```
 
-운영 전 구성 점검은 현재 셸의 환경변수를 검사한다. 실제 운영 secret 값은 Git에 저장하지 않는다.
+운영 증적 점검:
 
 ```bash
-npm run security:readiness
+pnpm run ops:expiry
+pnpm run ops:monitor
+node scripts/ops-rollback-check.js
 ```
 
-Live Docker E2E는 Docker stack이 실행 중일 때 별도로 수행한다.
+Docker 스택이 떠 있을 때 HTTPS E2E를 실행합니다.
 
 ```powershell
-$env:HIPASS_E2E_BASE_URL="http://localhost:3300"
-$env:HIPASS_E2E_VIEWER_URL="http://localhost:3001"
-$env:HIPASS_E2E_DATABASE_URL=$env:DATABASE_URL
+$env:NODE_TLS_REJECT_UNAUTHORIZED="0"
+$env:HIPASS_E2E_BASE_URL="https://localhost:3443"
+$env:HIPASS_E2E_VIEWER_URL="https://localhost:3443/hipass/"
+$env:HIPASS_E2E_DATABASE_DOCKER="1"
 node scripts\e2e-integration-test.js
 ```
 
-Codex 데스크톱 번들 Node만 있는 환경에서는 아래처럼 직접 실행할 수 있습니다.
+브라우저에서 토큰이 URL로 새지 않는지 확인합니다.
 
 ```powershell
-& "$HOME\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe" --test
+powershell -ExecutionPolicy Bypass -File scripts\run-browser-authorization-trace.ps1
 ```
 
 ## 주요 API
 
-- `GET /api/health`: 헬스체크
-- `POST /api/consents`: 환자 동의 생성
-- `GET /api/consents/{id}`: 동의 상세 조회
-- `POST /api/consents/{id}/revoke`: 동의 철회
-- `GET /api/imaging-studies?patientId=...`: 환자 영상검사 목록 조회
-- `POST /api/dicom-access/request`: DICOMweb 접근토큰 발급 요청
-- `POST /api/policies/access-check`: 접근정책 검증
-- `GET /api/audit-logs`: 감사로그 조회
-- `GET /api/transfer-usage`: 전송량 로그 조회
-- `GET /api/hospitals/{id}/gateway`: 병원 Gateway 정보 조회
-- `GET /dicomweb/studies`: QIDO-RS Study 검색 시뮬레이션
-- `GET /dicomweb/studies/{studyUid}/series`: Series 목록 조회
-- `GET /dicomweb/studies/{studyUid}/series/{seriesUid}/instances`: Instance 목록 조회
-- `GET /dicomweb/studies/{studyUid}`: WADO-RS Study 조회 시뮬레이션
-- `GET /dicomweb/studies/{studyUid}/series/{seriesUid}`: WADO-RS Series 조회 시뮬레이션
-- `POST /gateway/token/introspect`: Gateway 토큰 검증
-- `POST /gateway/audit`: Gateway 감사로그 등록
+- `GET /api/health`
+- `POST /api/consents`
+- `GET /api/consents/{id}`
+- `POST /api/consents/{id}/revoke`
+- `GET /api/imaging-studies?patientId=...`
+- `POST /api/dicom-access/request`
+- `POST /api/policies/access-check`
+- `GET /api/audit-logs`
+- `GET /api/transfer-usage`
+- `GET /dicomweb/studies`
+- `GET /dicomweb/studies/{studyUid}/series`
+- `GET /dicomweb/studies/{studyUid}/series/{seriesUid}/instances`
+- `GET /dicomweb/studies/{studyUid}/series/{seriesUid}/instances/{instanceUid}`
+- `POST /gateway/token/introspect`
 
-민감 API는 인증 principal이 필요하다. 개발 UI는 `AUTH_MODE=DEVELOPMENT_MOCK`에서만 mock principal header를 붙인다. 운영 인증은 OIDC/JWT Provider로 교체해야 한다.
+중요한 검증은 서버에서 다시 수행합니다. 화면에서 버튼을 숨기는 것은 보안 통제가 아닙니다.
 
-## MVP 시연 시나리오
+## 데모 흐름
 
-웹 포털에서 다음 흐름을 확인할 수 있습니다.
+1. 환자가 병원 B에 공유 동의를 만든다.
+2. 의사가 환자와 동의, Study, Series, 목적을 선택해 접근을 요청한다.
+3. 서버가 역할, 병원, 기간, 목적, Study/Series 범위를 확인한다.
+4. 조건이 모두 맞으면 짧은 DICOMweb 토큰을 발급한다.
+5. Gateway가 토큰 범위 안에서만 Orthanc를 조회한다.
+6. Viewer가 허용된 Series/Instance만 불러온다.
+7. 접근 허용, 거부, 토큰, 영상 조회가 감사로그에 남는다.
 
-1. 동의 없는 접근 거부
-2. 환자 동의 생성
-3. DICOM 접근토큰 발급
-4. Gateway Series 조회
-5. 동의 철회 후 기존 토큰 거부
+## 현재 기준선
 
-## Pre-Production Security Validation
+최근 검증 기준:
 
-현재 목표 수준:
+```text
+Level 6:
+PRODUCTION GOVERNANCE & COMPLIANCE READINESS CANDIDATE
 
-- Closed PoC: PASS
-- Security-hardened Closed PoC: PASS
-- Pre-production Security-validated PoC: 진행 중
-- Real patient data: PROHIBITED
-- Production clinical use: PROHIBITED
+Release SHA:
+db1189cab346f1b9c09aec617f81a03893bfb8b0
 
-남은 운영 전 과제:
+Hosted Security Gate:
+PASS
+```
 
-- 실제 IdP/OIDC 연동
-- KMS/HSM 기반 pseudonym mapping 보호
-- Orthanc 인증 또는 mTLS 운영 검증
-- Retention enforce와 backup 파기 정책
-- 실제 OHIF token header 전달 브라우저 검증
+자세한 증적은 `docs/operations/release-validation-manifest.md`와 `docs/operations/evidence-matrix.md`를 봅니다.
+
+## 아직 아닌 것
+
+이 저장소는 실제 운영 시스템이 아닙니다.
+
+- 실제 환자정보 사용 안 함
+- 실제 병원망 연결 안 함
+- 실제 PACS 연결 안 함
+- 실제 병원 IdP 검증 안 함
+- 실제 KMS/HSM 검증 안 함
+- 실제 DR 사이트 검증 안 함
+- PIPA 법률 인증 아님
+- ISMS-P 인증 아님
+
+운영 전에는 법률 검토, 병원 보안 승인, 실제 인프라 설계, 독립 보안 검토가 따로 필요합니다.
