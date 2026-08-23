@@ -16,6 +16,7 @@
     "security:gate": "node scripts/security-gate.js",
     "security:container": "node scripts/container-vulnerability-gate.js",
     "ops:expiry": "node scripts/operations-expiry-check.js",
+    "ops:monitor": "node scripts/ops-monitoring-check.js",
     "sbom": "node scripts/generate-sbom.js"
   },
   "dependencies": {

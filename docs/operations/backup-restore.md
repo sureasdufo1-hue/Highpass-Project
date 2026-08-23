@@ -63,4 +63,20 @@ Restored DICOM bytes:
 
 ## Security
 
-Backup encryption is `NOT VERIFIED` in this PoC. Backup artifacts can contain synthetic security evidence and must not be committed. Production requires encrypted storage, retention policy, access review, and audited deletion.
+Backup encryption was validated for the synthetic PostgreSQL and Orthanc backup artifacts using AES-256-GCM with a temporary passphrase provided through `OPS_BACKUP_PASSPHRASE`.
+
+Evidence:
+
+- `artifacts/operations/encrypted-backup-20260823-152902/summary.json`
+- `artifacts/operations/encrypted-backup-20260823-152902/orthanc-retest.json`
+
+Validated:
+
+- PostgreSQL backup encryption: `PASS`
+- Orthanc backup encryption: `PASS`
+- Wrong-key decrypt rejection: `PASS`
+- Corrupt encrypted backup rejection: `PASS`
+- Decrypted PostgreSQL restore: `PASS`
+- Decrypted Orthanc restore with `orthanc/hospital-a.json`: `PASS`
+
+Backup artifacts can contain synthetic security evidence and must not be committed. Production backup storage, retention automation, offsite disaster recovery, and organization-managed encryption keys remain outside the verified scope.

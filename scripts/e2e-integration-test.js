@@ -1,5 +1,8 @@
 import { execFile } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { promisify } from "node:util";
+
+loadLocalEnvFile();
 
 if (process.env.NODE_TEST_CONTEXT && process.env.RUN_HIPASS_E2E !== "1") {
   console.log("Skipping live E2E script during node --test. Run with node scripts/e2e-integration-test.js.");
@@ -410,4 +413,17 @@ function printReport() {
   };
   console.log(JSON.stringify(report, null, 2));
   if (report.summary.fail > 0) process.exit(1);
+}
+
+function loadLocalEnvFile() {
+  if (!existsSync(".env")) return;
+  for (const line of readFileSync(".env", "utf8").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const separator = trimmed.indexOf("=");
+    if (separator <= 0) continue;
+    const key = trimmed.slice(0, separator).trim();
+    const value = trimmed.slice(separator + 1).trim();
+    if (!process.env[key]) process.env[key] = value;
+  }
 }

@@ -31,4 +31,6 @@ Rollback is a controlled test-environment action, not a production DR claim.
 4. Start compose stack.
 5. Run health, security, network, container, and E2E checks.
 
-Rollback validation is `NOT VERIFIED` in this Phase.
+Rollback validation is `PASS` for the controlled PoC runtime. An isolated rollback image was built from `1b22eae81b64a70149cd2c86b2cc6fb2c3ce4933`, started with the current security configuration, and returned `/api/health` `200` with `status=UP` and `database=UP`. Final roll-forward health also returned `UP`.
+
+Database downgrade was not performed because destructive schema rollback requires an approved migration rollback plan.

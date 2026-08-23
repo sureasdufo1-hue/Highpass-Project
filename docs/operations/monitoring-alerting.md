@@ -28,4 +28,15 @@ docker compose ps
 
 `ops:expiry` reports vulnerability exception and test certificate expiry without reading private keys.
 
-Monitoring failure itself is `NOT VERIFIED`; this PoC does not include an external monitoring backend.
+## Independent Backend Validation
+
+`pnpm run ops:monitor` starts an independent local alert receiver process, evaluates runtime health plus certificate/risk expiry signals, emits synthetic auth/audit/authorization alerts, and verifies delivery to the receiver.
+
+Latest result:
+
+- Backend: `independent-node-alert-receiver`
+- Alert delivery: `PASS`
+- Alerts delivered: 10
+- External human notification channel: `NOT VERIFIED`
+
+This is a test observability backend, not a production monitoring SaaS or enterprise NOC integration.

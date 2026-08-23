@@ -1,7 +1,9 @@
 #!/usr/bin/env node
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { validateAuthConfiguration } from "../src/auth.js";
 import { validateProductionSecrets } from "../src/secrets.js";
+
+loadLocalEnvFile();
 
 const checks = [];
 
@@ -99,4 +101,18 @@ function validateEdgeTls(env) {
     mode: "IN_PROCESS_TLS",
     failures,
   };
+}
+
+function loadLocalEnvFile() {
+  if (!existsSync(".env")) return;
+  const lines = readFileSync(".env", "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const separator = trimmed.indexOf("=");
+    if (separator <= 0) continue;
+    const key = trimmed.slice(0, separator).trim();
+    const value = trimmed.slice(separator + 1).trim();
+    if (!process.env[key]) process.env[key] = value;
+  }
 }
