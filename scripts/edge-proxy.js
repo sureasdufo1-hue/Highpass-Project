@@ -4,12 +4,15 @@ import https from "node:https";
 
 const httpPort = Number(process.env.EDGE_HTTP_PORT ?? 8080);
 const httpsPort = Number(process.env.EDGE_HTTPS_PORT ?? 8443);
+const publicHttpsPort = Number(process.env.EDGE_PUBLIC_HTTPS_PORT ?? 3443);
 const apiOrigin = process.env.EDGE_API_ORIGIN ?? "http://hipass-control-api:3000";
 const viewerOrigin = process.env.EDGE_VIEWER_ORIGIN ?? "http://hospital-b-viewer:80";
 
 http.createServer((request, response) => {
   const host = request.headers.host?.replace(/:\d+$/, "") ?? "localhost";
-  response.writeHead(308, { location: `https://${host}:3443${request.url}` });
+  const requestUrl = new URL(request.url ?? "/", "http://localhost");
+  const redirectPath = requestUrl.pathname === "/" ? `/hipass/${requestUrl.search}` : `${requestUrl.pathname}${requestUrl.search}`;
+  response.writeHead(307, { location: `https://${host}:${publicHttpsPort}${redirectPath}` });
   response.end();
 }).listen(httpPort);
 
@@ -26,13 +29,21 @@ https.createServer({
 function routeTarget(pathname) {
   const url = new URL(pathname, "https://localhost");
   if (url.pathname === "/hipass/") return new URL("/", apiOrigin);
-  if (["/styles.css", "/app.js"].includes(url.pathname) || url.pathname.startsWith("/images/")) {
+  if (["/styles.css", "/app.js"].includes(url.pathname) || url.pathname.startsWith("/images/") || isPlatformAsset(url.pathname)) {
     return new URL(`${url.pathname}${url.search}`, apiOrigin);
   }
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/dicomweb/") || url.pathname === "/dicomweb/studies" || url.pathname.startsWith("/gateway/")) {
     return new URL(`${url.pathname}${url.search}`, apiOrigin);
   }
   return new URL(`${url.pathname}${url.search}`, viewerOrigin);
+}
+
+function isPlatformAsset(pathname) {
+  return [
+    "/assets/demo-ct.png",
+    "/assets/demo-mri.png",
+    "/assets/hero-medical-platform.png",
+  ].includes(pathname);
 }
 
 function proxy(incoming, outgoing, targetUrl) {
