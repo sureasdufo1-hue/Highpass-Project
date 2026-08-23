@@ -33,16 +33,16 @@
 | INT-PACS-001 | PACS / DICOM Contract | integration readiness document | PASS | real PACS NOT CONNECTED |
 | INT-KMS-001 | KMS/HSM Contract | integration readiness document | PASS | real KMS/HSM NOT VERIFIED |
 | DR-ARCH-001 | DR Architecture Readiness | DR readiness document | PARTIAL | real DR site NOT VERIFIED |
-| STG-ENV-001 | Independent Staging Environment | LEVEL 7 validation | NOT VERIFIED | no external staging deployment target configured |
-| STG-NET-001 | Staging Network Segmentation | LEVEL 7 validation | NOT VERIFIED | local network checks exist; external staging network not tested |
-| STG-DB-001 | Staging PostgreSQL Security | LEVEL 7 validation | NOT VERIFIED | no dedicated staging DB endpoint or TLS session tested |
-| EXT-SECRET-001 | External Secret Provider | LEVEL 7 validation | NOT VERIFIED | `src/secrets.js` external provider is an interface marker that fails closed |
-| EXT-KMS-001 | External KMS | LEVEL 7 validation | NOT VERIFIED | no non-production KMS vendor configured |
-| EXT-IDP-001 | External Test IdP | LEVEL 7 validation | NOT VERIFIED | no external OIDC test tenant configured |
-| REL-ARTIFACT-001 | Immutable Artifact Promotion | LEVEL 7 validation | NOT VERIFIED | no registry digest promotion to staging executed |
+| STG-ENV-001 | Independent Staging Environment | `pnpm run staging:smoke` | BLOCKED | no external staging deployment target configured |
+| STG-NET-001 | Staging Network Segmentation | `pnpm run staging:smoke` plus provider checks | BLOCKED | local network checks exist; external staging network not tested |
+| STG-DB-001 | Staging PostgreSQL Security | `pnpm run staging:smoke` | BLOCKED | no dedicated staging DB endpoint or TLS session tested |
+| EXT-SECRET-001 | External Secret Provider | `pnpm run staging:smoke` command hook | BLOCKED | no external Secret Manager command configured |
+| EXT-KMS-001 | External KMS | `pnpm run staging:smoke` command hook | BLOCKED | no non-production KMS vendor configured |
+| EXT-IDP-001 | External Test IdP | `pnpm run staging:smoke` discovery check | BLOCKED | no external OIDC test tenant configured |
+| REL-ARTIFACT-001 | Immutable Artifact Promotion | `pnpm run staging:smoke` digest hooks | BLOCKED | no registry digest promotion to staging executed |
 | REL-PROMOTE-001 | Promotion Governance | LEVEL 7 validation | PARTIAL | checklist documented; production promotion not executed |
-| MON-HUMAN-001 | Human Notification | LEVEL 7 validation | NOT VERIFIED | no external email, Slack, or Teams delivery configured |
-| DR-STAGING-001 | Staging DR Exercise | LEVEL 7 validation | NOT VERIFIED | no independent recovery environment executed |
+| MON-HUMAN-001 | Human Notification | `pnpm run staging:smoke` command hook | BLOCKED | no external email, Slack, or Teams delivery configured |
+| DR-STAGING-001 | Staging DR Exercise | `pnpm run staging:smoke` command hook | BLOCKED | no independent recovery environment executed |
 
 ## RTO / RPO Status
 

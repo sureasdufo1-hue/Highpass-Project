@@ -1,0 +1,15 @@
+{
+  "environment": "staging",
+  "stagingBaseUrl": "https://replace-with-staging-host",
+  "healthPath": "/api/health",
+  "readinessPath": "/api/health",
+  "oidcDiscoveryUrl": "https://replace-with-test-idp/.well-known/openid-configuration",
+  "databaseEndpoint": "replace-with-staging-postgres-host:5432",
+  "databaseTlsRequired": true,
+  "secretProvider": "replace-with-secret-provider",
+  "kmsProvider": "replace-with-kms-provider",
+  "registryImageDigest": "sha256:replace-with-64-hex-digest",
+  "runtimeImageDigest": "sha256:replace-with-64-hex-digest",
+  "monitoringNamespace": "hipass-staging",
+  "humanNotificationChannel": "replace-with-non-production-channel"
+}

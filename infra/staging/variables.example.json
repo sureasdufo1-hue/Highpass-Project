@@ -1,0 +1,17 @@
+{
+  "environment": "staging",
+  "region": "replace-with-region",
+  "stagingBaseUrl": "https://replace-with-staging-host",
+  "containerRegistry": "replace-with-private-registry",
+  "containerImageName": "hipass-control-api",
+  "oidcDiscoveryUrl": "https://replace-with-test-idp/.well-known/openid-configuration",
+  "oidcAudience": "hipass-staging-api",
+  "secretProviderName": "replace-with-secret-provider",
+  "kmsProviderName": "replace-with-kms-provider",
+  "databaseHost": "replace-with-staging-postgres-host",
+  "databasePort": 5432,
+  "databaseName": "hipass",
+  "databaseSslMode": "verify-full",
+  "monitoringNamespace": "hipass-staging",
+  "humanNotificationChannel": "replace-with-non-production-channel"
+}
