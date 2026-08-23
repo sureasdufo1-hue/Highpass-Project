@@ -4,7 +4,7 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
 RUN corepack enable && pnpm install --prod --frozen-lockfile
 
-FROM node:22-alpine
+FROM gcr.io/distroless/nodejs24-debian12:nonroot
 
 WORKDIR /app
 ENV NODE_ENV=production
@@ -19,4 +19,4 @@ COPY public ./public
 COPY db ./db
 
 EXPOSE 3000
-CMD ["node", "scripts/start-postgres.js"]
+CMD ["scripts/start-postgres.js"]

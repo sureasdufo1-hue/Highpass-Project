@@ -12,9 +12,9 @@ window.config = {
       configuration: {
         friendlyName: "Hospital A Orthanc",
         name: "hospitalAOrthanc",
-        qidoRoot: "http://localhost:8042/dicom-web",
-        wadoRoot: "http://localhost:8042/dicom-web",
-        wadoUriRoot: "http://localhost:8042/wado",
+        qidoRoot: "https://localhost:3443/dicomweb",
+        wadoRoot: "https://localhost:3443/dicomweb",
+        wadoUriRoot: "https://localhost:3443/dicomweb",
         qidoSupportsIncludeField: false,
         supportsReject: false,
         imageRendering: "wadors",

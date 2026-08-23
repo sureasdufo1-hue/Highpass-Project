@@ -162,6 +162,43 @@ CREATE TABLE IF NOT EXISTS transfer_usage_logs (
 
 ALTER TABLE transfer_usage_logs ADD COLUMN IF NOT EXISTS sop_instance_uid varchar;
 
+CREATE TABLE IF NOT EXISTS research_export_requests (
+  request_id varchar PRIMARY KEY,
+  requester_id varchar NOT NULL,
+  approver_id varchar,
+  dataset_id varchar NOT NULL,
+  study_instance_uid varchar NOT NULL,
+  series_instance_uid varchar,
+  purpose varchar NOT NULL,
+  status varchar NOT NULL,
+  high_risk_image boolean NOT NULL DEFAULT false,
+  release_decision varchar,
+  release_reason varchar,
+  requested_at timestamptz NOT NULL,
+  decided_at timestamptz,
+  exported_at timestamptz,
+  decision_reason varchar
+);
+
+ALTER TABLE research_export_requests ADD COLUMN IF NOT EXISTS release_decision varchar;
+ALTER TABLE research_export_requests ADD COLUMN IF NOT EXISTS release_reason varchar;
+
+CREATE TABLE IF NOT EXISTS pseudonym_mappings (
+  mapping_id varchar PRIMARY KEY,
+  patient_id varchar NOT NULL REFERENCES patients(patient_id),
+  study_instance_uid varchar NOT NULL,
+  pseudonym_id varchar NOT NULL UNIQUE,
+  protected_patient_ref varchar,
+  key_provider varchar,
+  key_id varchar,
+  created_at timestamptz NOT NULL,
+  protection varchar NOT NULL
+);
+
+ALTER TABLE pseudonym_mappings ADD COLUMN IF NOT EXISTS protected_patient_ref varchar;
+ALTER TABLE pseudonym_mappings ADD COLUMN IF NOT EXISTS key_provider varchar;
+ALTER TABLE pseudonym_mappings ADD COLUMN IF NOT EXISTS key_id varchar;
+
 CREATE INDEX IF NOT EXISTS idx_imaging_studies_patient ON imaging_studies(patient_id);
 CREATE INDEX IF NOT EXISTS idx_gateways_hospital ON gateways(hospital_id);
 CREATE INDEX IF NOT EXISTS idx_consents_lookup ON consents(patient_id, source_hospital_id, target_hospital_id, purpose, status);
@@ -173,3 +210,5 @@ CREATE INDEX IF NOT EXISTS idx_audit_actor_created_at ON audit_logs(actor_id, cr
 CREATE INDEX IF NOT EXISTS idx_audit_action_created_at ON audit_logs(action, created_at);
 CREATE INDEX IF NOT EXISTS idx_transfer_usage_study ON transfer_usage_logs(study_instance_uid);
 CREATE INDEX IF NOT EXISTS idx_transfer_usage_instance ON transfer_usage_logs(sop_instance_uid);
+CREATE INDEX IF NOT EXISTS idx_research_export_status ON research_export_requests(status, requested_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pseudonym_mapping_patient_study ON pseudonym_mappings(patient_id, study_instance_uid);

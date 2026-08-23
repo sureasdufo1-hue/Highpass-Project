@@ -12,6 +12,8 @@ const tableOrder = [
   "dicomAccessTokenLogs",
   "auditLogs",
   "transferUsageLogs",
+  "researchExportRequests",
+  "pseudonymMappings",
 ];
 
 export class PostgresStore {
@@ -71,6 +73,8 @@ export class PostgresStore {
     try {
       await this.client.query(`
         TRUNCATE
+          pseudonym_mappings,
+          research_export_requests,
           transfer_usage_logs,
           audit_logs,
           dicom_access_token_logs,
@@ -96,6 +100,8 @@ export class PostgresStore {
       await this.insertTokenLogs(this.data.dicomAccessTokenLogs);
       await this.insertAuditLogs(this.data.auditLogs);
       await this.insertTransferUsageLogs(this.data.transferUsageLogs);
+      await this.insertResearchExportRequests(this.data.researchExportRequests);
+      await this.insertPseudonymMappings(this.data.pseudonymMappings);
       await this.client.query("COMMIT");
     } catch (error) {
       await this.client.query("ROLLBACK");
@@ -123,6 +129,8 @@ export class PostgresStore {
     const tokenLogs = await this.readTable("dicomAccessTokenLogs");
     const auditLogs = await this.readTable("auditLogs");
     const transferUsageLogs = await this.readTable("transferUsageLogs");
+    const researchExportRequests = await this.readTable("researchExportRequests");
+    const pseudonymMappings = await this.readTable("pseudonymMappings");
 
     const seriesByStudyUid = groupBy(seriesRows, "studyInstanceUid");
     return {
@@ -139,6 +147,8 @@ export class PostgresStore {
       dicomAccessTokenLogs: tokenLogs,
       auditLogs,
       transferUsageLogs,
+      researchExportRequests,
+      pseudonymMappings,
     };
   }
 
@@ -155,6 +165,8 @@ export class PostgresStore {
       dicomAccessTokenLogs: () => this.client.query("SELECT * FROM dicom_access_token_logs ORDER BY issued_at, token_id"),
       auditLogs: () => this.client.query("SELECT * FROM audit_logs ORDER BY created_at, audit_id"),
       transferUsageLogs: () => this.client.query("SELECT * FROM transfer_usage_logs ORDER BY transfer_started_at, usage_id"),
+      researchExportRequests: () => this.client.query("SELECT * FROM research_export_requests ORDER BY requested_at, request_id"),
+      pseudonymMappings: () => this.client.query("SELECT * FROM pseudonym_mappings ORDER BY created_at, mapping_id"),
     };
     const result = await readers[name]();
     return result.rows.map((row) => rowMappers[name](row));
@@ -384,6 +396,58 @@ export class PostgresStore {
       );
     }
   }
+
+  async insertResearchExportRequests(rows) {
+    for (const row of rows ?? []) {
+      await this.client.query(
+        `INSERT INTO research_export_requests (
+           request_id, requester_id, approver_id, dataset_id, study_instance_uid,
+           series_instance_uid, purpose, status, high_risk_image, release_decision,
+           release_reason, requested_at, decided_at, exported_at, decision_reason
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+        [
+          row.requestId,
+          row.requesterId,
+          row.approverId ?? null,
+          row.datasetId,
+          row.studyInstanceUid,
+          row.seriesInstanceUid ?? null,
+          row.purpose,
+          row.status,
+          row.highRiskImage ?? false,
+          row.releaseDecision ?? null,
+          row.releaseReason ?? null,
+          row.requestedAt,
+          row.decidedAt ?? null,
+          row.exportedAt ?? null,
+          row.decisionReason ?? null,
+        ],
+      );
+    }
+  }
+
+  async insertPseudonymMappings(rows) {
+    for (const row of rows ?? []) {
+      await this.client.query(
+        `INSERT INTO pseudonym_mappings (
+           mapping_id, patient_id, study_instance_uid, pseudonym_id, protected_patient_ref, key_provider, key_id, created_at, protection
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          row.mappingId,
+          row.patientId,
+          row.studyInstanceUid,
+          row.pseudonymId,
+          row.protectedPatientRef ?? null,
+          row.keyProvider ?? null,
+          row.keyId ?? null,
+          row.createdAt,
+          row.protection,
+        ],
+      );
+    }
+  }
 }
 
 const rowMappers = {
@@ -514,6 +578,34 @@ const rowMappers = {
     transferMode: row.transfer_mode,
     estimatedCost: Number(row.estimated_cost),
   }),
+  researchExportRequests: (row) => ({
+    requestId: row.request_id,
+    requesterId: row.requester_id,
+    approverId: row.approver_id,
+    datasetId: row.dataset_id,
+    studyInstanceUid: row.study_instance_uid,
+    seriesInstanceUid: row.series_instance_uid,
+    purpose: row.purpose,
+    status: row.status,
+    highRiskImage: row.high_risk_image,
+    releaseDecision: row.release_decision,
+    releaseReason: row.release_reason,
+    requestedAt: toIsoString(row.requested_at),
+    decidedAt: toIsoString(row.decided_at),
+    exportedAt: toIsoString(row.exported_at),
+    decisionReason: row.decision_reason,
+  }),
+  pseudonymMappings: (row) => ({
+    mappingId: row.mapping_id,
+    patientId: row.patient_id,
+    studyInstanceUid: row.study_instance_uid,
+    pseudonymId: row.pseudonym_id,
+    protectedPatientRef: row.protected_patient_ref,
+    keyProvider: row.key_provider,
+    keyId: row.key_id,
+    createdAt: toIsoString(row.created_at),
+    protection: row.protection,
+  }),
 };
 
 function groupBy(rows, key) {
@@ -537,6 +629,8 @@ function normalizeStoreData(data) {
   data.dicomAccessTokenLogs = uniqueBy(data.dicomAccessTokenLogs, "tokenId");
   data.auditLogs = uniqueBy(data.auditLogs, "auditId");
   data.transferUsageLogs = uniqueBy(data.transferUsageLogs, "usageId");
+  data.researchExportRequests = uniqueBy(data.researchExportRequests ?? [], "requestId");
+  data.pseudonymMappings = uniqueBy(data.pseudonymMappings ?? [], "mappingId");
   data.imagingStudies = uniqueBy(data.imagingStudies, "studyId").map((study) => ({
     ...study,
     series: uniqueBy(study.series ?? [], "seriesInstanceUid"),
@@ -725,6 +819,43 @@ CREATE TABLE IF NOT EXISTS transfer_usage_logs (
 
 ALTER TABLE transfer_usage_logs ADD COLUMN IF NOT EXISTS sop_instance_uid varchar;
 
+CREATE TABLE IF NOT EXISTS research_export_requests (
+  request_id varchar PRIMARY KEY,
+  requester_id varchar NOT NULL,
+  approver_id varchar,
+  dataset_id varchar NOT NULL,
+  study_instance_uid varchar NOT NULL,
+  series_instance_uid varchar,
+  purpose varchar NOT NULL,
+  status varchar NOT NULL,
+  high_risk_image boolean NOT NULL DEFAULT false,
+  release_decision varchar,
+  release_reason varchar,
+  requested_at timestamptz NOT NULL,
+  decided_at timestamptz,
+  exported_at timestamptz,
+  decision_reason varchar
+);
+
+ALTER TABLE research_export_requests ADD COLUMN IF NOT EXISTS release_decision varchar;
+ALTER TABLE research_export_requests ADD COLUMN IF NOT EXISTS release_reason varchar;
+
+CREATE TABLE IF NOT EXISTS pseudonym_mappings (
+  mapping_id varchar PRIMARY KEY,
+  patient_id varchar NOT NULL REFERENCES patients(patient_id),
+  study_instance_uid varchar NOT NULL,
+  pseudonym_id varchar NOT NULL UNIQUE,
+  protected_patient_ref varchar,
+  key_provider varchar,
+  key_id varchar,
+  created_at timestamptz NOT NULL,
+  protection varchar NOT NULL
+);
+
+ALTER TABLE pseudonym_mappings ADD COLUMN IF NOT EXISTS protected_patient_ref varchar;
+ALTER TABLE pseudonym_mappings ADD COLUMN IF NOT EXISTS key_provider varchar;
+ALTER TABLE pseudonym_mappings ADD COLUMN IF NOT EXISTS key_id varchar;
+
 CREATE INDEX IF NOT EXISTS idx_imaging_studies_patient ON imaging_studies(patient_id);
 CREATE INDEX IF NOT EXISTS idx_gateways_hospital ON gateways(hospital_id);
 CREATE INDEX IF NOT EXISTS idx_consents_lookup ON consents(patient_id, source_hospital_id, target_hospital_id, purpose, status);
@@ -736,4 +867,6 @@ CREATE INDEX IF NOT EXISTS idx_audit_actor_created_at ON audit_logs(actor_id, cr
 CREATE INDEX IF NOT EXISTS idx_audit_action_created_at ON audit_logs(action, created_at);
 CREATE INDEX IF NOT EXISTS idx_transfer_usage_study ON transfer_usage_logs(study_instance_uid);
 CREATE INDEX IF NOT EXISTS idx_transfer_usage_instance ON transfer_usage_logs(sop_instance_uid);
+CREATE INDEX IF NOT EXISTS idx_research_export_status ON research_export_requests(status, requested_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pseudonym_mapping_patient_study ON pseudonym_mappings(patient_id, study_instance_uid);
 `;

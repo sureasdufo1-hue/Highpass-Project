@@ -1,27 +1,107 @@
 services:
+  hipass-edge:
+    image: newproject-hipass-control-api
+    container_name: hipass-edge
+    command: ["scripts/edge-proxy.js"]
+    environment:
+      EDGE_HTTP_PORT: 8080
+      EDGE_HTTPS_PORT: 8443
+      EDGE_TLS_CERT_FILE: /run/secrets/hipass_edge_tls_cert
+      EDGE_TLS_KEY_FILE: /run/secrets/hipass_edge_tls_key
+      EDGE_API_ORIGIN: http://hipass-control-api:3000
+      EDGE_VIEWER_ORIGIN: http://hospital-b-viewer:8080
+    ports:
+      - "${HIPASS_HTTP_HOST_PORT:-3000}:8080"
+      - "${HIPASS_HTTPS_HOST_PORT:-3443}:8443"
+    volumes:
+      - ./tmp/certs/edge/localhost.crt:/run/secrets/hipass_edge_tls_cert:ro
+      - ./tmp/certs/edge/localhost.key:/run/secrets/hipass_edge_tls_key:ro
+    depends_on:
+      hipass-control-api:
+        condition: service_healthy
+      hospital-b-viewer:
+        condition: service_healthy
+    networks:
+      - frontend_net
+    healthcheck:
+      test: ["CMD", "/nodejs/bin/node", "-e", "require('node:https').get('https://127.0.0.1:8443/api/health', { rejectUnauthorized: false }, r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
   hipass-control-api:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: hipass-control-api
     environment:
+      NODE_ENV: ${NODE_ENV:-development}
       PORT: ${PORT:-3000}
       HIPASS_STORE: postgres
-      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in your environment or .env file}
-      DICOM_TOKEN_SECRET: ${DICOM_TOKEN_SECRET:?Set DICOM_TOKEN_SECRET in your environment or .env file}
+      DATABASE_URL: ${DATABASE_URL:-postgres://hipass_app:replace-with-local-development-password@postgres:5432/hipass}
+      DICOM_TOKEN_SECRET: ${DICOM_TOKEN_SECRET:-replace-with-local-32-byte-minimum-secret}
       DICOM_TOKEN_TTL_MINUTES: ${DICOM_TOKEN_TTL_MINUTES:-5}
-      ORTHANC_REST_URL: http://hospital-a-orthanc:8042
-    ports:
-      - "3000:3000"
+      AUTH_MODE: ${AUTH_MODE:-DEVELOPMENT_MOCK}
+      HIPASS_INTERNAL_SERVICE_TOKEN: ${HIPASS_INTERNAL_SERVICE_TOKEN:-replace-with-local-internal-service-token}
+      JWT_ISSUER: ${JWT_ISSUER:-hipass-test}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-hipass-api}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-}
+      TEST_JWT_SECRET: ${TEST_JWT_SECRET:-replace-with-local-test-jwt-secret}
+      ORTHANC_REST_URL: https://hospital-a-orthanc-mtls:8443
+      ORTHANC_TLS_CA_FILE: /run/secrets/hipass_mtls_ca
+      ORTHANC_TLS_CERT_FILE: /run/secrets/hipass_gateway_client_cert
+      ORTHANC_TLS_KEY_FILE: /run/secrets/hipass_gateway_client_key
+      ORTHANC_USERNAME: ${ORTHANC_USERNAME:-}
+      ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:-}
+    volumes:
+      - ./tmp/certs/mtls/ca.crt:/run/secrets/hipass_mtls_ca:ro
+      - ./tmp/certs/mtls/gateway-client.crt:/run/secrets/hipass_gateway_client_cert:ro
+      - ./tmp/certs/mtls/gateway-client.key:/run/secrets/hipass_gateway_client_key:ro
     depends_on:
       postgres:
         condition: service_healthy
-      hospital-a-orthanc:
+      hospital-a-orthanc-mtls:
         condition: service_healthy
       hospital-a-orthanc-seed:
         condition: service_completed_successfully
+    networks:
+      - frontend_net
+      - db_net
+      - dicom_gateway_net
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      test: ["CMD", "/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  hospital-a-orthanc-mtls:
+    image: newproject-hipass-control-api
+    container_name: hospital-a-orthanc-mtls
+    command: ["scripts/orthanc-mtls-proxy.js"]
+    environment:
+      ORTHANC_MTLS_PORT: 8443
+      ORTHANC_UPSTREAM_ORIGIN: http://hospital-a-orthanc:8042
+      ORTHANC_MTLS_CA_FILE: /run/secrets/hipass_mtls_ca
+      ORTHANC_MTLS_CERT_FILE: /run/secrets/hipass_orthanc_server_cert
+      ORTHANC_MTLS_KEY_FILE: /run/secrets/hipass_orthanc_server_key
+    expose:
+      - "8443"
+    volumes:
+      - ./tmp/certs/mtls/ca.crt:/run/secrets/hipass_mtls_ca:ro
+      - ./tmp/certs/mtls/orthanc-server.crt:/run/secrets/hipass_orthanc_server_cert:ro
+      - ./tmp/certs/mtls/orthanc-server.key:/run/secrets/hipass_orthanc_server_key:ro
+    depends_on:
+      hospital-a-orthanc:
+        condition: service_healthy
+    networks:
+      - dicom_gateway_net
+      - dicom_private_net
+    healthcheck:
+      test: ["CMD", "/nodejs/bin/node", "-e", "require('node:fs').accessSync('/run/secrets/hipass_orthanc_server_cert'); require('node:fs').accessSync('/run/secrets/hipass_orthanc_server_key'); require('node:fs').accessSync('/run/secrets/hipass_mtls_ca')"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -29,7 +109,10 @@ services:
     restart: unless-stopped
 
   hospital-a-orthanc:
-    image: jodogne/orthanc-plugins:1.12.11
+    build:
+      context: .
+      dockerfile: Dockerfile.orthanc
+    image: newproject-orthanc-secured
     container_name: hospital-a-orthanc
     command: /etc/orthanc
     expose:
@@ -37,8 +120,10 @@ services:
     volumes:
       - ./orthanc/hospital-a.json:/etc/orthanc/orthanc.json:ro
       - hospital-a-orthanc-data:/var/lib/orthanc/db
+    networks:
+      - dicom_private_net
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8042/system || exit 1"]
+      test: ["CMD-SHELL", "bash -lc 'exec 3<>/dev/tcp/127.0.0.1/8042 && printf \"GET /system HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\n\\r\\n\" >&3 && head -1 <&3 | grep -q \"200\"'"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -48,37 +133,50 @@ services:
   hospital-a-orthanc-seed:
     image: newproject-hipass-control-api
     container_name: hospital-a-orthanc-seed
-    command: ["node", "scripts/load-sample-dicom.js"]
+    command: ["scripts/load-sample-dicom.js"]
     environment:
       ORTHANC_REST_URL: http://hospital-a-orthanc:8042
     depends_on:
       hospital-a-orthanc:
         condition: service_healthy
+    networks:
+      - dicom_private_net
     restart: "no"
 
   hospital-b-viewer:
-    image: ohif/app:v3.9.2
+    build:
+      context: .
+      dockerfile: Dockerfile.ohif
+    image: newproject-ohif-static
     container_name: hospital-b-viewer
-    ports:
-      - "3001:80"
+    expose:
+      - "8080"
     volumes:
-      - ./ohif/app-config.js:/usr/share/nginx/html/app-config.js:ro
+      - ./ohif/app-config.js:/app/viewer/app-config.js:ro
     depends_on:
-      hospital-a-orthanc:
+      hipass-control-api:
         condition: service_healthy
+    networks:
+      - frontend_net
+    healthcheck:
+      test: ["CMD", "/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:8080/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     restart: unless-stopped
 
   postgres:
     image: postgres:16-alpine
     container_name: hipass-postgres
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in your environment or .env file}
-      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in your environment or .env file}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your environment or .env file}
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${POSTGRES_DB:-hipass}
+      POSTGRES_USER: ${POSTGRES_USER:-hipass_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-replace-with-local-development-password}
     volumes:
       - hipass-postgres-data:/var/lib/postgresql/data
+    networks:
+      - db_net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
@@ -90,3 +188,12 @@ services:
 volumes:
   hipass-postgres-data:
   hospital-a-orthanc-data:
+
+networks:
+  frontend_net:
+  db_net:
+    internal: true
+  dicom_gateway_net:
+    internal: true
+  dicom_private_net:
+    internal: true

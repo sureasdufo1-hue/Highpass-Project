@@ -670,8 +670,53 @@ async function getJson(path, token) {
 }
 
 async function fetchJson(path, options = {}) {
-  const response = await fetch(path, options);
+  const headers = new Headers(options.headers ?? {});
+  for (const [key, value] of Object.entries(developmentPrincipalHeaders(path))) {
+    if (!headers.has(key)) headers.set(key, value);
+  }
+  const response = await fetch(path, { ...options, headers });
   return safeJson(response);
+}
+
+function developmentPrincipalHeaders(path) {
+  if (!path.startsWith("/api/")) return {};
+  if (path === "/api/health") return {};
+  if (
+    path.startsWith("/api/audit-logs") ||
+    path.startsWith("/api/anomaly-alerts") ||
+    path.startsWith("/api/audit-integrity") ||
+    path.startsWith("/api/transfer-usage") ||
+    path.startsWith("/api/research/")
+  ) {
+    return {
+      "x-hipass-role": "SECURITY_ADMIN",
+      "x-hipass-user-id": "SECURITY-ADMIN-001",
+      "x-hipass-session-id": "dev-security-session",
+    };
+  }
+  if (path.startsWith("/api/dicom-access") || path.startsWith("/api/policies")) {
+    return {
+      "x-hipass-role": "DOCTOR",
+      "x-hipass-user-id": demo.doctorId,
+      "x-hipass-doctor-id": demo.doctorId,
+      "x-hipass-hospital-id": demo.targetHospitalId,
+      "x-hipass-session-id": "dev-doctor-session",
+    };
+  }
+  if (path.startsWith("/api/hospitals/")) {
+    return {
+      "x-hipass-role": "HOSPITAL_ADMIN",
+      "x-hipass-user-id": "HOSPITAL-ADMIN-B",
+      "x-hipass-hospital-id": demo.targetHospitalId,
+      "x-hipass-session-id": "dev-hospital-admin-session",
+    };
+  }
+  return {
+    "x-hipass-role": "PATIENT",
+    "x-hipass-user-id": demo.patientId,
+    "x-hipass-patient-id": demo.patientId,
+    "x-hipass-session-id": "dev-patient-session",
+  };
 }
 
 async function safeJson(response) {

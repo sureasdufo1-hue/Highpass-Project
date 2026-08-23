@@ -1,0 +1,14 @@
+FROM ohif/app:v3.9.2 AS ohif
+
+FROM gcr.io/distroless/nodejs24-debian12:nonroot
+
+WORKDIR /app
+ENV NODE_ENV=production
+ENV VIEWER_PORT=8080
+ENV VIEWER_STATIC_ROOT=/app/viewer
+
+COPY scripts/static-viewer-server.js ./scripts/static-viewer-server.js
+COPY --from=ohif /usr/share/nginx/html ./viewer
+
+EXPOSE 8080
+CMD ["scripts/static-viewer-server.js"]

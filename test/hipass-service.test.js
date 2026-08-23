@@ -1,9 +1,24 @@
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { JsonStore } from "../src/store.js";
+import {
+  AuthError,
+  AuthMode,
+  PrincipalRole,
+  applyAuditScope,
+  assertDoctorPrincipal,
+  assertPatientPrincipal,
+  authenticateRequest,
+  createAuthenticationProvider,
+  requireInternalService,
+  validateAuthConfiguration,
+} from "../src/auth.js";
+import { TestKeyProvider } from "../src/key-provider.js";
+import { validateProductionSecrets } from "../src/secrets.js";
 import { HipassService, ServiceValidationError } from "../src/services.js";
 
 async function createService(clock = () => "2026-06-25T10:00:00.000Z", options = {}) {
@@ -811,6 +826,383 @@ test("detects unusual download pattern and blocks audit mutation", async () => {
   }
 });
 
+test("prepares research dataset with pseudonymized DICOM header and masked report", async () => {
+  const { dir, store, service } = await createService();
+  try {
+    const originalPatient = { ...store.get("patients").find((patient) => patient.patientId === "P-1001") };
+    const dataset = service.prepareResearchDataset({
+      studyInstanceUid: "1.2.410.100.1.20260518.002",
+      reportText: "Name: Virtual Patient, PatientID: P-1001, Address: Demo-gu 1, Phone: 010-1234-5678. Chest CT clear.",
+    });
+
+    assert.equal(dataset.purpose, "RESEARCH");
+    assert.equal(dataset.originalDataPolicy, "ORIGINAL_DICOM_REMAINS_IN_ORTHANC_OR_SOURCE_PACS");
+    assert.equal(dataset.dicomHeader.PatientName, "REMOVED");
+    assert.match(dataset.dicomHeader.PatientID, /^R-PSEUDO-/);
+    assert.notEqual(dataset.dicomHeader.PatientID, "P-1001");
+    assert.match(dataset.dicomHeader.StudyInstanceUID, /^2\.25\.\d+$/);
+    assert.notEqual(dataset.dicomHeader.StudyInstanceUID, "1.2.410.100.1.20260518.002");
+    assert.match(dataset.dicomHeader.SeriesInstanceUIDs[0], /^2\.25\.\d+$/);
+    assert.notEqual(dataset.dicomHeader.SeriesInstanceUIDs[0], "1.2.410.100.1.20260518.002.1");
+    assert.equal(dataset.dicomHeader.StudyDate, "2026");
+    assert.equal(dataset.dicomHeader.BodyPartExamined, "CHEST");
+    assert.equal(dataset.dicomHeader.PatientBirthDate, "REMOVED");
+    assert.equal(dataset.dicomHeader.PatientAddress, "REMOVED");
+    assert.equal(dataset.dicomHeader.PatientTelephoneNumbers, "REMOVED");
+    assert.equal(dataset.dicomHeader.OtherPatientIDs, "REMOVED");
+    assert.equal(dataset.dicomHeader.InstitutionName, "VIRTUAL_HOSPITAL");
+    assert.match(dataset.report, /\[NAME\]/);
+    assert.match(dataset.report, /\[PATIENT_ID\]/);
+    assert.match(dataset.report, /\[ADDRESS\]/);
+    assert.match(dataset.report, /\[PHONE\]/);
+    assert.deepEqual(store.get("patients").find((patient) => patient.patientId === "P-1001"), originalPatient);
+    assert.equal(store.get("pseudonymMappings").length, 1);
+    assert.equal(store.get("pseudonymMappings")[0].patientId, "P-1001");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("research release gate requires minimum dataset and k-anonymity thresholds", async () => {
+  const { dir, service } = await createService();
+  try {
+    const request = await service.requestResearchExport({
+      requesterId: "RESEARCHER-003",
+      studyInstanceUid: "1.2.410.100.1.20260518.002",
+      purpose: "Small sample research",
+    });
+    await service.decideResearchExport(request.requestId, {
+      approverId: "SECURITY-ADMIN-001",
+      decision: "APPROVED",
+    });
+    const exported = await service.exportResearchDataset(request.requestId);
+
+    assert.equal(request.releaseDecision, "HUMAN_REVIEW_REQUIRED");
+    assert.ok(["MIN_DATASET_SIZE_NOT_MET", "K_ANONYMITY_NOT_MET"].includes(request.releaseReason));
+    assert.equal(exported.decision, "DENIED");
+    assert.ok(["MIN_DATASET_SIZE_NOT_MET", "K_ANONYMITY_NOT_MET"].includes(exported.reasonCode));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("blocks research export before approval and allows it after approval", async () => {
+  const { dir, store, service } = await createService(undefined, {
+    deIdentificationPolicy: {
+      kAnonymityThreshold: 1,
+      minimumDatasetSize: 1,
+    },
+  });
+  try {
+    const requested = await service.requestResearchExport({
+      requesterId: "RESEARCHER-001",
+      studyInstanceUid: "1.2.410.100.1.20260518.002",
+      purpose: "AI model validation",
+    });
+    const blocked = await service.exportResearchDataset(requested.requestId);
+    const approved = await service.decideResearchExport(requested.requestId, {
+      approverId: "SECURITY-ADMIN-001",
+      decision: "APPROVED",
+      reason: "MVP approved sample dataset",
+    });
+    assert.equal(approved.status, "APPROVED");
+    const exported = await service.exportResearchDataset(requested.requestId);
+
+    assert.equal(requested.status, "REQUESTED");
+    assert.equal(blocked.decision, "DENIED");
+    assert.equal(blocked.reasonCode, "RESEARCH_EXPORT_NOT_APPROVED");
+    assert.equal(exported.decision, "ALLOWED");
+    assert.equal(exported.dataset.dicomHeader.PatientName, "REMOVED");
+    assert.equal(exported.request.status, "EXPORTED");
+    const actions = store.get("auditLogs").map((log) => log.action);
+    assert.ok(actions.includes("RESEARCH_EXPORT_REQUESTED"));
+    assert.ok(actions.includes("RESEARCH_EXPORT_BLOCKED"));
+    assert.ok(actions.includes("RESEARCH_EXPORT_APPROVED"));
+    assert.ok(actions.includes("RESEARCH_EXPORT_COMPLETED"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("marks high-risk facial imaging and blocks research export without verified defacing", async () => {
+  const { dir, store, service } = await createService();
+  try {
+    store.get("imagingStudies").push({
+      studyId: "STUDY-FACE-001",
+      patientId: "P-1001",
+      sourceHospitalId: "HOSP-A",
+      studyInstanceUid: "1.2.410.100.1.20260626.009",
+      modality: "CT",
+      bodyPart: "FACE",
+      studyDate: "2026-06-26",
+      description: "Facial CT 3D reconstruction",
+      metadataOnly: true,
+      series: [
+        {
+          seriesInstanceUid: "1.2.410.100.1.20260626.009.1",
+          modality: "CT",
+          description: "Face 3D",
+          instanceCount: 120,
+          bytes: 120_000_000,
+          previewImageUrl: null,
+        },
+      ],
+    });
+    const requested = await service.requestResearchExport({
+      requesterId: "RESEARCHER-002",
+      studyInstanceUid: "1.2.410.100.1.20260626.009",
+      purpose: "Facial CT cohort",
+    });
+    await service.decideResearchExport(requested.requestId, {
+      approverId: "SECURITY-ADMIN-001",
+      decision: "APPROVED",
+    });
+    const exported = await service.exportResearchDataset(requested.requestId);
+
+    assert.equal(requested.highRiskImage, true);
+    assert.equal(requested.datasetPreview.riskLevel, "HIGH_RISK_IMAGE");
+    assert.equal(requested.datasetPreview.defacingStatus, "NOT_IMPLEMENTED");
+    assert.equal(exported.decision, "DENIED");
+    assert.equal(exported.reasonCode, "HIGH_RISK_IMAGE_EXPORT_BLOCKED");
+    assert.equal(store.get("auditLogs").at(-1).reasonCode, "HIGH_RISK_IMAGE_EXPORT_BLOCKED");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("development mock authentication binds patient and doctor principal values", () => {
+  const patient = authenticateRequest({
+    headers: {
+      "x-hipass-role": "PATIENT",
+      "x-hipass-user-id": "P-1001",
+      "x-hipass-patient-id": "P-1001",
+    },
+  }, { AUTH_MODE: "DEVELOPMENT_MOCK" });
+  assertPatientPrincipal(patient, "P-1001");
+  assert.throws(() => assertPatientPrincipal(patient, "P-1002"), (error) => (
+    error instanceof AuthError && error.code === "PATIENT_IDENTITY_MISMATCH"
+  ));
+
+  const doctor = authenticateRequest({
+    headers: {
+      "x-hipass-role": "DOCTOR",
+      "x-hipass-user-id": "DOC-B-01",
+      "x-hipass-doctor-id": "DOC-B-01",
+      "x-hipass-hospital-id": "HOSP-B",
+    },
+  }, { AUTH_MODE: "DEVELOPMENT_MOCK" });
+  assertDoctorPrincipal(doctor, { doctorId: "DOC-B-01", hospitalId: "HOSP-B" });
+  assert.throws(() => assertDoctorPrincipal(doctor, { doctorId: "DOC-A-01", hospitalId: "HOSP-B" }), (error) => (
+    error instanceof AuthError && error.code === "DOCTOR_IDENTITY_MISMATCH"
+  ));
+  assert.throws(() => assertDoctorPrincipal(doctor, { doctorId: "DOC-B-01", hospitalId: "HOSP-C" }), (error) => (
+    error instanceof AuthError && error.code === "HOSPITAL_IDENTITY_MISMATCH"
+  ));
+});
+
+test("mock authentication is disabled unless explicitly configured and internal service needs token", () => {
+  assert.throws(() => authenticateRequest({ headers: { "x-hipass-role": "PATIENT", "x-hipass-patient-id": "P-1001" } }, {}), (error) => (
+    error instanceof AuthError && error.code === "AUTH_MODE_REQUIRED"
+  ));
+  assert.throws(() => authenticateRequest({ headers: { "x-hipass-role": "INTERNAL_SERVICE" } }, { AUTH_MODE: "DEVELOPMENT_MOCK" }), (error) => (
+    error instanceof AuthError && error.code === "INTERNAL_SERVICE_HEADER_FORBIDDEN"
+  ));
+
+  const internal = authenticateRequest({
+    headers: { "x-hipass-service-token": "test-service-token" },
+  }, { HIPASS_INTERNAL_SERVICE_TOKEN: "test-service-token" });
+  requireInternalService(internal);
+});
+
+test("production startup rejects development mock authentication", () => {
+  assert.throws(() => validateAuthConfiguration({
+    NODE_ENV: "production",
+    AUTH_MODE: AuthMode.DEVELOPMENT_MOCK,
+  }), (error) => error instanceof AuthError && error.code === "PRODUCTION_MOCK_AUTH_FORBIDDEN");
+});
+
+test("test authentication provider verifies JWT issuer, audience, exp, and principal claims", () => {
+  const env = {
+    NODE_ENV: "test",
+    AUTH_MODE: AuthMode.TEST,
+    JWT_ISSUER: "hipass-test",
+    JWT_AUDIENCE: "hipass-api",
+    TEST_JWT_SECRET: "test-jwt-secret",
+  };
+  const provider = createAuthenticationProvider(env);
+  const token = signTestJwt({
+    iss: "hipass-test",
+    aud: "hipass-api",
+    sub: "doctor-subject",
+    userId: "DOC-B-01",
+    doctorId: "DOC-B-01",
+    hospitalId: "HOSP-B",
+    roles: ["DOCTOR"],
+    scope: "dicom:request",
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 300,
+  }, env.TEST_JWT_SECRET);
+
+  const principal = authenticateRequest({ headers: { authorization: `Bearer ${token}` } }, env, provider);
+  assert.equal(principal.authMode, "TEST");
+  assert.equal(principal.doctorId, "DOC-B-01");
+  assertDoctorPrincipal(principal, { doctorId: "DOC-B-01", hospitalId: "HOSP-B" });
+
+  const wrongIssuer = signTestJwt({
+    iss: "wrong",
+    aud: "hipass-api",
+    sub: "doctor-subject",
+    doctorId: "DOC-B-01",
+    hospitalId: "HOSP-B",
+    roles: ["DOCTOR"],
+    exp: Math.floor(Date.now() / 1000) + 300,
+  }, env.TEST_JWT_SECRET);
+  assert.throws(() => authenticateRequest({ headers: { authorization: `Bearer ${wrongIssuer}` } }, env, provider), (error) => (
+    error instanceof AuthError && error.code === "JWT_ISSUER_INVALID"
+  ));
+
+  const expired = signTestJwt({
+    iss: "hipass-test",
+    aud: "hipass-api",
+    sub: "doctor-subject",
+    doctorId: "DOC-B-01",
+    hospitalId: "HOSP-B",
+    roles: ["DOCTOR"],
+    exp: Math.floor(Date.now() / 1000) - 1,
+  }, env.TEST_JWT_SECRET);
+  assert.throws(() => authenticateRequest({ headers: { authorization: `Bearer ${expired}` } }, env, provider), (error) => (
+    error instanceof AuthError && error.code === "JWT_EXPIRED"
+  ));
+});
+
+test("audit log read scope allows security admin and narrows hospital admin", () => {
+  const securityAdmin = { role: PrincipalRole.SECURITY_ADMIN };
+  assert.deepEqual(applyAuditScope(securityAdmin, { result: "FAIL" }), { result: "FAIL" });
+
+  const hospitalAdmin = { role: PrincipalRole.HOSPITAL_ADMIN, hospitalId: "HOSP-B" };
+  assert.deepEqual(applyAuditScope(hospitalAdmin, { result: "FAIL", hospitalId: "HOSP-A" }), {
+    result: "FAIL",
+    hospitalId: "HOSP-B",
+  });
+
+  assert.throws(() => applyAuditScope({ role: PrincipalRole.DOCTOR }, {}), (error) => (
+    error instanceof AuthError && error.code === "ROLE_NOT_ALLOWED"
+  ));
+});
+
+test("retention purge planning is dry-run and does not delete token logs", async () => {
+  const { dir, store, service } = await createService(() => "2026-06-25T10:00:00.000Z");
+  try {
+    const token = await service.requestDicomAccessToken(accessRequest());
+    const plan = service.planRetentionPurge();
+
+    assert.equal(plan.mode, "DRY_RUN");
+    assert.equal(plan.destructiveActionTaken, false);
+    assert.ok(plan.policies.some((item) => item.dataType === "PSEUDONYM_MAPPING"));
+    assert.ok(store.get("dicomAccessTokenLogs").some((item) => item.tokenId === decodeTokenPayload(token.accessToken).jti));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("retention enforce requires deletion approval and respects legal hold", async () => {
+  const { dir, store, service } = await createService(() => "2026-06-25T10:00:00.000Z");
+  try {
+    const token = await service.requestDicomAccessToken(accessRequest());
+    const tokenId = decodeTokenPayload(token.accessToken).jti;
+    const tokenLog = store.get("dicomAccessTokenLogs").find((item) => item.tokenId === tokenId);
+    tokenLog.expiresAt = "2026-01-01T00:00:00.000Z";
+    store.set("retentionDeletionApprovals", [{
+      dataType: "ACCESS_TOKEN_LOG",
+      recordId: tokenId,
+      status: "APPROVED",
+      approvedBy: "SEC-ADMIN-01",
+    }]);
+    store.set("retentionLegalHolds", [{
+      dataType: "ACCESS_TOKEN_LOG",
+      recordId: tokenId,
+      active: true,
+      reason: "dispute-review",
+    }]);
+
+    const held = service.planRetentionPurge({ HIPASS_TOKEN_LOG_RETENTION_DAYS: "1" });
+    assert.equal(held.candidates[0].action, "KEEP_LEGAL_HOLD");
+
+    const result = await service.executeRetentionPurge({
+      RETENTION_PURGE_MODE: "ENFORCE",
+      RETENTION_ALLOW_SYNTHETIC_DELETE: "true",
+      HIPASS_TOKEN_LOG_RETENTION_DAYS: "1",
+    });
+    assert.equal(result.destructiveActionTaken, false);
+    assert.ok(store.get("dicomAccessTokenLogs").some((item) => item.tokenId === tokenId));
+
+    store.set("retentionLegalHolds", []);
+    const deleted = await service.executeRetentionPurge({
+      RETENTION_PURGE_MODE: "ENFORCE",
+      RETENTION_ALLOW_SYNTHETIC_DELETE: "true",
+      HIPASS_TOKEN_LOG_RETENTION_DAYS: "1",
+    });
+    assert.equal(deleted.destructiveActionTaken, true);
+    assert.ok(!store.get("dicomAccessTokenLogs").some((item) => item.tokenId === tokenId));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("pseudonym mapping includes protected reference and local key provider marker", async () => {
+  const { dir, store, service } = await createService();
+  try {
+    service.prepareResearchDataset({
+      studyInstanceUid: "1.2.410.100.1.20260518.002",
+    });
+    const mapping = store.get("pseudonymMappings")[0];
+
+    assert.equal(mapping.patientId, "P-1001");
+    assert.match(mapping.protectedPatientRef, /^protected:[a-f0-9]{64}$/);
+    assert.equal(mapping.keyProvider, "LOCAL_DEVELOPMENT_HMAC");
+    assert.equal(mapping.keyId, "dicom-local-key-v1");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("signed DICOM access token includes kid and rejects unknown key id", async () => {
+  const { dir, service } = await createService(() => "2026-06-25T10:00:00.000Z", {
+    dicomTokenKeyProvider: new TestKeyProvider("token-key-material", "token-key-v1"),
+  });
+  try {
+    const issued = await service.requestDicomAccessToken(accessRequest());
+    assert.equal(decodeTokenHeader(issued.accessToken).kid, "token-key-v1");
+    assert.equal(decodeTokenPayload(issued.accessToken).kid, "token-key-v1");
+
+    const invalidKid = replaceTokenHeader(issued.accessToken, { kid: "missing-key" }, "token-key-material");
+    const rejected = await service.verifyDicomAccessToken(invalidKid, {
+      targetHospitalId: "HOSP-B",
+      studyInstanceUid: "1.2.410.100.1.20260620.001",
+    });
+    assert.equal(rejected.active, false);
+    assert.equal(rejected.reason, "TOKEN_INVALID");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("production secret validation rejects placeholders", () => {
+  const result = validateProductionSecrets({
+    NODE_ENV: "production",
+    DATABASE_URL: "postgres://hipass:replace-with-real-password@db/hipass",
+    DICOM_TOKEN_SECRET: "replace-with-dicom-token-secret",
+    HIPASS_INTERNAL_SERVICE_TOKEN: "replace-with-service-token",
+    JWT_ISSUER: "https://idp.example.test",
+    JWT_AUDIENCE: "hipass-api",
+    JWT_PUBLIC_KEY: "replace-with-public-key",
+    AUDIT_HASH_SECRET: "replace-with-audit-secret",
+    PSEUDONYM_HMAC_SECRET: "replace-with-pseudonym-secret",
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.failures.some((item) => item.name === "DICOM_TOKEN_SECRET"));
+});
+
 test("denies access when no matching consent exists", async () => {
   const { dir, service } = await createService();
   try {
@@ -958,6 +1350,10 @@ function decodeTokenPayload(token) {
   return JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8"));
 }
 
+function decodeTokenHeader(token) {
+  return JSON.parse(Buffer.from(token.split(".")[0], "base64url").toString("utf8"));
+}
+
 function tamperTokenPayload(token, overrides) {
   const [header, payload, signature] = token.split(".");
   const claims = {
@@ -965,4 +1361,22 @@ function tamperTokenPayload(token, overrides) {
     ...overrides,
   };
   return `${header}.${Buffer.from(JSON.stringify(claims), "utf8").toString("base64url")}.${signature}`;
+}
+
+function replaceTokenHeader(token, overrides, secret) {
+  const [header, payload] = token.split(".");
+  const nextHeader = {
+    ...JSON.parse(Buffer.from(header, "base64url").toString("utf8")),
+    ...overrides,
+  };
+  const encodedHeader = Buffer.from(JSON.stringify(nextHeader), "utf8").toString("base64url");
+  const signature = createHmac("sha256", secret).update(`${encodedHeader}.${payload}`).digest("base64url");
+  return `${encodedHeader}.${payload}.${signature}`;
+}
+
+function signTestJwt(claims, secret) {
+  const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" }), "utf8").toString("base64url");
+  const payload = Buffer.from(JSON.stringify(claims), "utf8").toString("base64url");
+  const signature = createHmac("sha256", secret).update(`${header}.${payload}`).digest("base64url");
+  return `${header}.${payload}.${signature}`;
 }

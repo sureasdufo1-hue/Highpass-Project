@@ -1,0 +1,35 @@
+name: Security Gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  security-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run security:gate
+      - run: docker compose build hospital-a-orthanc
+      - run: mkdir -p artifacts/security/container-scan
+      - name: Scan Orthanc image with Trivy
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: newproject-orthanc-secured:latest
+          format: json
+          output: artifacts/security/container-scan/orthanc-trivy-final.json
+          severity: CRITICAL,HIGH
+          scanners: vuln
+          exit-code: "0"
+      - run: pnpm run security:container
+      - run: pnpm run sbom

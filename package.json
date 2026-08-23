@@ -9,7 +9,13 @@
     "start": "node src/server.js",
     "start:json": "node src/server.js",
     "start:postgres": "node scripts/start-postgres.js",
-    "test": "node --test"
+    "test": "node --test",
+    "security:secrets": "node scripts/security-secret-scan.js",
+    "security:network": "node scripts/security-network-check.js",
+    "security:readiness": "node scripts/production-readiness-check.js",
+    "security:gate": "node scripts/security-gate.js",
+    "security:container": "node scripts/container-vulnerability-gate.js",
+    "sbom": "node scripts/generate-sbom.js"
   },
   "dependencies": {
     "pg": "^8.13.1"

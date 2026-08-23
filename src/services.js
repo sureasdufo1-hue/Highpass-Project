@@ -1,5 +1,8 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createKeyProvider } from "./key-provider.js";
 import { OrthancClient } from "./orthanc-client.js";
+import { LocalDevelopmentPseudonymKeyProvider } from "./pseudonym-protection.js";
+import { buildRetentionPolicies, executeRetentionPurge, planRetentionPurge } from "./retention.js";
 import {
   AccessDecision,
   AccessDenyReason,
@@ -8,10 +11,15 @@ import {
   AuditAction,
   ConsentPurpose,
   ConsentStatus,
+  DatePolicy,
   Permission,
+  ReleaseDecision,
+  ResearchExportStatus,
+  ResearchRiskLevel,
   RequestedAction,
   Role,
   TransferMode,
+  UidPolicy,
   addMinutesIso,
   isWithinWindow,
   makeId,
@@ -35,9 +43,12 @@ export class HipassService {
     this.store = store;
     this.clock = clock;
     this.tokenSecret = options.tokenSecret ?? process.env.DICOM_TOKEN_SECRET ?? randomBytes(32).toString("hex");
+    this.dicomTokenKeyProvider = options.dicomTokenKeyProvider ?? createKeyProvider(this.tokenSecret, process.env);
     this.tokenTtlMinutes = normalizeTokenTtlMinutes(options.tokenTtlMinutes ?? process.env.DICOM_TOKEN_TTL_MINUTES);
     this.anomalyRules = normalizeAnomalyRules(options.anomalyRules);
+    this.deIdentificationPolicy = normalizeDeIdentificationPolicy(options.deIdentificationPolicy);
     this.orthanc = options.orthancClient ?? new OrthancClient();
+    this.pseudonymKeyProvider = options.pseudonymKeyProvider ?? new LocalDevelopmentPseudonymKeyProvider(this.tokenSecret, this.dicomTokenKeyProvider);
     this.normalizeAuditLogChain();
   }
 
@@ -46,6 +57,233 @@ export class HipassService {
       .get("imagingStudies")
       .filter((study) => !patientId || study.patientId === patientId)
       .map(({ series, ...metadata }) => (options.includeSeries ? { ...metadata, series } : metadata));
+  }
+
+  listRetentionPolicies() {
+    return buildRetentionPolicies();
+  }
+
+  planRetentionPurge(env = process.env) {
+    return planRetentionPurge(this.store, this.clock, env);
+  }
+
+  executeRetentionPurge(env = process.env) {
+    return executeRetentionPurge(this.store, this.clock, env);
+  }
+
+  prepareResearchDataset(input, requestMeta = {}) {
+    const study = this.store.get("imagingStudies").find((item) => item.studyInstanceUid === input.studyInstanceUid);
+    if (!study) {
+      throw new ServiceValidationError("STUDY_NOT_FOUND", "Study not found");
+    }
+    const patient = this.store.get("patients").find((item) => item.patientId === study.patientId);
+    if (!patient) {
+      throw new ServiceValidationError("PATIENT_NOT_FOUND", "Patient not found");
+    }
+
+    const pseudonym = this.ensurePseudonymMapping(patient.patientId, study.studyInstanceUid);
+    const requestedSeries = input.seriesInstanceUid
+      ? study.series?.filter((series) => series.seriesInstanceUid === input.seriesInstanceUid)
+      : study.series;
+    if (input.seriesInstanceUid && !requestedSeries?.length) {
+      throw new ServiceValidationError("SERIES_NOT_FOUND", "Series not found");
+    }
+
+    const riskLevel = isHighRiskImageStudy(study) ? ResearchRiskLevel.HIGH_RISK_IMAGE : ResearchRiskLevel.LOW;
+    const reportText = input.reportText ?? sampleClinicalReport(patient);
+    const sanitizedReport = maskClinicalReport(reportText, patient);
+    const uidMap = buildResearchUidMap(study, input.seriesInstanceUid, input.sopInstanceUid, this.tokenSecret);
+    const riskProfile = this.analyzeResearchReidentificationRisk(study, patient);
+    return {
+      datasetId: researchDatasetId(study.studyInstanceUid, input.seriesInstanceUid),
+      purpose: ConsentPurpose.RESEARCH,
+      source: "CONTROL_PLANE_METADATA_ONLY",
+      originalDataPolicy: "ORIGINAL_DICOM_REMAINS_IN_ORTHANC_OR_SOURCE_PACS",
+      pseudonymId: pseudonym.pseudonymId,
+      studyInstanceUid: uidMap.studyInstanceUid,
+      seriesInstanceUids: requestedSeries?.map((series) => uidMap.seriesInstanceUids[series.seriesInstanceUid]) ?? [],
+      sopInstanceUid: input.sopInstanceUid ? uidMap.sopInstanceUids[input.sopInstanceUid] : null,
+      uidPolicy: this.deIdentificationPolicy.uidPolicy,
+      datePolicy: this.deIdentificationPolicy.datePolicy,
+      riskLevel,
+      highRiskImage: riskLevel === ResearchRiskLevel.HIGH_RISK_IMAGE,
+      defacingStatus: riskLevel === ResearchRiskLevel.HIGH_RISK_IMAGE ? "NOT_IMPLEMENTED" : "NOT_REQUIRED_FOR_SAMPLE",
+      exportRestriction: riskLevel === ResearchRiskLevel.HIGH_RISK_IMAGE ? "BLOCK_RESEARCH_EXPORT_UNTIL_DEFACING_VERIFIED" : "APPROVAL_REQUIRED",
+      dicomHeader: sanitizeDicomHeader(study, patient, pseudonym.pseudonymId, uidMap, this.deIdentificationPolicy),
+      report: sanitizedReport,
+      riskProfile,
+      headerActions: [
+        "PatientName removed",
+        "PatientID replaced with protected pseudonym",
+        "PatientBirthDate removed",
+        "PatientAddress removed",
+        "PatientTelephoneNumbers removed",
+        "OtherPatientIDs removed",
+        "InstitutionName generalized",
+        "StudyDate generalized",
+        "StudyInstanceUID regenerated",
+        "SeriesInstanceUID regenerated",
+        "SOPInstanceUID regenerated when present",
+        "BodyPartExamined generalized when needed",
+      ],
+      preparedAt: this.clock(),
+      requestMeta: {
+        ipAddress: requestMeta.ipAddress ?? null,
+        userAgent: requestMeta.userAgent ?? null,
+      },
+    };
+  }
+
+  async requestResearchExport(input, requestMeta = {}) {
+    const validation = requireResearchFields(input, ["requesterId", "studyInstanceUid", "purpose"]);
+    if (validation) {
+      throw new ServiceValidationError("INVALID_RESEARCH_EXPORT_REQUEST", validation);
+    }
+    const dataset = this.prepareResearchDataset(input, requestMeta);
+    const requestId = makeId("research-export");
+    const now = this.clock();
+    const request = {
+      requestId,
+      requesterId: input.requesterId,
+      approverId: null,
+      datasetId: dataset.datasetId,
+      studyInstanceUid: input.studyInstanceUid,
+      seriesInstanceUid: input.seriesInstanceUid ?? null,
+      purpose: input.purpose,
+      status: ResearchExportStatus.REQUESTED,
+      highRiskImage: dataset.highRiskImage,
+      releaseDecision: dataset.riskProfile.releaseDecision,
+      releaseReason: dataset.riskProfile.releaseReason,
+      requestedAt: now,
+      decidedAt: null,
+      exportedAt: null,
+      decisionReason: null,
+    };
+    this.store.get("researchExportRequests").push(request);
+    await this.writeAudit({
+      actorType: ActorType.SYSTEM,
+      actorId: input.requesterId,
+      hospitalId: input.hospitalId ?? null,
+      action: AuditAction.RESEARCH_EXPORT_REQUESTED,
+      studyInstanceUid: dataset.studyInstanceUid,
+      seriesInstanceUid: input.seriesInstanceUid,
+      result: "SUCCESS",
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+    });
+    await this.store.save();
+    return { ...request, datasetPreview: dataset };
+  }
+
+  async decideResearchExport(requestId, input, requestMeta = {}) {
+    const request = this.store.get("researchExportRequests").find((item) => item.requestId === requestId);
+    if (!request) return null;
+    const decision = input.decision;
+    if (![ResearchExportStatus.APPROVED, ResearchExportStatus.REJECTED].includes(decision)) {
+      throw new ServiceValidationError("INVALID_RESEARCH_EXPORT_DECISION", "Decision must be APPROVED or REJECTED");
+    }
+    request.status = decision;
+    request.approverId = input.approverId ?? "UNKNOWN_APPROVER";
+    request.decidedAt = this.clock();
+    request.decisionReason = input.reason ?? null;
+    await this.writeAudit({
+      actorType: ActorType.SYSTEM,
+      actorId: request.approverId,
+      action: decision === ResearchExportStatus.APPROVED ? AuditAction.RESEARCH_EXPORT_APPROVED : AuditAction.RESEARCH_EXPORT_REJECTED,
+      studyInstanceUid: request.studyInstanceUid,
+      seriesInstanceUid: request.seriesInstanceUid,
+      result: decision === ResearchExportStatus.APPROVED ? "SUCCESS" : "FAIL",
+      reason: request.decisionReason,
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+    });
+    await this.store.save();
+    return request;
+  }
+
+  async exportResearchDataset(requestId, requestMeta = {}) {
+    const request = this.store.get("researchExportRequests").find((item) => item.requestId === requestId);
+    if (!request) return null;
+    const block = async (reasonCode) => {
+      await this.writeAudit({
+        actorType: ActorType.SYSTEM,
+        actorId: request.requesterId,
+        action: AuditAction.RESEARCH_EXPORT_BLOCKED,
+        studyInstanceUid: request.studyInstanceUid,
+        seriesInstanceUid: request.seriesInstanceUid,
+        result: "FAIL",
+        reason: reasonCode,
+        ipAddress: requestMeta.ipAddress,
+        userAgent: requestMeta.userAgent,
+      });
+      await this.store.save();
+      return { decision: AccessDecision.DENIED, reasonCode, request };
+    };
+
+    if (request.status !== ResearchExportStatus.APPROVED) {
+      return block(request.status === ResearchExportStatus.REJECTED ? "RESEARCH_EXPORT_REJECTED" : "RESEARCH_EXPORT_NOT_APPROVED");
+    }
+    if (request.highRiskImage) {
+      return block("HIGH_RISK_IMAGE_EXPORT_BLOCKED");
+    }
+    if (request.releaseDecision !== ReleaseDecision.RELEASE_ALLOWED) {
+      return block(request.releaseReason ?? request.releaseDecision);
+    }
+
+    const dataset = this.prepareResearchDataset({
+      studyInstanceUid: request.studyInstanceUid,
+      seriesInstanceUid: request.seriesInstanceUid,
+      purpose: request.purpose,
+    }, requestMeta);
+    request.status = ResearchExportStatus.EXPORTED;
+    request.exportedAt = this.clock();
+    await this.writeAudit({
+      actorType: ActorType.SYSTEM,
+      actorId: request.requesterId,
+      action: AuditAction.RESEARCH_EXPORT_COMPLETED,
+      studyInstanceUid: request.studyInstanceUid,
+      seriesInstanceUid: request.seriesInstanceUid,
+      result: "SUCCESS",
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+    });
+    await this.store.save();
+    return { decision: AccessDecision.ALLOWED, request, dataset };
+  }
+
+  listResearchExportRequests() {
+    return this.store.get("researchExportRequests").slice().reverse();
+  }
+
+  analyzeResearchReidentificationRisk(study, patient) {
+    const policy = this.deIdentificationPolicy;
+    const records = this.store.get("imagingStudies").map((candidate) => {
+      const candidatePatient = this.store.get("patients").find((item) => item.patientId === candidate.patientId);
+      return researchQuasiIdentifier(candidate, candidatePatient, policy);
+    });
+    const target = researchQuasiIdentifier(study, patient, policy);
+    const groupSize = records.filter((record) => record.key === target.key).length;
+    const datasetSize = records.length;
+    let releaseDecision = ReleaseDecision.RELEASE_ALLOWED;
+    let releaseReason = "RELEASE_POLICY_SATISFIED";
+    if (datasetSize < policy.minimumDatasetSize) {
+      releaseDecision = ReleaseDecision.HUMAN_REVIEW_REQUIRED;
+      releaseReason = "MIN_DATASET_SIZE_NOT_MET";
+    }
+    if (groupSize < policy.kAnonymityThreshold) {
+      releaseDecision = ReleaseDecision.HUMAN_REVIEW_REQUIRED;
+      releaseReason = "K_ANONYMITY_NOT_MET";
+    }
+    return {
+      quasiIdentifiers: target.values,
+      groupSize,
+      datasetSize,
+      kAnonymityThreshold: policy.kAnonymityThreshold,
+      minimumDatasetSize: policy.minimumDatasetSize,
+      releaseDecision,
+      releaseReason,
+      limitation: "MVP risk screen only; expert privacy impact review is still required before production release",
+    };
   }
 
   getGateway(hospitalId) {
@@ -370,6 +608,7 @@ export class HipassService {
     const tokenId = makeId("jti");
     const claims = {
       jti: tokenId,
+      kid: this.dicomTokenKeyProvider.currentKey()?.kid ?? null,
       consentId: consent.consentId,
       doctorId: input.doctorId,
       targetHospitalId: consent.targetHospitalId,
@@ -556,10 +795,11 @@ export class HipassService {
   }
 
   signAccessToken(claims) {
-    const header = { alg: "HS256", typ: "JWT" };
+    const currentKey = this.dicomTokenKeyProvider.currentKey();
+    const header = { alg: "HS256", typ: "JWT", kid: currentKey?.kid ?? claims.kid ?? null };
     const encodedHeader = base64UrlEncode(JSON.stringify(header));
-    const encodedPayload = base64UrlEncode(JSON.stringify(claims));
-    const signature = signTokenParts(encodedHeader, encodedPayload, this.tokenSecret);
+    const encodedPayload = base64UrlEncode(JSON.stringify({ ...claims, kid: currentKey?.kid ?? claims.kid ?? null }));
+    const signature = signTokenParts(encodedHeader, encodedPayload, currentKey?.material ?? this.tokenSecret);
     return `${encodedHeader}.${encodedPayload}.${signature}`;
   }
 
@@ -568,12 +808,18 @@ export class HipassService {
     const parts = rawToken.split(".");
     if (parts.length !== 3) return { ok: false };
     const [encodedHeader, encodedPayload, signature] = parts;
-    const expected = signTokenParts(encodedHeader, encodedPayload, this.tokenSecret);
-    if (!safeEqual(signature, expected)) return { ok: false };
     try {
       const header = JSON.parse(base64UrlDecode(encodedHeader));
+      if (header.alg !== "HS256" || header.typ !== "JWT") return { ok: false };
+      const key = header.kid
+        ? this.dicomTokenKeyProvider.getKey(header.kid)
+        : this.dicomTokenKeyProvider.currentKey();
+      if (header.kid && !key) return { ok: false };
+      const expected = signTokenParts(encodedHeader, encodedPayload, key?.material ?? this.tokenSecret);
+      if (!safeEqual(signature, expected)) return { ok: false };
       const claims = JSON.parse(base64UrlDecode(encodedPayload));
-      if (header.alg !== "HS256" || header.typ !== "JWT" || !claims.jti) return { ok: false };
+      if (!claims.jti) return { ok: false };
+      if (header.kid && claims.kid && claims.kid !== header.kid) return { ok: false };
       return { ok: true, claims };
     } catch {
       return { ok: false };
@@ -1110,6 +1356,30 @@ export class HipassService {
     ));
   }
 
+  ensurePseudonymMapping(patientId, studyInstanceUid) {
+    const mappings = this.store.get("pseudonymMappings");
+    const existing = mappings.find((mapping) => mapping.patientId === patientId && mapping.studyInstanceUid === studyInstanceUid);
+    if (existing) return existing;
+    const pseudonymId = `R-PSEUDO-${createHmac("sha256", this.tokenSecret)
+      .update(`${patientId}:${studyInstanceUid}`)
+      .digest("hex")
+      .slice(0, 12)
+      .toUpperCase()}`;
+    const mapping = {
+      mappingId: makeId("pseudonym"),
+      patientId,
+      studyInstanceUid,
+      pseudonymId,
+      protectedPatientRef: this.pseudonymKeyProvider.protectPatientReference(patientId, studyInstanceUid),
+      keyProvider: this.pseudonymKeyProvider.provider,
+      keyId: this.pseudonymKeyProvider.currentKeyId?.() ?? null,
+      createdAt: this.clock(),
+      protection: "INTERNAL_CONTROL_PLANE_MAPPING_NOT_EXPOSED_TO_RESEARCH_API",
+    };
+    mappings.push(mapping);
+    return mapping;
+  }
+
   withPreviewImages(seriesRows) {
     return seriesRows.map((series) => ({
       ...series,
@@ -1245,10 +1515,145 @@ function normalizeAnomalyRules(overrides = {}) {
   };
 }
 
+function normalizeDeIdentificationPolicy(overrides = {}) {
+  return {
+    datePolicy: enumFromEnv("HIPASS_DEID_DATE_POLICY", overrides.datePolicy, DatePolicy, DatePolicy.YEAR_ONLY),
+    uidPolicy: enumFromEnv("HIPASS_DEID_UID_POLICY", overrides.uidPolicy, UidPolicy, UidPolicy.REGENERATE_UID),
+    kAnonymityThreshold: numberFromEnv("HIPASS_DEID_K_ANONYMITY_THRESHOLD", overrides.kAnonymityThreshold, 5),
+    minimumDatasetSize: numberFromEnv("HIPASS_DEID_MIN_DATASET_SIZE", overrides.minimumDatasetSize, 20),
+    blockHighRiskPixelData: booleanFromEnv("HIPASS_DEID_BLOCK_HIGH_RISK_PIXEL_DATA", overrides.blockHighRiskPixelData, true),
+  };
+}
+
+function enumFromEnv(name, override, enumObject, fallback) {
+  const value = override ?? process.env[name] ?? fallback;
+  return Object.values(enumObject).includes(value) ? value : fallback;
+}
+
 function numberFromEnv(name, override, fallback) {
   const parsed = Number(override ?? process.env[name] ?? fallback);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
   return parsed;
+}
+
+function booleanFromEnv(name, override, fallback) {
+  const value = override ?? process.env[name] ?? fallback;
+  if (typeof value === "boolean") return value;
+  return String(value).toLowerCase() === "true";
+}
+
+function requireResearchFields(input, fields) {
+  const missing = fields.filter((field) => input[field] === undefined || input[field] === null || input[field] === "");
+  return missing.length ? `Missing required field(s): ${missing.join(", ")}` : null;
+}
+
+function researchDatasetId(studyInstanceUid, seriesInstanceUid) {
+  const source = seriesInstanceUid ? `${studyInstanceUid}:${seriesInstanceUid}` : studyInstanceUid;
+  return `research-dataset-${createHash("sha256").update(source).digest("hex").slice(0, 16)}`;
+}
+
+function sanitizeDicomHeader(study, patient, pseudonymId, uidMap, policy) {
+  return {
+    PatientName: "REMOVED",
+    PatientID: pseudonymId,
+    PatientBirthDate: "REMOVED",
+    PatientAddress: "REMOVED",
+    PatientTelephoneNumbers: "REMOVED",
+    OtherPatientIDs: "REMOVED",
+    InstitutionName: "VIRTUAL_HOSPITAL",
+    StudyInstanceUID: uidMap.studyInstanceUid,
+    SeriesInstanceUIDs: study.series?.map((series) => uidMap.seriesInstanceUids[series.seriesInstanceUid]) ?? [],
+    SOPInstanceUIDs: Object.values(uidMap.sopInstanceUids),
+    Modality: study.modality,
+    BodyPartExamined: generalizeBodyPart(study.bodyPart),
+    StudyDescription: study.description,
+    StudyDate: generalizeDate(study.studyDate, policy.datePolicy),
+    MedicalUtilityDecision: "Retained non-direct clinical metadata needed for research cohorting",
+  };
+}
+
+function buildResearchUidMap(study, seriesInstanceUid, sopInstanceUid, secret) {
+  const selectedSeries = seriesInstanceUid
+    ? study.series?.filter((series) => series.seriesInstanceUid === seriesInstanceUid)
+    : study.series;
+  const seriesInstanceUids = {};
+  for (const series of selectedSeries ?? []) {
+    seriesInstanceUids[series.seriesInstanceUid] = pseudonymDicomUid(series.seriesInstanceUid, secret);
+  }
+  const sopInstanceUids = {};
+  if (sopInstanceUid) {
+    sopInstanceUids[sopInstanceUid] = pseudonymDicomUid(sopInstanceUid, secret);
+  }
+  return {
+    studyInstanceUid: pseudonymDicomUid(study.studyInstanceUid, secret),
+    seriesInstanceUids,
+    sopInstanceUids,
+  };
+}
+
+function pseudonymDicomUid(value, secret) {
+  const hex = createHmac("sha256", secret).update(String(value)).digest("hex").slice(0, 30);
+  return `2.25.${BigInt(`0x${hex}`).toString(10)}`;
+}
+
+function generalizeDate(value, policy) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  if (policy === DatePolicy.YEAR_MONTH) return digits.slice(0, 6);
+  return digits.slice(0, 4);
+}
+
+function generalizeBodyPart(bodyPart) {
+  const value = String(bodyPart ?? "").toUpperCase();
+  if (["BRAIN", "HEAD", "SKULL", "FACE", "FACIAL"].some((token) => value.includes(token))) return "HEAD";
+  if (["CHEST", "LUNG"].some((token) => value.includes(token))) return "CHEST";
+  if (["ABDOMEN", "PELVIS"].some((token) => value.includes(token))) return "TRUNK";
+  if (["KNEE", "ARM", "LEG", "HAND", "FOOT"].some((token) => value.includes(token))) return "EXTREMITY";
+  return "OTHER";
+}
+
+function researchQuasiIdentifier(study, patient, policy) {
+  const age = patient?.birthDate ? ageAtStudy(patient.birthDate, study.studyDate) : null;
+  const values = {
+    ageGroup: age === null ? "UNKNOWN" : `${Math.floor(age / 10) * 10}s`,
+    studyDateGroup: generalizeDate(study.studyDate, policy.datePolicy),
+    bodyPartCategory: generalizeBodyPart(study.bodyPart),
+    modality: study.modality,
+    hospitalCategory: "VIRTUAL_HOSPITAL",
+  };
+  return {
+    values,
+    key: Object.values(values).join("|"),
+  };
+}
+
+function ageAtStudy(birthDate, studyDate) {
+  const birthYear = Number(String(birthDate).slice(0, 4));
+  const studyYear = Number(String(studyDate).slice(0, 4));
+  if (!Number.isFinite(birthYear) || !Number.isFinite(studyYear)) return null;
+  return Math.max(0, studyYear - birthYear);
+}
+
+function maskClinicalReport(reportText, patient) {
+  let masked = String(reportText ?? "");
+  const names = [patient?.name, "Virtual Patient", "Test Patient"].filter(Boolean);
+  for (const name of names) {
+    masked = masked.replaceAll(name, "[NAME]");
+  }
+  return masked
+    .replace(/\bP-\d{3,}\b/g, "[PATIENT_ID]")
+    .replace(/\b\d{2,3}-\d{3,4}-\d{4}\b/g, "[PHONE]")
+    .replace(/(Address|주소)\s*:\s*[^,\n]+/gi, "$1: [ADDRESS]")
+    .replace(/(PatientName|Name|이름)\s*:\s*[^,\n]+/gi, "$1: [NAME]")
+    .replace(/(PatientID|환자번호)\s*:\s*[A-Za-z0-9-]+/gi, "$1: [PATIENT_ID]");
+}
+
+function sampleClinicalReport(patient) {
+  return `Name: ${patient.name}, PatientID: ${patient.patientId}, Address: Demo Research City, Phone: 010-0000-0000. Findings: sample report for MVP validation.`;
+}
+
+function isHighRiskImageStudy(study) {
+  const haystack = `${study.modality ?? ""} ${study.bodyPart ?? ""} ${study.description ?? ""}`.toUpperCase();
+  return /\b(FACE|FACIAL|MAXILLOFACIAL)\b/.test(haystack) || (haystack.includes("3D") && /\b(HEAD|SKULL|BRAIN)\b/.test(haystack));
 }
 
 function isAnomalyAction(action) {

@@ -36,14 +36,14 @@ export function createSeedData() {
       {
         hospitalId: "HOSP-B",
         hospitalName: "가상 병원 B",
-        gatewayUrl: "http://localhost:3000/dicomweb",
+        gatewayUrl: "http://localhost:3300/dicomweb",
         status: HospitalStatus.ACTIVE,
         publicKey: "demo-public-key-b",
       },
       {
         hospitalId: "HOSP-C",
         hospitalName: "가상 병원 C",
-        gatewayUrl: "http://localhost:3000/dicomweb",
+        gatewayUrl: "http://localhost:3300/dicomweb",
         status: HospitalStatus.ACTIVE,
         publicKey: "demo-public-key-c",
       },
@@ -64,7 +64,7 @@ export function createSeedData() {
         gatewayId: "GW-HOSP-B",
         hospitalId: "HOSP-B",
         gatewayName: "가상 병원 B Gateway",
-        dicomwebEndpoint: "http://localhost:3000/dicomweb",
+        dicomwebEndpoint: "http://localhost:3300/dicomweb",
         status: GatewayStatus.ONLINE,
         supportsQido: true,
         supportsWado: true,
@@ -75,7 +75,7 @@ export function createSeedData() {
         gatewayId: "GW-HOSP-C",
         hospitalId: "HOSP-C",
         gatewayName: "가상 병원 C Gateway",
-        dicomwebEndpoint: "http://localhost:3000/dicomweb",
+        dicomwebEndpoint: "http://localhost:3300/dicomweb",
         status: GatewayStatus.DEGRADED,
         supportsQido: true,
         supportsWado: true,
@@ -237,6 +237,8 @@ export function createSeedData() {
     dicomAccessTokenLogs: [],
     auditLogs: [],
     transferUsageLogs: [],
+    researchExportRequests: [],
+    pseudonymMappings: [],
   };
 }
 
