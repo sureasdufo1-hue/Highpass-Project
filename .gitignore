@@ -4,6 +4,7 @@
 !.env.development
 !.env.test
 !.env.production.example
+!.env.staging.example
 node_modules/
 .pnpm-store/
 tmp/
