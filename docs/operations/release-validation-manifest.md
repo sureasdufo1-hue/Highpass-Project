@@ -38,6 +38,10 @@ This manifest does not grant hospital production approval, legal certification, 
 | Roll-forward | PASS | Latest runtime `/api/health` returned `UP` |
 | Hosted CI | PASS | Previous run `32624417918`; final run must bind to the new release SHA |
 | Risk exceptions | VALID | Approved high findings 6, unapproved high 0, expired high 0 at validation time |
+| Branch protection | PASS | master requires PR and `security-gate`; force push and branch deletion disabled |
+| Change governance | PASS | `docs/governance/change-management.md` |
+| Compliance readiness | PASS | PIPA/ISMS-P readiness mappings and gap register |
+| Integration readiness | PASS | IdP/PACS/KMS contracts documented; real integrations NOT VERIFIED |
 
 ## Container Evidence
 
@@ -54,13 +58,13 @@ This manifest does not grant hospital production approval, legal certification, 
 | Control | Status |
 |---|---|
 | Default branch | `master` |
-| Branch protection | NOT CONFIGURED |
-| Required checks | NOT ENFORCED AT BRANCH POLICY |
-| Force-push block | NOT VERIFIED |
-| Branch deletion block | NOT VERIFIED |
+| Branch protection | ENABLED |
+| Required checks | `security-gate` required on `master` |
+| Force-push block | ENABLED |
+| Branch deletion block | ENABLED |
 | Recommendation | Require PR, require Security Gate, block force push, block branch deletion, require conversation resolution |
 
-Branch protection is not changed by this phase.
+Branch protection is changed in Level 6 and must remain recoverable through normal PR merge governance.
 
 ## Operational Limits
 
