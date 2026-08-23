@@ -82,6 +82,19 @@ Branch protection is changed in Level 6 and must remain recoverable through norm
 | Legal review | NOT VERIFIED |
 | Compliance certification | NOT VERIFIED |
 
+## LEVEL 7 Staging Validation Addendum
+
+| Item | Status |
+|---|---|
+| Target | External Infrastructure Integration & Pre-Production Staging Validated Candidate |
+| Result | NOT ACHIEVED |
+| Reason | External staging infrastructure, Secret Manager, KMS, IdP, registry promotion path, human notification channel, and staging DR environment are not configured |
+| Current release SHA | `c2a624075a11ec2fe8d16c23d7951626540a893d` |
+| Hosted Security Gate | PASS, run `32628093505` |
+| Risk exception state | VALID at last check; expires `2026-08-23T23:59:59+09:00` |
+
+This addendum is a readiness and blocker record only. It must not be used as evidence of external staging validation.
+
 ## Secret Hygiene
 
 Do not commit private keys, raw JWTs, bearer tokens, DB passwords, encryption passphrases, patient data, or raw DICOM PHI as release evidence. Fingerprints, hashes, redacted logs, and synthetic test metadata are allowed.
