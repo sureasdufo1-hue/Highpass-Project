@@ -89,9 +89,11 @@ Branch protection is changed in Level 6 and must remain recoverable through norm
 | Target | External Infrastructure Integration & Pre-Production Staging Validated Candidate |
 | Result | NOT ACHIEVED |
 | Reason | External staging infrastructure, Secret Manager, KMS, IdP, registry promotion path, human notification channel, and staging DR environment are not configured |
-| Current release SHA | `c2a624075a11ec2fe8d16c23d7951626540a893d` |
-| Hosted Security Gate | PASS, run `32628093505` |
+| Current release SHA | `6b9a17fabf5082539c09b1c2917628482c8282e7` |
+| Hosted Security Gate | PASS, run `32629310277` |
 | Risk exception state | VALID at last check; expires `2026-08-23T23:59:59+09:00` |
+| Staging smoke test | IMPLEMENTED; returns BLOCKED until external resources are supplied |
+| Manual staging workflow | IMPLEMENTED; `Staging Validation` workflow_dispatch |
 
 This addendum is a readiness and blocker record only. It must not be used as evidence of external staging validation.
 

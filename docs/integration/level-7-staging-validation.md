@@ -14,37 +14,37 @@
 | Gate | Result | Evidence |
 |---|---|---|
 | Working tree clean | PASS | `git status --short --branch` returned `## master...origin/master` before branch creation |
-| Local / remote SHA match | PASS | `c2a624075a11ec2fe8d16c23d7951626540a893d` |
+| Local / remote SHA match | PASS | `6b9a17fabf5082539c09b1c2917628482c8282e7` |
 | GitHub authentication | PASS | `gh auth status` authenticated as repository owner |
-| Hosted Security Gate | PASS | GitHub Actions run `32628093505`, conclusion `success` |
+| Hosted Security Gate | PASS | GitHub Actions run `32629310277`, conclusion `success` |
 | Risk exception validity | PASS | `pnpm run ops:expiry`, expired exceptions `0` at `2026-08-23T08:42:40.298Z` |
 
 ## Required LEVEL 7 Gates
 
 | Gate | Result | Evidence |
 |---|---|---|
-| Independent staging environment | NOT VERIFIED | No external staging endpoint, tenant, or deployment target is configured |
+| Independent staging environment | BLOCKED | No external staging endpoint, tenant, or deployment target is configured; run `pnpm run staging:smoke` after providing `STAGING_BASE_URL` |
 | Environment secret separation | PARTIAL | `.env.staging.example` added; real staging secret separation not executed |
-| External secret provider | NOT VERIFIED | `src/secrets.js` contains only an interface marker that fails closed |
-| External secret rotation | NOT VERIFIED | No external Secret Manager credential A/B rotation executed |
-| External KMS integration | NOT VERIFIED | `src/key-provider.js` KMS provider is an interface marker; no vendor KMS configured |
+| External secret provider | BLOCKED | `src/secrets.js` contains only an interface marker that fails closed; smoke command hook added |
+| External secret rotation | BLOCKED | No external Secret Manager credential A/B rotation executed; smoke command hook added |
+| External KMS integration | BLOCKED | `src/key-provider.js` KMS provider is an interface marker; no vendor KMS configured; smoke command hook added |
 | KMS fail closed | PASS | Local tests cover external provider unavailable fail-closed behavior |
-| External test IdP | NOT VERIFIED | OIDC/JWKS code exists; no external test tenant configured |
+| External test IdP | BLOCKED | OIDC/JWKS code exists; no external test tenant configured; discovery and test-token smoke checks added |
 | OIDC negative tests | PASS | Synthetic tests cover issuer, audience, expiry, unknown kid, and signature rejection |
-| Staging PostgreSQL security | NOT VERIFIED | No dedicated staging PostgreSQL connection details or runtime provided |
-| DB TLS | NOT VERIFIED | `verify-full` required in example; no external DB TLS session tested |
-| Immutable artifact promotion | NOT VERIFIED | No registry digest promotion to staging was executed |
-| Digest binding | NOT VERIFIED | Source, registry, and staging runtime digest were not compared |
-| Human alert notification | NOT VERIFIED | Monitoring receiver exists; no email, Slack, or Teams delivery configured |
-| Staging network segmentation | NOT VERIFIED | Local network checks exist; no external staging network tested |
-| DR staging exercise | NOT VERIFIED | Local restore evidence exists; no independent recovery environment executed |
-| Staging full E2E | NOT VERIFIED | No external staging endpoint tested |
-| Staging browser authorization | NOT VERIFIED | Browser trace not run against external staging HTTPS endpoint |
-| Staging mTLS | NOT VERIFIED | Local mTLS evidence exists; no staging mTLS negative test executed |
+| Staging PostgreSQL security | BLOCKED | No dedicated staging PostgreSQL connection details or runtime provided |
+| DB TLS | BLOCKED | `verify-full` required in example; no external DB TLS session tested |
+| Immutable artifact promotion | BLOCKED | No registry digest promotion to staging was executed; digest command hooks added |
+| Digest binding | BLOCKED | Source, registry, and staging runtime digest were not compared |
+| Human alert notification | BLOCKED | Monitoring receiver exists; no email, Slack, or Teams delivery configured |
+| Staging network segmentation | BLOCKED | Local network checks exist; no external staging network tested |
+| DR staging exercise | BLOCKED | Local restore evidence exists; no independent recovery environment executed |
+| Staging full E2E | BLOCKED | No external staging endpoint tested |
+| Staging browser authorization | BLOCKED | Browser trace not run against external staging HTTPS endpoint |
+| Staging mTLS | BLOCKED | Local mTLS evidence exists; no staging mTLS negative test executed |
 | Secret scan | PASS | Run during local security gate and Hosted Security Gate |
 | Container gate | PASS | Hosted Security Gate executed container scan on current master |
 | Hosted required security gate | PASS | Required `security-gate` passed for current master |
-| Release SHA binding | PASS | Local SHA, remote SHA, and hosted head SHA match for `c2a624075a11ec2fe8d16c23d7951626540a893d` |
+| Release SHA binding | PASS | Local SHA, remote SHA, and hosted head SHA match for `6b9a17fabf5082539c09b1c2917628482c8282e7` |
 | Risk exception | VALID | Approved exceptions valid until `2026-08-23T23:59:59+09:00` |
 
 ## Decision
@@ -61,3 +61,13 @@ LEVEL 7 is blocked until actual non-production external infrastructure is suppli
 - Container registry namespace with digest-based pull access.
 - Non-production human notification channel.
 - Recovery environment and encrypted backup location for staging DR exercise.
+
+## Integration-Ready Additions
+
+- Provider-neutral staging contract: `infra/staging/`.
+- Example staging configuration: `.env.staging.example`.
+- Executable smoke test: `pnpm run staging:smoke`.
+- Manual GitHub workflow: `Staging Validation`.
+- Evidence template: `docs/integration/level-7-evidence-template.md`.
+
+The smoke test returns `BLOCKED` when required external resources are absent. That result is intentional and must not be reclassified as PASS.
