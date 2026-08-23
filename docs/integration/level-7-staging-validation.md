@@ -69,5 +69,6 @@ LEVEL 7 is blocked until actual non-production external infrastructure is suppli
 - Executable smoke test: `pnpm run staging:smoke`.
 - Manual GitHub workflow: `Staging Validation`.
 - Evidence template: `docs/integration/level-7-evidence-template.md`.
+- LEVEL 7C closure report: `docs/integration/level-7c-closure-report.md`.
 
 The smoke test returns `BLOCKED` when required external resources are absent. That result is intentional and must not be reclassified as PASS.
