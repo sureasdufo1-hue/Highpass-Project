@@ -15,6 +15,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
 COPY scripts ./scripts
 COPY src ./src
+COPY test/fixtures/phr ./test/fixtures/phr
 COPY public ./public
 COPY db ./db
 COPY config ./config

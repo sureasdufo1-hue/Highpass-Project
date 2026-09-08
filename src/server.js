@@ -33,6 +33,7 @@ const phrReferenceSecret = process.env.PHR_REFERENCE_SECRET ?? phrCursorSecret;
 const phrService = new PhrService({
   provider: new SyntheticFhirProvider({ cursorSecret: phrCursorSecret }),
   auditService: service,
+  consentService: service,
   store,
   referenceSecret: phrReferenceSecret,
 });
@@ -414,7 +415,6 @@ async function routeApi(request, response, url) {
 }
 
 async function routePhr(request, response, url, principal, correlationId) {
-  if (request.method !== "GET") throw new PhrProviderError(405, PhrProviderErrorCode.RESOURCE_UNSUPPORTED);
   const segments = url.pathname.split("/").filter(Boolean);
   const resourceName = segments[4];
   const resourceRef = segments[5];
@@ -425,11 +425,22 @@ async function routePhr(request, response, url, principal, correlationId) {
     userAgent: request.headers["user-agent"],
   };
 
+  if (request.method === "POST") {
+    if (resourceName === "imaging-studies" && resourceRef && segments[6] === "consents" && segments.length === 7) {
+      const body = await readJson(request);
+      const result = await phrService.createConsentFromImagingStudy(resourceRef, principal, body, context);
+      sendJson(response, 201, result);
+      return;
+    }
+    throw new PhrProviderError(405, PhrProviderErrorCode.RESOURCE_UNSUPPORTED);
+  }
+  if (request.method !== "GET") throw new PhrProviderError(405, PhrProviderErrorCode.RESOURCE_UNSUPPORTED);
+
   if (resourceName === "summary" && !resourceRef) {
     sendJson(response, 200, await phrService.getSummary(principal, context));
     return;
   }
-  if (resourceName === "imaging-studies" && resourceRef) {
+  if (resourceName === "imaging-studies" && resourceRef && segments.length === 6) {
     sendJson(response, 200, await phrService.getImagingStudy(resourceRef, principal, context));
     return;
   }

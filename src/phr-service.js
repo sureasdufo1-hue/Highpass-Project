@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -31,6 +31,7 @@ export class PhrService {
     if (!options?.provider || !options.auditService || !options.store) throw new Error("PHR service dependencies are required");
     this.provider = options.provider;
     this.auditService = options.auditService;
+    this.consentService = options.consentService ?? null;
     this.store = options.store;
     this.referenceSecret = requireReferenceSecret(options.referenceSecret);
     this.imagingMappings = loadImagingMappings(options.imagingMappingPath ?? DEFAULT_MAPPING_PATH);
@@ -86,6 +87,76 @@ export class PhrService {
     });
   }
 
+  async createConsentFromImagingStudy(imagingStudyRef, principal, body, requestContext) {
+    return this.#execute(principal, requestContext, "imaging-study-consent", async () => {
+      const context = normalizeRequestContext(requestContext);
+      if (!this.consentService) throw new PhrProviderError(503, PhrProviderErrorCode.PROVIDER_NOT_CONFIGURED, "Consent service is not wired");
+      const mapping = this.#resolveMapping(principal.patientId, imagingStudyRef);
+      if (!mapping) throw new PhrProviderError(404, PhrProviderErrorCode.RESOURCE_UNSUPPORTED, "Imaging study not found");
+      if (mapping.mappingStatus !== "MAPPED") {
+        await this.#writeAudit(principal, context, PhrAuditAction.SHARE_INTENT_DENIED, "FAIL", PhrProviderErrorCode.IMAGING_NOT_MAPPED, {
+          hospitalId: mapping.sourceOrganizationRef,
+        });
+        throw new PhrProviderError(403, PhrProviderErrorCode.IMAGING_NOT_MAPPED);
+      }
+      const missing = ["targetHospitalId", "purpose", "permission", "validUntil"].filter((field) => !body?.[field]);
+      if (missing.length > 0) throw new PhrProviderError(422, PhrProviderErrorCode.CONSENT_REQUEST_INVALID, "Consent request fields are missing");
+      const scopes = (mapping.allowedSeriesUids?.length ? mapping.allowedSeriesUids : [null]).map((seriesInstanceUid) => ({
+        studyInstanceUid: mapping.studyInstanceUid,
+        seriesInstanceUid,
+      }));
+      let consent;
+      try {
+        consent = await this.consentService.createConsent({
+          patientId: principal.patientId,
+          sourceHospitalId: mapping.sourceOrganizationRef,
+          targetHospitalId: body.targetHospitalId,
+          purpose: body.purpose,
+          permission: body.permission,
+          validFrom: body.validFrom ?? undefined,
+          validUntil: body.validUntil,
+          scopes,
+        });
+      } catch (error) {
+        if (error?.name === "ServiceValidationError") {
+          await this.#writeAudit(principal, context, PhrAuditAction.SHARE_INTENT_DENIED, "FAIL", error.code, {
+            hospitalId: mapping.sourceOrganizationRef,
+          });
+          throw new PhrProviderError(400, PhrProviderErrorCode.CONSENT_REQUEST_INVALID, "Consent request was rejected");
+        }
+        throw error;
+      }
+      await this.#writeAudit(principal, context, PhrAuditAction.SHARE_INTENT_CREATED, "SUCCESS", null, {
+        hospitalId: mapping.sourceOrganizationRef,
+        consentId: consent.consentId,
+      });
+      return {
+        data: {
+          consentId: consent.consentId,
+          imagingStudyRef,
+          status: consent.status,
+          permission: consent.permission,
+          purpose: consent.purpose,
+          targetHospitalId: consent.targetHospitalId,
+          validFrom: consent.validFrom,
+          validUntil: consent.validUntil,
+          scopeCount: scopes.length,
+        },
+        meta: { correlationId: context.correlationId, requestedAt: context.requestedAt },
+      };
+    });
+  }
+
+  #resolveMapping(patientRef, imagingStudyRef) {
+    const candidate = Buffer.from(String(imagingStudyRef));
+    for (const mapping of this.imagingMappings) {
+      if (mapping.patientRef !== patientRef) continue;
+      const expected = Buffer.from(this.#reference(patientRef, "ImagingStudy", mapping.fhirImagingStudyId));
+      if (expected.length === candidate.length && timingSafeEqual(expected, candidate)) return mapping;
+    }
+    return null;
+  }
+
   async #execute(principal, requestContext, resourceName, operation) {
     const context = normalizeRequestContext(requestContext);
     await this.#writeAudit(principal, context, PhrAuditAction.ACCESS_REQUESTED, "SUCCESS", null);
@@ -122,6 +193,7 @@ export class PhrService {
       actorId: principal?.subject ?? "UNKNOWN",
       patientId: principal?.role === PrincipalRole.PATIENT ? principal.patientId : null,
       hospitalId: extra.hospitalId ?? null,
+      consentId: extra.consentId ?? null,
       action,
       result,
       reasonCode,

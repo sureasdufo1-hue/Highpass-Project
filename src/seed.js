@@ -159,6 +159,27 @@ export function createSeedData() {
         ],
       },
       {
+        studyId: "STUDY-PHR-A-001",
+        patientId: "P-1001",
+        sourceHospitalId: "HOSP-A",
+        studyInstanceUid: "1.2.826.0.1.3680043.10.5432.20260908.1001.1",
+        modality: "CT",
+        bodyPart: "CHEST",
+        studyDate: "2026-09-08",
+        description: "Synthetic PHR Chest CT",
+        metadataOnly: true,
+        series: [
+          {
+            seriesInstanceUid: "1.2.826.0.1.3680043.10.5432.20260908.1001.1.1",
+            modality: "CT",
+            description: "Synthetic PHR Lung Window",
+            instanceCount: 1,
+            bytes: 4,
+            previewImageUrl: "/assets/demo-ct.png",
+          },
+        ],
+      },
+      {
         studyId: "STUDY-003",
         patientId: "P-1002",
         sourceHospitalId: "HOSP-B",
