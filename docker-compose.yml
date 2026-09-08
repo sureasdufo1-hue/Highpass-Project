@@ -146,6 +146,24 @@ services:
       - dicom_private_net
     restart: "no"
 
+  hospital-a-phr-mapping-check:
+    image: ${HIPASS_APP_IMAGE:-highpass-platform-mvp:local}
+    container_name: hospital-a-phr-mapping-check
+    command: ["scripts/verify-phr-imaging-mapping.js"]
+    environment:
+      ORTHANC_REST_URL: http://hospital-a-orthanc:8042
+    volumes:
+      - ./test/fixtures/phr:/app/test/fixtures/phr:ro
+      - ./evidence/generated:/app/evidence/generated
+    depends_on:
+      hospital-a-orthanc:
+        condition: service_healthy
+      hospital-a-orthanc-seed:
+        condition: service_completed_successfully
+    networks:
+      - dicom_private_net
+    restart: "no"
+
   hospital-b-viewer:
     build:
       context: .
