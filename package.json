@@ -26,11 +26,12 @@
     "test:cert-fixtures": "node scripts/cert-fixture-check.js",
     "test:mtls-negative": "node scripts/mtls-negative-check.js",
     "mvp:preflight": "node scripts/mvp-verify.js --preflight",
+    "mvp:start": "node scripts/mvp-verify.js --start",
     "mvp:readiness": "node scripts/mvp-verify.js --readiness",
     "mvp:demo": "node scripts/e2e-integration-test.js",
     "mvp:negative": "node scripts/mtls-negative-check.js",
     "mvp:verify": "node scripts/mvp-verify.js",
-    "mvp:cleanup": "docker compose stop",
+    "mvp:cleanup": "node scripts/mvp-verify.js --cleanup",
     "staging:smoke": "node scripts/staging-smoke-test.js",
     "sbom": "node scripts/generate-sbom.js"
   },

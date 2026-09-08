@@ -7,21 +7,40 @@ import path from "node:path";
 const root = process.cwd();
 const mode = process.argv[2] ?? "--verify";
 const timeoutMs = positiveInteger(process.env.HIPASS_MVP_COMMAND_TIMEOUT_MS, 240_000);
+const readinessTimeoutMs = positiveInteger(process.env.HIPASS_MVP_READINESS_TIMEOUT_MS, 120_000);
 const manageCompose = process.env.HIPASS_MVP_MANAGE_COMPOSE === "1";
 const keepRunning = process.env.HIPASS_MVP_KEEP_RUNNING === "1";
+const composeProject = process.env.HIPASS_COMPOSE_PROJECT ?? process.env.COMPOSE_PROJECT_NAME ?? "highpass-phase2";
+const networkPrefix = process.env.HIPASS_NETWORK_PREFIX ?? composeProject;
+const orchestrationEnv = {
+  COMPOSE_PROJECT_NAME: composeProject,
+  HIPASS_COMPOSE_PROJECT: composeProject,
+  HIPASS_NETWORK_PREFIX: networkPrefix,
+  HIPASS_MTLS_TEST_NETWORK: process.env.HIPASS_MTLS_TEST_NETWORK ?? `${networkPrefix}_dicom_gateway_net`,
+  HIPASS_MTLS_TEST_IMAGE: process.env.HIPASS_MTLS_TEST_IMAGE ?? process.env.HIPASS_APP_IMAGE ?? "highpass-platform-mvp:local",
+};
 const results = [];
 let startedCompose = false;
 
 try {
+  if (mode === "--cleanup") {
+    await run("compose-config", "docker", ["compose", "config", "--quiet"]);
+    await requireDockerDaemon();
+    await run("compose-cleanup", "docker", ["compose", "stop"], { timeoutMs: 120_000 });
+    finish();
+  }
+
   await preflight();
   if (mode === "--preflight") finish();
 
-  if (manageCompose) {
-    await run("compose-start", "docker", ["compose", "up", "-d", "--build", "--wait"], { timeoutMs: 600_000 });
-    startedCompose = true;
+  if (manageCompose || mode === "--start") {
+    // The stack contains successful one-shot seed/contract jobs. Compose --wait
+    // treats a completed job as non-running, so readiness is checked explicitly below.
+    await run("compose-start", "docker", ["compose", "up", "-d", "--build"], { timeoutMs: 600_000 });
+    startedCompose = manageCompose;
   }
   await readiness();
-  if (mode === "--readiness") finish();
+  if (mode === "--readiness" || mode === "--start") finish();
 
   await run("unit-integration", process.execPath, ["--test"]);
   await run("certificate-expiry", process.execPath, ["scripts/operations-expiry-check.js"]);
@@ -97,18 +116,51 @@ async function requireDockerDaemon() {
 }
 
 async function readiness() {
-  const output = await run("compose-readiness", "docker", ["compose", "ps", "--format", "json"], { capture: true });
-  const rows = String(output).split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
   const required = ["hipass-edge", "hipass-control-api", "hospital-a-orthanc-mtls", "hospital-a-orthanc", "hospital-b-viewer", "postgres"];
-  for (const service of required) {
-    const row = rows.find((item) => item.Service === service);
-    if (!row || row.State !== "running" || (row.Health && row.Health !== "healthy")) {
-      throw stepError("readiness", `Service is not ready: ${service}`);
+  const startedAt = Date.now();
+  const deadline = startedAt + readinessTimeoutMs;
+  let lastDetail = "Compose services have not reported status";
+
+  while (Date.now() < deadline) {
+    const ps = await spawnCommand("docker", ["compose", "ps", "--format", "json"], {}, 15_000);
+    if (ps.code === 0) {
+      try {
+        const rows = String(ps.stdout).split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
+        const unavailable = required.filter((service) => {
+          const row = rows.find((item) => item.Service === service);
+          return !row || row.State !== "running" || (row.Health && row.Health !== "healthy");
+        });
+        if (unavailable.length === 0) {
+          try {
+            const healthStatus = await getHttpsHealth(10_000);
+            if (healthStatus === 200) {
+              results.push({
+                name: "compose-readiness",
+                status: "PASS",
+                exitCode: 0,
+                durationMs: Date.now() - startedAt,
+                detail: `${required.length} required services are running and healthy`,
+              });
+              results.push({ name: "readiness", status: "PASS", detail: `HTTPS health ${healthStatus}` });
+              return;
+            }
+            lastDetail = `HTTPS health returned ${healthStatus}`;
+          } catch (error) {
+            lastDetail = safe(error.message);
+          }
+        } else {
+          lastDetail = `Services not ready: ${unavailable.join(", ")}`;
+        }
+      } catch (error) {
+        lastDetail = `Invalid Compose status output: ${safe(error.message)}`;
+      }
+    } else {
+      lastDetail = safe(ps.stderr || `docker compose ps exited ${ps.code}`);
     }
+    await delay(2_000);
   }
-  const healthStatus = await getHttpsHealth(10_000);
-  if (healthStatus !== 200) throw stepError("readiness", `HTTPS health returned ${healthStatus}`);
-  results.push({ name: "readiness", status: "PASS", detail: `${required.length} services healthy; HTTPS health ${healthStatus}` });
+
+  throw stepError("readiness", `Readiness timed out after ${readinessTimeoutMs}ms: ${lastDetail}`);
 }
 
 async function run(name, command, args, options = {}) {
@@ -124,7 +176,12 @@ async function run(name, command, args, options = {}) {
 
 function spawnCommand(command, args, extraEnv = {}, commandTimeoutMs = timeoutMs) {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { cwd: root, env: { ...process.env, ...extraEnv }, shell: false, windowsHide: true });
+    const child = spawn(command, args, {
+      cwd: root,
+      env: { ...process.env, ...orchestrationEnv, ...extraEnv },
+      shell: false,
+      windowsHide: true,
+    });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk) => { stdout += chunk; });
@@ -175,6 +232,7 @@ function parseStatus(output) {
 }
 
 function stepError(step, message) { const error = new Error(message); error.step = step; return error; }
+function delay(milliseconds) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
 function safe(value) {
   const redacted = String(value ?? "").replace(/Bearer\s+[A-Za-z0-9._-]+/g, "Bearer [REDACTED]");
   return redacted.length > 1200 ? `...[truncated]\n${redacted.slice(-1200)}` : redacted;

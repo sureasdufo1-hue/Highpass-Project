@@ -30,31 +30,31 @@ CD로 영상을 옮기는 흐름을 줄이고, 필요한 병원과 의료진에�
 cp .env.development .env
 ```
 
-Docker로 전체 스택을 올립니다.
+Docker로 전체 스택을 빌드·시작하고 readiness를 확인합니다.
 
-```bash
-docker compose up -d --build
+```powershell
+pnpm run mvp:start
 ```
 
 접속 주소:
 
 ```text
-웹 포털: https://localhost:3443
+웹 포털: https://localhost:3443/hipass/
 HTTP 진입점: http://localhost:3000
-Viewer 경로: https://localhost:3443/hipass/
+OHIF Viewer: https://localhost:3443/
 Health Check: https://localhost:3443/api/health
 ```
 
 상태 확인:
 
-```bash
-docker compose ps
+```powershell
+pnpm run mvp:readiness
 ```
 
 중지:
 
-```bash
-docker compose stop
+```powershell
+pnpm run mvp:cleanup
 ```
 
 컨테이너 제거:
@@ -215,17 +215,20 @@ powershell -ExecutionPolicy Bypass -File scripts\run-browser-authorization-trace
 최근 검증 기준:
 
 ```text
-Level 6:
-PRODUCTION GOVERNANCE & COMPLIANCE READINESS CANDIDATE
+Target:
+CAPSTONE MVP / TECHNICAL TEST ENVIRONMENT ONLY
 
-Release SHA:
-db1189cab346f1b9c09aec617f81a03893bfb8b0
+Repository SHA:
+22f9df96e02d377ee7083f6bfe70478d17143d19
 
-Hosted Security Gate:
-PASS
+Local MVP E2E:
+PASS — 14/14 stages, current Node tests 125/125
+
+Phase 4 recovery rehearsal:
+PASS — readiness recovered in 34.62 seconds; named volumes preserved
 ```
 
-자세한 증적은 `docs/operations/release-validation-manifest.md`와 `docs/operations/evidence-matrix.md`를 봅니다.
+자세한 증적은 `docs/governance/phase-3-mvp-end-to-end-validation.md`, `docs/evidence/phase-3-evidence-index.md`, `docs/DEMO-RUNBOOK.md`를 봅니다. 자동 생성 증적은 검토 전 `DRAFT / UNASSIGNED`이며 로컬 PASS를 운영 승인으로 승격하지 않습니다.
 
 ## 아직 아닌 것
 
