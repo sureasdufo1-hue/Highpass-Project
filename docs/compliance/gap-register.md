@@ -1,5 +1,9 @@
 # Compliance Gap Register
 
+검토 기준일: 2026-08-26
+
+상세 위험도와 P0/P1 조치는 `docs/compliance/risk-register.md` 및 `docs/compliance/gap-remediation-plan.md`를 기준으로 한다.
+
 | Gap ID | Area | Current | Target | Evidence | Owner | Priority |
 |---|---|---|---|---|---|---|
 | GAP-001 | Legal review | NOT VERIFIED | legal counsel review | compliance docs | Project Owner | P0 before production |

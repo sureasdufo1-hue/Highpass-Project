@@ -14,17 +14,25 @@ import {
 } from "./auth.js";
 import { HipassService, ServiceValidationError } from "./services.js";
 import { createStoreFromEnv } from "./store-factory.js";
-import { getBearerToken, readJson, sendError, sendJson, serveStatic } from "./http-utils.js";
+import { getBearerToken, readJson, RequestBodyError, sendError, sendJson, serveStatic } from "./http-utils.js";
+import { OpfLocalAdapter } from "./privacy-adapter.js";
+import { PrivacyProcessingError } from "./privacy-contracts.js";
+import { PrivacyTextInspectionService } from "./privacy-service.js";
 
 const port = Number(process.env.PORT ?? 3000);
 validateAuthConfiguration(process.env);
 const store = createStoreFromEnv();
 await store.load();
 const service = new HipassService(store);
+const privacyService = new PrivacyTextInspectionService({ adapter: new OpfLocalAdapter() });
 
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url, `http://${request.headers.host}`);
+    if (url.pathname.startsWith("/internal/privacy/")) {
+      await routePrivacy(request, response, url);
+      return;
+    }
     if (url.pathname.startsWith("/api/")) {
       await routeApi(request, response, url);
       return;
@@ -43,6 +51,10 @@ const server = createServer(async (request, response) => {
       sendJson(response, error.statusCode, { error: error.code });
       return;
     }
+    if (error instanceof PrivacyProcessingError || error instanceof RequestBodyError) {
+      sendJson(response, error.statusCode, { error: error.code });
+      return;
+    }
     console.error(error);
     sendError(response, 500, "Internal server error");
   }
@@ -51,6 +63,34 @@ const server = createServer(async (request, response) => {
 server.listen(port, () => {
   console.log(`HiPass MVP is running at http://localhost:${port}`);
 });
+
+async function routePrivacy(request, response, url) {
+  let principal;
+  try {
+    principal = authenticateRequest(request);
+    requireInternalService(principal);
+  } catch (error) {
+    if (error instanceof AuthError) {
+      throw new PrivacyProcessingError(error.statusCode === 401 ? 401 : 403, "AUTH_REQUIRED", "AUTH_REQUIRED");
+    }
+    throw error;
+  }
+  if (request.method === "GET" && url.pathname === "/internal/privacy/health/ready") {
+    const readiness = await privacyService.readiness();
+    sendJson(response, readiness.status === "READY" ? 200 : 503, readiness);
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/internal/privacy/text-inspections") {
+    const contentType = String(request.headers["content-type"] ?? "").split(";", 1)[0].trim().toLowerCase();
+    if (contentType !== "application/json") {
+      throw new PrivacyProcessingError(415, "UNSUPPORTED_MEDIA_TYPE", "UNSUPPORTED_MEDIA_TYPE");
+    }
+    const body = await readJson(request, { maxBytes: 40 * 1024, strictUtf8: true });
+    sendJson(response, 200, await privacyService.inspect(body, principal));
+    return;
+  }
+  sendError(response, 404, "Privacy route not found");
+}
 
 async function routeApi(request, response, url) {
   const segments = url.pathname.split("/").filter(Boolean);

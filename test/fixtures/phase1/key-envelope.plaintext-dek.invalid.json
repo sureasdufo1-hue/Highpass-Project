@@ -1,0 +1,1 @@
+{"schemaVersion":"1.0","envelopeId":"kenv_abcdefghijklmnop","packageId":"pkg_abcdefghijklmnop","recipientType":"B_GATEWAY","recipientRef":"gateway_b","algorithm":"HPKE-BASE-X25519-SHA256-A256GCM","keyVersion":1,"wrappedDek":"YWJjZA","createdAt":"2026-09-01T00:00:00Z","status":"ACTIVE","plaintextDek":"forbidden"}

@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "certificates": [
+    {
+      "id": "edge-localhost",
+      "path": "tmp/certs/edge/localhost.crt",
+      "type": "runtime",
+      "production": false,
+      "expiryPolicy": "enforce",
+      "purpose": "Local HTTPS edge endpoint"
+    },
+    {
+      "id": "hipass-dev-root-ca",
+      "path": "tmp/certs/mtls/ca.crt",
+      "type": "runtime",
+      "production": false,
+      "expiryPolicy": "enforce",
+      "purpose": "Development root CA for local TLS and mTLS"
+    },
+    {
+      "id": "gateway-client",
+      "path": "tmp/certs/mtls/gateway-client.crt",
+      "keyPath": "tmp/certs/mtls/gateway-client.key",
+      "type": "runtime",
+      "production": false,
+      "expiryPolicy": "enforce",
+      "purpose": "Gateway client certificate for Orthanc mTLS"
+    },
+    {
+      "id": "orthanc-mtls-server",
+      "path": "tmp/certs/mtls/orthanc-server.crt",
+      "type": "runtime",
+      "production": false,
+      "expiryPolicy": "enforce",
+      "purpose": "Orthanc mTLS proxy server certificate"
+    },
+    {
+      "id": "expired-client-negative-fixture",
+      "path": "tmp/certs/bad/bad.crt",
+      "keyPath": "tmp/certs/bad/bad.key",
+      "type": "test-fixture",
+      "production": false,
+      "expectedState": "expired",
+      "expiryPolicy": "expect-expired",
+      "purpose": "Negative mTLS test fixture; must remain expired so rejected-client tests stay meaningful"
+    }
+  ]
+}

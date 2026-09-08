@@ -17,6 +17,8 @@ COPY scripts ./scripts
 COPY src ./src
 COPY public ./public
 COPY db ./db
+COPY config ./config
+COPY services/privacy-inference ./services/privacy-inference
 
 EXPOSE 3000
 CMD ["scripts/start-postgres.js"]

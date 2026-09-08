@@ -1,0 +1,8 @@
+key-envelope = {
+  0: "1.0", 1: tstr, 2: tstr,
+  3: ("MOBILE_DEVICE"/"B_GATEWAY"/"KMS_ESCROW"), 4: tstr,
+  5: ("HPKE-BASE-X25519-SHA256-A256GCM"/"RSA-OAEP-256-A256KWP"),
+  6: uint .ge 1, 7: bstr, ? 8: bytes .size 32, 9: time, ? 10: time,
+  11: ("ACTIVE"/"DISABLED"/"DESTROYED")
+}
+; Key 7 contains wrapped DEK only, never a plaintext DEK.

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -437,9 +437,17 @@ test("issues short-lived signed DICOMweb token after policy allow", async () => 
     assert.equal(claims.doctorId, "DOC-B-01");
     assert.equal(claims.targetHospitalId, "HOSP-B");
     assert.equal(claims.studyInstanceUid, "1.2.410.100.1.20260620.001");
+    assert.equal(claims.iss, "highpass-control-plane");
+    assert.equal(claims.aud, "highpass-dicomweb-gateway");
     assert.equal(claims.auditSessionId, result.auditSessionId);
     assert.equal(claims.patientId, undefined);
-    assert.equal(store.get("dicomAccessTokenLogs").at(-1).status, "ACTIVE");
+    const tokenLog = store.get("dicomAccessTokenLogs").at(-1);
+    assert.equal(tokenLog.status, "ACTIVE");
+    assert.equal(tokenLog.jti, claims.jti);
+    assert.match(tokenLog.tokenHash, /^sha256:[a-f0-9]{64}$/);
+    assert.equal(Object.hasOwn(tokenLog, "token"), false);
+    assert.equal(JSON.stringify(store.data).includes(result.accessToken), false);
+    assert.equal((await readFile(store.filePath, "utf8")).includes(result.accessToken), false);
     assert.equal(store.get("auditLogs").at(-1).action, "TOKEN_ISSUED");
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -477,6 +485,22 @@ test("denies expired token and records TOKEN_EXPIRED", async () => {
     assert.equal(verified.reason, "TOKEN_EXPIRED");
     assert.equal(store.get("dicomAccessTokenLogs").at(-1).status, "EXPIRED");
     assert.equal(store.get("auditLogs").at(-1).action, "TOKEN_EXPIRED");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("denies DICOMweb token when issuer or audience does not match runtime policy", async () => {
+  const { dir, service } = await createService();
+  try {
+    const issuerToken = await service.requestDicomAccessToken(accessRequest());
+    service.dicomTokenIssuer = "unexpected-issuer";
+    assert.equal((await service.verifyDicomAccessToken(issuerToken.accessToken)).reason, "TOKEN_ISSUER_MISMATCH");
+
+    service.dicomTokenIssuer = "highpass-control-plane";
+    const audienceToken = await service.requestDicomAccessToken(accessRequest());
+    service.dicomTokenAudience = "unexpected-audience";
+    assert.equal((await service.verifyDicomAccessToken(audienceToken.accessToken)).reason, "TOKEN_AUDIENCE_MISMATCH");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -1255,7 +1279,7 @@ test("revoked consent invalidates active tokens", async () => {
     });
 
     await service.revokeConsent("CONSENT-DEMO-ACTIVE", "P-1001");
-    const token = store.get("dicomAccessTokenLogs").find((item) => item.token === tokenResult.token.token);
+    const token = store.get("dicomAccessTokenLogs").find((item) => item.tokenId === tokenResult.token.tokenId);
 
     assert.equal(token.status, "REVOKED");
     assert.equal(service.introspectToken(tokenResult.token.token).active, false);

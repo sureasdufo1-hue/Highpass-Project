@@ -1,6 +1,6 @@
 services:
   hipass-edge:
-    image: newproject-hipass-control-api
+    image: ${HIPASS_APP_IMAGE:-highpass-platform-mvp:local}
     container_name: hipass-edge
     command: ["scripts/edge-proxy.js"]
     environment:
@@ -33,6 +33,7 @@ services:
     restart: unless-stopped
 
   hipass-control-api:
+    image: ${HIPASS_APP_IMAGE:-highpass-platform-mvp:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -80,7 +81,7 @@ services:
     restart: unless-stopped
 
   hospital-a-orthanc-mtls:
-    image: newproject-hipass-control-api
+    image: ${HIPASS_APP_IMAGE:-highpass-platform-mvp:local}
     container_name: hospital-a-orthanc-mtls
     command: ["scripts/orthanc-mtls-proxy.js"]
     environment:
@@ -89,6 +90,7 @@ services:
       ORTHANC_MTLS_CA_FILE: /run/secrets/hipass_mtls_ca
       ORTHANC_MTLS_CERT_FILE: /run/secrets/hipass_orthanc_server_cert
       ORTHANC_MTLS_KEY_FILE: /run/secrets/hipass_orthanc_server_key
+      ORTHANC_MTLS_ALLOWED_CLIENT_SAN: URI:spiffe://highpass.local/gateway/hipass-gateway-service
     expose:
       - "8443"
     volumes:
@@ -132,7 +134,7 @@ services:
     restart: unless-stopped
 
   hospital-a-orthanc-seed:
-    image: newproject-hipass-control-api
+    image: ${HIPASS_APP_IMAGE:-highpass-platform-mvp:local}
     container_name: hospital-a-orthanc-seed
     command: ["scripts/load-sample-dicom.js"]
     environment:

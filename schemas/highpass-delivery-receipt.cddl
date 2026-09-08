@@ -1,0 +1,7 @@
+delivery-receipt = {
+  0: "1.0", 1: tstr, 2: tstr, 3: tstr, 4: tstr,
+  5: bytes .size 32, 6: time,
+  7: ("RECEIVED"/"VERIFIED"/"IMPORTED"/"FAILED"), ? 8: tstr,
+  9: ("ES256"/"EdDSA"), 10: bstr
+}
+; Signature covers deterministic encoding with key 10 omitted.

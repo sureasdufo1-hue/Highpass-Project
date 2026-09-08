@@ -1,10 +1,10 @@
-import { createServer } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import https from "node:https";
 import { X509Certificate } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
-const now = new Date();
+const now = new Date(process.env.HIPASS_CERTIFICATE_NOW ?? Date.now());
 const alerts = [];
 const received = [];
 const receiver = createServer(async (request, response) => {
@@ -83,20 +83,16 @@ function checkDockerHealth() {
 }
 
 function checkCertificates() {
-  for (const file of [
-    "tmp/certs/edge/localhost.crt",
-    "tmp/certs/mtls/ca.crt",
-    "tmp/certs/mtls/gateway-client.crt",
-    "tmp/certs/mtls/orthanc-server.crt",
-    "tmp/certs/bad/bad.crt",
-  ]) {
+  const manifest = JSON.parse(readFileSync("config/certificate-lifecycle.json", "utf8"));
+  for (const entry of manifest.certificates ?? []) {
+    if (entry.type !== "runtime" || entry.expiryPolicy !== "enforce") continue;
     try {
-      const cert = new X509Certificate(readFileSync(file));
+      const cert = new X509Certificate(readFileSync(entry.path));
       const days = Math.floor((new Date(cert.validTo).getTime() - now.getTime()) / 86400000);
-      if (days < 0) alert("CERTIFICATE_EXPIRED", "P1", "certificate-expiry", { file, daysRemaining: days });
-      else if (days <= 7) alert("CERTIFICATE_NEAR_EXPIRY", "P2", "certificate-expiry", { file, daysRemaining: days });
+      if (days < 0) alert("CERTIFICATE_EXPIRED", "P1", "certificate-expiry", { id: entry.id, file: entry.path, daysRemaining: days });
+      else if (days <= 7) alert("CERTIFICATE_NEAR_EXPIRY", "P2", "certificate-expiry", { id: entry.id, file: entry.path, daysRemaining: days });
     } catch {
-      alert("CERTIFICATE_READ_FAILED", "P2", "certificate-expiry", { file });
+      alert("CERTIFICATE_READ_FAILED", "P2", "certificate-expiry", { id: entry.id, file: entry.path });
     }
   }
 }
@@ -131,9 +127,19 @@ function alert(name, severity, source, labels = {}) {
 }
 
 async function emit(payload) {
-  await fetch(receiverUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
+  const url = new URL(receiverUrl);
+  await new Promise((resolve, reject) => {
+    const request = httpRequest({
+      method: "POST",
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      headers: { "content-type": "application/json" },
+    }, (response) => {
+      response.resume();
+      response.on("end", resolve);
+    });
+    request.on("error", reject);
+    request.end(JSON.stringify(payload));
   });
 }

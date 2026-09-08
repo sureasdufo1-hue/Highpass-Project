@@ -4,6 +4,7 @@ import https from "node:https";
 
 const port = Number(process.env.ORTHANC_MTLS_PORT ?? 8443);
 const upstreamOrigin = process.env.ORTHANC_UPSTREAM_ORIGIN ?? "http://hospital-a-orthanc:8042";
+const allowedClientSan = requiredEnv("ORTHANC_MTLS_ALLOWED_CLIENT_SAN");
 
 https.createServer({
   cert: readFileSync(requiredEnv("ORTHANC_MTLS_CERT_FILE")),
@@ -15,6 +16,13 @@ https.createServer({
   if (!request.client.authorized) {
     response.writeHead(401, { "content-type": "application/json" });
     response.end(JSON.stringify({ error: "CLIENT_CERT_REQUIRED" }));
+    return;
+  }
+  const peer = request.socket.getPeerCertificate();
+  const presentedSans = parseSubjectAltName(peer.subjectaltname);
+  if (!presentedSans.includes(allowedClientSan)) {
+    response.writeHead(403, { "content-type": "application/json" });
+    response.end(JSON.stringify({ error: "CLIENT_CERT_IDENTITY_DENIED" }));
     return;
   }
   proxyToOrthanc(request, response);
@@ -45,4 +53,11 @@ function requiredEnv(name) {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required`);
   return value;
+}
+
+function parseSubjectAltName(value) {
+  return String(value ?? "")
+    .split(/,\s*/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }

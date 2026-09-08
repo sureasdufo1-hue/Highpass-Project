@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://highpass.local/schemas/privacy-approved-uses.schema.json",
+  "title": "Highpass approved-use registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "environment", "records"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "environment": { "const": "SYNTHETIC_LOCAL_TEST_ONLY" },
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["approvedUseRef", "sourceOrganizationId", "requesterRef", "allowedActions", "sourceArtifactRef", "sourceArtifactVersion", "purpose", "recipientRef", "consentOrBasisVersion", "policyVersion", "rulesProfile", "mappingScope", "issuedAt", "expiresAt", "revokedAt"],
+        "properties": {
+          "approvedUseRef": { "type": "string", "minLength": 1 },
+          "sourceOrganizationId": { "type": "string", "minLength": 1 },
+          "requesterRef": { "type": "string", "minLength": 1 },
+          "allowedActions": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } },
+          "sourceArtifactRef": { "type": "string", "minLength": 1 },
+          "sourceArtifactVersion": { "type": "integer", "minimum": 1 },
+          "purpose": { "enum": ["RESEARCH", "TEACHING", "DEMO", "AI_LOCAL"] },
+          "recipientRef": { "type": "string", "minLength": 1 },
+          "consentOrBasisVersion": { "type": "string", "minLength": 1 },
+          "policyVersion": { "type": "string", "minLength": 1 },
+          "rulesProfile": { "type": "string", "minLength": 1 },
+          "mappingScope": { "type": "string", "minLength": 1 },
+          "dateShiftDays": { "type": "integer", "minimum": -3650, "maximum": 3650 },
+          "referenceDate": { "type": "string", "format": "date" },
+          "issuedAt": { "type": "string", "format": "date-time" },
+          "expiresAt": { "type": "string", "format": "date-time" },
+          "revokedAt": { "type": ["string", "null"], "format": "date-time" }
+        }
+      }
+    }
+  }
+}

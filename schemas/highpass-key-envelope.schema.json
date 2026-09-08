@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://highpass.example/schemas/highpass-key-envelope.schema.json",
+  "title": "Highpass Wrapped Key Envelope",
+  "type": "object",
+  "required": ["schemaVersion", "envelopeId", "packageId", "recipientType", "recipientRef", "algorithm", "keyVersion", "wrappedDek", "createdAt", "status"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"}, "envelopeId": {"type": "string", "pattern": "^kenv_[A-Za-z0-9_-]{16,80}$"}, "packageId": {"type": "string", "pattern": "^pkg_[A-Za-z0-9_-]{16,80}$"},
+    "recipientType": {"enum": ["MOBILE_DEVICE", "B_GATEWAY", "KMS_ESCROW"]}, "recipientRef": {"type": "string", "maxLength": 128},
+    "algorithm": {"enum": ["HPKE-BASE-X25519-SHA256-A256GCM", "RSA-OAEP-256-A256KWP"]}, "keyVersion": {"type": "integer", "minimum": 1},
+    "wrappedDek": {"type": "string", "contentEncoding": "base64url", "contentMediaType": "application/octet-stream", "maxLength": 16384},
+    "aadHash": {"type": "string", "contentEncoding": "base64url", "pattern": "^[A-Za-z0-9_-]{43}$"}, "createdAt": {"type": "string", "format": "date-time"}, "expiresAt": {"type": "string", "format": "date-time"}, "status": {"enum": ["ACTIVE", "DISABLED", "DESTROYED"]}
+  },
+  "additionalProperties": false
+}

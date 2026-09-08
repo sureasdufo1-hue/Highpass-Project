@@ -24,6 +24,7 @@ export class PostgresStore {
     this.connectionString = connectionString;
     this.client = null;
     this.data = null;
+    this.persistedData = null;
     this.saveQueue = Promise.resolve();
   }
 
@@ -34,8 +35,10 @@ export class PostgresStore {
     await this.ensureSchema();
 
     this.data = await this.readAll();
+    this.persistedData = structuredClone(this.data);
     if (this.data.patients.length === 0) {
       this.data = createSeedData();
+      this.persistedData = null;
       await this.save();
     } else if (applyDemoDataMigrations(this.data)) {
       await this.save();
@@ -69,6 +72,12 @@ export class PostgresStore {
 
   async saveNow() {
     normalizeStoreData(this.data);
+    const appendChanges = this.appendOnlyChanges();
+    if (appendChanges) {
+      await this.saveAppendOnly(appendChanges);
+      this.persistedData = structuredClone(this.data);
+      return;
+    }
     await this.client.query("BEGIN");
     try {
       await this.client.query(`
@@ -102,6 +111,53 @@ export class PostgresStore {
       await this.insertTransferUsageLogs(this.data.transferUsageLogs);
       await this.insertResearchExportRequests(this.data.researchExportRequests);
       await this.insertPseudonymMappings(this.data.pseudonymMappings);
+      await this.client.query("COMMIT");
+      this.persistedData = structuredClone(this.data);
+    } catch (error) {
+      await this.client.query("ROLLBACK");
+      throw error;
+    }
+  }
+
+  appendOnlyChanges() {
+    if (!this.persistedData) return null;
+    const appendable = new Map([
+      ["consents", "consentId"],
+      ["consentScopes", "scopeId"],
+      ["dicomAccessTokenLogs", "tokenId"],
+      ["auditLogs", "auditId"],
+      ["transferUsageLogs", "usageId"],
+      ["researchExportRequests", "requestId"],
+      ["pseudonymMappings", "mappingId"],
+    ]);
+    const changes = {};
+    for (const name of this.collectionNames) {
+      const current = this.data[name] ?? [];
+      const previous = this.persistedData[name] ?? [];
+      if (!appendable.has(name)) {
+        if (JSON.stringify(current) !== JSON.stringify(previous)) return null;
+        continue;
+      }
+      if (current.length < previous.length) return null;
+      const key = appendable.get(name);
+      for (let index = 0; index < previous.length; index += 1) {
+        if (current[index]?.[key] !== previous[index]?.[key] || JSON.stringify(current[index]) !== JSON.stringify(previous[index])) return null;
+      }
+      changes[name] = current.slice(previous.length);
+    }
+    return changes;
+  }
+
+  async saveAppendOnly(changes) {
+    await this.client.query("BEGIN");
+    try {
+      await this.insertConsents(changes.consents);
+      await this.insertConsentScopes(changes.consentScopes);
+      await this.insertTokenLogs(changes.dicomAccessTokenLogs);
+      await this.insertAuditLogs(changes.auditLogs);
+      await this.insertTransferUsageLogs(changes.transferUsageLogs);
+      await this.insertResearchExportRequests(changes.researchExportRequests);
+      await this.insertPseudonymMappings(changes.pseudonymMappings);
       await this.client.query("COMMIT");
     } catch (error) {
       await this.client.query("ROLLBACK");
@@ -308,14 +364,18 @@ export class PostgresStore {
     for (const row of rows) {
       await this.client.query(
         `INSERT INTO dicom_access_token_logs (
-           token_id, token, audit_session_id, consent_id, doctor_id, target_hospital_id,
+           token_id, token_hash, jti, issuer, audience, scope, audit_session_id, consent_id, doctor_id, target_hospital_id,
            study_instance_uid, series_instance_uid, allowed_series_uids, permission, purpose,
            issued_at, expires_at, status
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14)`,
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, $16, $17, $18)`,
         [
           row.tokenId,
-          row.token,
+          row.tokenHash,
+          row.jti ?? row.tokenId,
+          row.issuer,
+          row.audience,
+          JSON.stringify(row.scope ?? {}),
           row.auditSessionId ?? null,
           row.consentId,
           row.doctorId,
@@ -527,7 +587,11 @@ const rowMappers = {
   }),
   dicomAccessTokenLogs: (row) => ({
     tokenId: row.token_id,
-    token: row.token,
+    tokenHash: row.token_hash,
+    jti: row.jti,
+    issuer: row.issuer,
+    audience: row.audience,
+    scope: row.scope ?? {},
     auditSessionId: row.audit_session_id,
     consentId: row.consent_id,
     doctorId: row.doctor_id,
@@ -750,7 +814,12 @@ ALTER TABLE consent_scopes ALTER COLUMN created_at SET NOT NULL;
 
 CREATE TABLE IF NOT EXISTS dicom_access_token_logs (
   token_id varchar PRIMARY KEY,
-  token varchar NOT NULL UNIQUE,
+  token varchar UNIQUE,
+  token_hash varchar UNIQUE,
+  jti varchar UNIQUE,
+  issuer varchar,
+  audience varchar,
+  scope jsonb,
   audit_session_id varchar,
   consent_id varchar NOT NULL REFERENCES consents(consent_id),
   doctor_id varchar NOT NULL,
@@ -769,6 +838,12 @@ ALTER TABLE dicom_access_token_logs ADD COLUMN IF NOT EXISTS audit_session_id va
 ALTER TABLE dicom_access_token_logs ADD COLUMN IF NOT EXISTS allowed_series_uids jsonb;
 ALTER TABLE dicom_access_token_logs ADD COLUMN IF NOT EXISTS permission varchar;
 ALTER TABLE dicom_access_token_logs ADD COLUMN IF NOT EXISTS purpose varchar;
+ALTER TABLE dicom_access_token_logs ADD COLUMN IF NOT EXISTS token_hash varchar;
+ALTER TABLE dicom_access_token_logs ADD COLUMN IF NOT EXISTS jti varchar;
+ALTER TABLE dicom_access_token_logs ADD COLUMN IF NOT EXISTS issuer varchar;
+ALTER TABLE dicom_access_token_logs ADD COLUMN IF NOT EXISTS audience varchar;
+ALTER TABLE dicom_access_token_logs ADD COLUMN IF NOT EXISTS scope jsonb;
+ALTER TABLE dicom_access_token_logs ALTER COLUMN token DROP NOT NULL;
 
 CREATE TABLE IF NOT EXISTS audit_logs (
   audit_id varchar PRIMARY KEY,
@@ -861,7 +936,8 @@ CREATE INDEX IF NOT EXISTS idx_gateways_hospital ON gateways(hospital_id);
 CREATE INDEX IF NOT EXISTS idx_consents_lookup ON consents(patient_id, source_hospital_id, target_hospital_id, purpose, status);
 CREATE INDEX IF NOT EXISTS idx_consent_scopes_lookup ON consent_scopes(consent_id, study_instance_uid, series_instance_uid);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_consent_scopes_unique ON consent_scopes(consent_id, study_instance_uid, COALESCE(series_instance_uid, ''));
-CREATE INDEX IF NOT EXISTS idx_tokens_token ON dicom_access_token_logs(token);
+CREATE INDEX IF NOT EXISTS idx_tokens_token_hash ON dicom_access_token_logs(token_hash) WHERE token_hash IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tokens_jti ON dicom_access_token_logs(jti) WHERE jti IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_actor_created_at ON audit_logs(actor_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_action_created_at ON audit_logs(action, created_at);

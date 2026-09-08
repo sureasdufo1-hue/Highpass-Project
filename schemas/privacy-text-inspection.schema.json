@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://highpass.local/schemas/privacy-text-inspection.schema.json",
+  "title": "Highpass PF-1 synchronous text inspection request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["mediaType", "content", "approvedUseRef", "purpose", "recipientRef", "sourceOrganizationId", "sourceArtifactRef", "sourceArtifactVersion"],
+  "properties": {
+    "mediaType": { "const": "text/plain" },
+    "content": { "type": "string", "minLength": 1, "maxLength": 32768 },
+    "approvedUseRef": { "type": "string", "minLength": 1 },
+    "purpose": { "enum": ["RESEARCH", "TEACHING", "DEMO", "AI_LOCAL"] },
+    "recipientRef": { "type": "string", "minLength": 1 },
+    "sourceOrganizationId": { "type": "string", "minLength": 1 },
+    "sourceArtifactRef": { "type": "string", "minLength": 1 },
+    "sourceArtifactVersion": { "type": ["integer", "string"] },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "personNames": { "type": "array", "items": { "type": "string" } },
+        "fieldContexts": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

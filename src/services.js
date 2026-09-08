@@ -43,6 +43,8 @@ export class HipassService {
     this.store = store;
     this.clock = clock;
     this.tokenSecret = options.tokenSecret ?? process.env.DICOM_TOKEN_SECRET ?? randomBytes(32).toString("hex");
+    this.dicomTokenIssuer = options.dicomTokenIssuer ?? process.env.DICOM_TOKEN_ISSUER ?? "highpass-control-plane";
+    this.dicomTokenAudience = options.dicomTokenAudience ?? process.env.DICOM_TOKEN_AUDIENCE ?? "highpass-dicomweb-gateway";
     this.dicomTokenKeyProvider = options.dicomTokenKeyProvider ?? createKeyProvider(this.tokenSecret, process.env);
     this.tokenTtlMinutes = normalizeTokenTtlMinutes(options.tokenTtlMinutes ?? process.env.DICOM_TOKEN_TTL_MINUTES);
     this.anomalyRules = normalizeAnomalyRules(options.anomalyRules);
@@ -608,6 +610,8 @@ export class HipassService {
     const tokenId = makeId("jti");
     const claims = {
       jti: tokenId,
+      iss: this.dicomTokenIssuer,
+      aud: this.dicomTokenAudience,
       kid: this.dicomTokenKeyProvider.currentKey()?.kid ?? null,
       consentId: consent.consentId,
       doctorId: input.doctorId,
@@ -623,7 +627,11 @@ export class HipassService {
     const accessToken = this.signAccessToken(claims);
     this.store.get("dicomAccessTokenLogs").push({
       tokenId,
-      token: digestToken(accessToken),
+      jti: tokenId,
+      tokenHash: digestToken(accessToken),
+      issuer: this.dicomTokenIssuer,
+      audience: this.dicomTokenAudience,
+      scope: buildDicomTokenScope(input.studyInstanceUid, allowedSeriesUids, consent.permission),
       auditSessionId: policy.auditSessionId,
       consentId: consent.consentId,
       doctorId: input.doctorId,
@@ -689,8 +697,15 @@ export class HipassService {
     const claims = parsed.claims;
     const auditSessionId = claims.auditSessionId ?? makeId("audit-session");
     const tokenLog = this.store.get("dicomAccessTokenLogs").find((token) => token.tokenId === claims.jti);
-    if (!tokenLog || tokenLog.token !== digestToken(rawToken)) {
+    if (!tokenLog || !safeEqual(tokenLog.tokenHash ?? "", digestToken(rawToken))) {
       return invalid("TOKEN_INVALID", auditSessionId, claims);
+    }
+    if (claims.iss !== this.dicomTokenIssuer || tokenLog.issuer !== this.dicomTokenIssuer) {
+      return invalid("TOKEN_ISSUER_MISMATCH", auditSessionId, claims);
+    }
+    const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+    if (!audiences.includes(this.dicomTokenAudience) || tokenLog.audience !== this.dicomTokenAudience) {
+      return invalid("TOKEN_AUDIENCE_MISMATCH", auditSessionId, claims);
     }
     if (tokenLog.status === AccessTokenStatus.REVOKED) {
       return invalid("TOKEN_CONSENT_INACTIVE", auditSessionId, claims);
@@ -743,7 +758,7 @@ export class HipassService {
     const ttl = tokenTtlByPurposeMinutes[access.consent.purpose] ?? 5;
     const token = {
       tokenId: makeId("token"),
-      token: makeId("dicom"),
+      jti: null,
       consentId: access.consent.consentId,
       doctorId: input.doctorId,
       targetHospitalId: input.targetHospitalId,
@@ -753,6 +768,12 @@ export class HipassService {
       expiresAt: addMinutesIso(ttl, new Date(this.clock())),
       status: "ACTIVE",
     };
+    token.jti = token.tokenId;
+    const rawToken = makeId("dicom");
+    token.tokenHash = digestToken(rawToken);
+    token.issuer = this.dicomTokenIssuer;
+    token.audience = this.dicomTokenAudience;
+    token.scope = buildDicomTokenScope(input.studyInstanceUid, input.seriesInstanceUid ? [input.seriesInstanceUid] : [], "VIEW_ONLY");
     this.store.get("dicomAccessTokenLogs").push(token);
     await this.writeAudit({
       actorType: ActorType.DOCTOR,
@@ -765,11 +786,12 @@ export class HipassService {
       result: "SUCCESS",
     });
     await this.store.save();
-    return { allowed: true, reason: "TOKEN_ISSUED", token };
+    return { allowed: true, reason: "TOKEN_ISSUED", token: { ...token, token: rawToken, tokenHash: undefined } };
   }
 
   introspectToken(rawToken, studyInstanceUid, seriesInstanceUid) {
-    const token = this.store.get("dicomAccessTokenLogs").find((item) => item.token === rawToken);
+    const presentedHash = digestToken(rawToken);
+    const token = this.store.get("dicomAccessTokenLogs").find((item) => safeEqual(item.tokenHash ?? "", presentedHash));
     if (!token) return { active: false, reason: "TOKEN_NOT_FOUND" };
     if (token.status !== "ACTIVE") return { active: false, reason: `TOKEN_${token.status}` };
     if (new Date(token.expiresAt).getTime() < new Date(this.clock()).getTime()) {
@@ -1717,6 +1739,14 @@ function safeEqual(left, right) {
 
 function digestToken(token) {
   return `sha256:${createHash("sha256").update(token).digest("hex")}`;
+}
+
+function buildDicomTokenScope(studyInstanceUid, allowedSeriesUids, permission) {
+  return {
+    studyInstanceUid,
+    allowedSeriesUids: [...new Set(allowedSeriesUids ?? [])],
+    actions: permission === Permission.DOWNLOAD_ALLOWED ? ["VIEW", "DOWNLOAD"] : ["VIEW"],
+  };
 }
 
 function dicomValue(row, tag) {

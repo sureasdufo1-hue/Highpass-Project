@@ -1,0 +1,26 @@
+sequenceDiagram
+    autonumber
+    participant AE as A Edge
+    participant K as KMS/HSM
+    participant CP as Policy/Key Auth
+    participant BG as B Gateway
+    participant AU as Audit
+    AE->>K: create per-package DEK
+    K-->>AE: transient DEK handle
+    AE->>AE: AES-256-GCM encrypt DICOM/chunks
+    AE->>K: wrap for device + escrow (package,manifest hash)
+    K-->>AE: Key Envelope refs; raw DEK not persisted
+    BG->>CP: request release(consent,Ticket,B,Study,device,integrity)
+    CP->>CP: verify patient approval + B MFA + institution + scope + TTL
+    CP->>AU: KEY_RELEASE_ALLOW/DENY
+    CP->>K: one-time authorization(package,B,key version)
+    K->>K: rewrap DEK for B Gateway public key
+    K-->>BG: B Key Envelope, never plaintext DEK
+    BG->>K: unwrap using B workload identity/private key protection
+    BG->>BG: decrypt only after integrity verification
+    BG->>AU: KEY_UNWRAP/DECRYPT result
+    BG->>K: destroy transient handle after view/import
+
+%% Revoked consent, expired/replayed Ticket, wrong institution/scope, blocked device,
+%% failed integrity or stale key version => no authorization and no envelope.
+%% ML-KEM hybrid wrapping is P1 crypto-agility, not an implemented claim.

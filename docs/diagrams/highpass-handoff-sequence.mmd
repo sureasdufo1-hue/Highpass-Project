@@ -1,0 +1,28 @@
+sequenceDiagram
+    autonumber
+    actor C as B Clinician
+    participant CP as Control Plane
+    participant M as Patient Mobile
+    participant B as B Gateway
+    participant A as Audit
+    C->>CP: OIDC+MFA, create Handoff(B,purpose,TTL)
+    CP->>A: HANDOFF_CREATED
+    CP-->>C: opaque one-time QR Ticket
+    M->>CP: scan Ticket + device proof
+    CP-->>M: safe B/purpose/scope summary
+    M->>CP: patient re-auth + approve(package,consent)
+    CP->>CP: consent+institution+clinician+Study+Ticket+device ABAC
+    CP->>A: POLICY_ALLOW/DENY
+    CP-->>M: short Package Transfer Token
+    M->>B: start/chunk/complete ciphertext upload
+    B->>B: manifest, count, hash, GCM tag verify
+    B->>CP: key-release authorization request
+    CP-->>B: authorized B key envelope
+    B->>B: unwrap in B trust zone; view/import policy
+    B->>CP: signed Delivery Receipt + consume Ticket (atomic)
+    CP->>A: RECEIVED/VERIFIED/CONSUMED
+    CP-->>M: delete or cryptographically disable package
+
+%% Error contract: expired/revoked/wrong institution/replay/device blocked => DENY before upload/key release.
+%% Interrupted upload resumes only with a fresh grant and verified chunk checkpoint.
+%% Gateway/Relay/PACS failure never permits direct browser-to-PACS bypass.

@@ -1,5 +1,9 @@
 # HiPass Platform
 
+> **CAPSTONE MVP · 합성 데이터 · 비운영 기술 테스트 환경**
+>
+> NOT A PIPA LEGAL DETERMINATION, ISMS-P CERTIFICATION, HOSPITAL SECURITY APPROVAL, OR PRODUCTION READINESS CLAIM.
+
 환자 동의를 기준으로 병원 간 의료영상을 안전하게 조회하는 PoC입니다.
 
 CD로 영상을 옮기는 흐름을 줄이고, 필요한 병원과 의료진에게 필요한 Study/Series 범위만 열어주는 구조를 실험합니다. 실제 환자정보나 실제 병원 PACS에는 연결하지 않습니다.
@@ -14,6 +18,7 @@ CD로 영상을 옮기는 흐름을 줄이고, 필요한 병원과 의료진에�
 - OHIF 기반 Viewer
 - 감사로그와 이상행위 탐지
 - 연구용 가명처리 시뮬레이션
+- PF-1 로컬 텍스트 Privacy Filter preview·fail-closed 통합(실제 model checkpoint는 별도 준비)
 - Docker Compose 실행 환경
 - GitHub Security Gate와 운영 증적 문서
 
@@ -111,6 +116,14 @@ pnpm run start:postgres
 pnpm test
 ```
 
+실행 중인 Docker Compose 환경의 전체 캡스톤 MVP 검증:
+
+```powershell
+node scripts\mvp-verify.js
+```
+
+패키지 실행이 가능한 환경에서는 `pnpm run mvp:verify`도 같다. 자동 생성 증적은 `evidence/generated/`에 저장되며 검토 전 `DRAFT / UNASSIGNED`다. 발표 재현은 `docs/DEMO-RUNBOOK.md`, 범위는 `docs/MVP-SCOPE.md`, 상용화 전 작업은 `docs/COMMERCIALIZATION-BACKLOG.md`를 참고한다.
+
 보안 게이트:
 
 ```bash
@@ -119,6 +132,8 @@ pnpm run security:gate
 pnpm run security:network
 pnpm run security:readiness
 pnpm run security:container
+pnpm run test:cert-fixtures
+pnpm run test:mtls-negative
 ```
 
 운영 증적 점검:
@@ -129,15 +144,36 @@ pnpm run ops:monitor
 node scripts/ops-rollback-check.js
 ```
 
+Privacy Filter 도입 기준, 처리정책과 현재 구현 백로그는
+`docs/privacy/README.md`에서 확인한다. 등록된 정책은 합성 PoC용 검토 초안이며
+실제 개인정보 처리의 법률 적합성이나 의료기관 승인을 의미하지 않는다.
+
+PF-0/PF-1 합성 단위시험과 PostgreSQL/RLS Gate는 다음으로 실행한다.
+
+```powershell
+pnpm run test:privacy
+pnpm run privacy:db-gate
+pnpm run privacy:model-smoke
+```
+
+`privacy:db-gate`는 Docker Engine이 없으면 `ENVIRONMENT BLOCKED`를 반환한다. 실제 OPF model은 `HIPASS_PRIVACY_PYTHON`과 `HIPASS_PRIVACY_MODEL_PATH`에 명시적 local runtime/checkpoint가 준비된 경우에만 `privacy:model-smoke`가 성공한다.
+
+인증서 수명주기는 `config/certificate-lifecycle.json`에서 관리합니다. Runtime 인증서는 `ops:expiry`에서 만료를 강제하고, 만료된 mTLS 거부 테스트용 인증서는 `test:cert-fixtures`에서 별도로 검증합니다.
+
 Docker 스택이 떠 있을 때 HTTPS E2E를 실행합니다.
 
 ```powershell
-$env:NODE_TLS_REJECT_UNAUTHORIZED="0"
+$env:NODE_EXTRA_CA_CERTS=(Resolve-Path "tmp\certs\mtls\ca.crt").Path
 $env:HIPASS_E2E_BASE_URL="https://localhost:3443"
 $env:HIPASS_E2E_VIEWER_URL="https://localhost:3443/hipass/"
 $env:HIPASS_E2E_DATABASE_DOCKER="1"
-node scripts\e2e-integration-test.js
+$env:HIPASS_E2E_REQUEST_TIMEOUT_MS="10000"
+$env:HIPASS_E2E_DOCKER_TIMEOUT_MS="20000"
+$env:HIPASS_E2E_TIMEOUT_MS="180000"
+pnpm run e2e:https
 ```
+
+E2E 스크립트는 각 단계의 START/PASS/FAIL 로그를 출력하고, HTTP 요청과 Docker 명령에 명시적인 timeout을 적용합니다. 실패 시 non-zero 종료 코드와 실패 단계를 반환합니다.
 
 브라우저에서 토큰이 URL로 새지 않는지 확인합니다.
 

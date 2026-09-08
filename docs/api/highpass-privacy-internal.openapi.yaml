@@ -1,0 +1,41 @@
+openapi: 3.1.0
+info:
+  title: Highpass Privacy Internal API
+  version: 1.0.0
+  description: PF-1 internal preview API. A successful inspection is never a release approval.
+paths:
+  /internal/privacy/health/ready:
+    get:
+      summary: Verify policy, rules, and explicitly provisioned local model readiness
+      security:
+        - internalServiceToken: []
+      responses:
+        '200': { description: Ready }
+        '503': { description: Model unavailable }
+  /internal/privacy/text-inspections:
+    post:
+      summary: Inspect synthetic or otherwise authorized text inside the A-side trust boundary
+      security:
+        - internalServiceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../../schemas/privacy-text-inspection.schema.json
+      responses:
+        '200': { description: Preview generated; policyDecision remains REVIEW_REQUIRED }
+        '401': { description: AUTH_REQUIRED }
+        '403': { description: POLICY_DENIED }
+        '413': { description: INPUT_TOO_LARGE }
+        '415': { description: UNSUPPORTED_MEDIA_TYPE }
+        '422': { description: OFFSET_MISMATCH or INVALID_CONTENT }
+        '429': { description: QUEUE_FULL }
+        '503': { description: MODEL_UNAVAILABLE }
+        '504': { description: MODEL_TIMEOUT }
+components:
+  securitySchemes:
+    internalServiceToken:
+      type: apiKey
+      in: header
+      name: X-HiPass-Service-Token
