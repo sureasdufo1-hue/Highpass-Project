@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { ConsentPurpose, ConsentStatus, GatewayStatus, HospitalStatus, Permission, Role } from "./domain.js";
 
 export function createSeedData() {
@@ -158,6 +159,27 @@ export function createSeedData() {
         ],
       },
       {
+        studyId: "STUDY-PHR-A-001",
+        patientId: "P-1001",
+        sourceHospitalId: "HOSP-A",
+        studyInstanceUid: "1.2.826.0.1.3680043.10.5432.20260908.1001.1",
+        modality: "CT",
+        bodyPart: "CHEST",
+        studyDate: "2026-09-08",
+        description: "Synthetic PHR Chest CT",
+        metadataOnly: true,
+        series: [
+          {
+            seriesInstanceUid: "1.2.826.0.1.3680043.10.5432.20260908.1001.1.1",
+            modality: "CT",
+            description: "Synthetic PHR Lung Window",
+            instanceCount: 1,
+            bytes: 4,
+            previewImageUrl: "/assets/demo-ct.png",
+          },
+        ],
+      },
+      {
         studyId: "STUDY-003",
         patientId: "P-1002",
         sourceHospitalId: "HOSP-B",
@@ -235,6 +257,8 @@ export function createSeedData() {
       },
     ],
     dicomAccessTokenLogs: [],
+    transferRequests: [],
+    transferTickets: [],
     auditLogs: [],
     transferUsageLogs: [],
     researchExportRequests: [],
@@ -260,6 +284,31 @@ export function applyDemoDataMigrations(data) {
   changed = mergeStudies(data.imagingStudies, seed.imagingStudies) || changed;
   changed = mergeById(data.consents, seed.consents, "consentId") || changed;
   changed = mergeById(data.consentScopes, seed.consentScopes, "scopeId") || changed;
+
+  for (const token of data.dicomAccessTokenLogs) {
+    if (!token.tokenHash && token.token) {
+      token.tokenHash = token.token.startsWith("sha256:")
+        ? token.token
+        : `sha256:${createHash("sha256").update(token.token).digest("hex")}`;
+      changed = true;
+    }
+    if (Object.hasOwn(token, "token")) {
+      delete token.token;
+      changed = true;
+    }
+    if (!token.jti) {
+      token.jti = token.tokenId;
+      changed = true;
+    }
+    if (!token.issuer) {
+      token.issuer = "highpass-control-plane";
+      changed = true;
+    }
+    if (!token.audience) {
+      token.audience = "highpass-dicomweb-gateway";
+      changed = true;
+    }
+  }
 
   return changed;
 }

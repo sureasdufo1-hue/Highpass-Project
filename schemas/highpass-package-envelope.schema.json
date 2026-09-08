@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://highpass.example/schemas/highpass-package-envelope.schema.json",
+  "title": "Highpass Public Package Envelope",
+  "description": "Non-PHI outer envelope. DICOM UIDs, tokens and keys are forbidden by additionalProperties=false.",
+  "type": "object",
+  "required": ["schemaVersion", "packageId", "protocolVersion", "cipherSuite", "chunkCount", "chunkSize", "packageSize", "createdAt", "expiresAt", "destinationInstitutionRef", "manifestEncrypted"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "packageId": {"type": "string", "pattern": "^pkg_[A-Za-z0-9_-]{16,80}$"},
+    "protocolVersion": {"type": "string", "pattern": "^1\\.[0-9]+$", "maxLength": 16},
+    "cipherSuite": {"enum": ["A256GCM-HIGH-PASS-V1"]},
+    "chunkCount": {"type": "integer", "minimum": 1, "maximum": 1000000},
+    "chunkSize": {"type": "integer", "minimum": 65536, "maximum": 67108864},
+    "packageSize": {"type": "integer", "minimum": 1, "maximum": 1099511627776},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "expiresAt": {"type": "string", "format": "date-time"},
+    "destinationInstitutionRef": {"type": "string", "pattern": "^inst_[A-Za-z0-9_-]{8,80}$"},
+    "manifestEncrypted": {"const": true},
+    "manifestCiphertext": {"type": "string", "contentEncoding": "base64url", "contentMediaType": "application/cbor", "maxLength": 16777216},
+    "keyEnvelopeRefs": {"type": "array", "items": {"type": "string", "pattern": "^kenv_[A-Za-z0-9_-]{16,80}$"}, "minItems": 1, "maxItems": 16, "uniqueItems": true}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,12 @@
+hash256 = bytes .size 32
+frame-range = {0: tstr, 1: uint .ge 1, 2: uint .ge 1}
+scope = {0: [+ tstr], ? 1: [* tstr], ? 2: [* tstr], ? 3: [* frame-range], 4: [+ ("VIEW"/"DOWNLOAD"/"MOBILE_STORE"/"MOBILE_HANDOFF"/"PACS_IMPORT")]}
+dicom-object = {0: tstr, 1: tstr, 2: tstr, ? 3: [* uint], 4: uint, 5: hash256, 6: uint, 7: uint}
+imaging-manifest = {
+  0: "1.0", 1: tstr, 2: tstr, 3: tstr, 4: tstr, 5: tstr, 6: tstr,
+  7: tstr, 8: scope, 9: [+ dicom-object], 10: uint, 11: uint,
+  12: hash256, 13: hash256, 14: [+ hash256],
+  15: {0: "A256GCM", 1: "enc-v1", 2: [+ tstr]}, 16: time, 17: time,
+  18: ("CREATED"/"ENCRYPTED"/"DOWNLOADING"/"STORED_ON_DEVICE"/"READY_FOR_HANDOFF"/"HANDOFF_PENDING"/"UPLOADING"/"RECEIVED"/"VERIFIED"/"VIEWED"/"IMPORTED"/"EXPIRED"/"REVOKED"/"DELETED"/"FAILED")
+}
+; Protected manifest hash covers deterministic encoding with key 13 omitted.

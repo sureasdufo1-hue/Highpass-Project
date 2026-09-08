@@ -9,7 +9,13 @@ node_modules/
 .pnpm-store/
 tmp/
 data/
+!docs/data/
+!docs/data/**
 artifacts/
+services/privacy-inference/checkpoints/
+models/openai-privacy-filter/
+*.safetensors
+evidence/generated/
 .agents/
 .codex/
 npm-debug.log*

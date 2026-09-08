@@ -34,6 +34,17 @@ const samples = [
     studyDescription: "Chest CT",
     seriesDescription: "Lung window",
   },
+  {
+    patientId: "P-1001",
+    patientName: "HIPASS^SYNTHETIC^PHR1001",
+    studyInstanceUid: "1.2.826.0.1.3680043.10.5432.20260908.1001.1",
+    seriesInstanceUid: "1.2.826.0.1.3680043.10.5432.20260908.1001.1.1",
+    sopInstanceUid: "1.2.826.0.1.3680043.10.5432.20260908.1001.1.1.1",
+    studyDate: "20260908",
+    modality: "CT",
+    studyDescription: "Synthetic PHR Chest CT",
+    seriesDescription: "Synthetic PHR Lung Window",
+  },
 ];
 
 for (const sample of samples) {

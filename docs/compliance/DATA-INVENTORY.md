@@ -1,6 +1,8 @@
 # Personal Data Inventory
 
-기준일: 2026-07-11
+기준일: 2026-08-26
+
+상세 개인정보 흐름과 법적 근거 후보는 `docs/compliance/data-flow-and-inventory.md` 및 `docs/compliance/lawful-basis-matrix.md`를 기준으로 한다.
 
 ## 데이터 분류
 

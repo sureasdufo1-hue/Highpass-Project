@@ -1,0 +1,6 @@
+; Deterministic CBOR (RFC 8949) map. Hash/signature input is deterministic encoding.
+package-envelope = {
+  0: "1.0", 1: tstr, 2: tstr, 3: "A256GCM-HIGH-PASS-V1",
+  4: uint, 5: 65536..67108864, 6: uint, 7: time, 8: time,
+  9: tstr, 10: true, 11: bstr, 12: [+ tstr]
+}

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://highpass.local/schemas/privacy-contract.schema.json",
+  "title": "Highpass PF-0 frozen contract",
+  "type": "object",
+  "$defs": {
+    "purpose": { "enum": ["RESEARCH", "TEACHING", "DEMO", "AI_LOCAL"] },
+    "job_status": { "enum": ["PENDING", "PROCESSING", "SUCCEEDED", "FAILED", "UNSUPPORTED", "CANCELLED"] },
+    "current_stage": { "enum": ["RESOLVE", "EXTRACT", "DETECT", "TRANSFORM", "VALIDATE", "FINALIZE"] },
+    "policy_decision": { "enum": ["UNDECIDED", "TRANSFORM_REQUIRED", "REVIEW_REQUIRED", "ALLOW", "DENY"] },
+    "review_status": { "enum": ["PENDING", "APPROVED", "REJECTED", "STALE"] },
+    "release_status": { "enum": ["NOT_READY", "READY", "SENDING", "SENT", "UNKNOWN", "REVOKED", "EXPIRED"] },
+    "artifact_state": { "enum": ["QUARANTINED", "VALIDATED", "EXPIRED", "PURGED"] },
+    "native_label": { "enum": ["private_person", "private_address", "private_email", "private_phone", "private_url", "private_date", "account_number", "secret"] },
+    "system_type": { "enum": ["PERSON", "ADDRESS", "CONTACT", "URL_IDENTIFIER", "DATE", "FINANCIAL_ACCOUNT", "SECRET", "KR_IDENTIFIER", "HOSPITAL_ID"] },
+    "review_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactId", "artifactVersion", "manifestDigest", "policyVersion", "purpose", "recipientRef", "approvedUseRef"],
+      "properties": {
+        "artifactId": { "type": "string", "minLength": 1 },
+        "artifactVersion": { "type": ["integer", "string"] },
+        "manifestDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "policyVersion": { "type": "string", "minLength": 1 },
+        "purpose": { "$ref": "#/$defs/purpose" },
+        "recipientRef": { "type": "string", "minLength": 1 },
+        "approvedUseRef": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

@@ -93,7 +93,12 @@ ALTER TABLE consent_scopes ALTER COLUMN created_at SET NOT NULL;
 
 CREATE TABLE IF NOT EXISTS dicom_access_token_logs (
   token_id varchar PRIMARY KEY,
-  token varchar NOT NULL UNIQUE,
+  token varchar UNIQUE,
+  token_hash varchar UNIQUE,
+  jti varchar UNIQUE,
+  issuer varchar,
+  audience varchar,
+  scope jsonb,
   audit_session_id varchar,
   consent_id varchar NOT NULL REFERENCES consents(consent_id),
   doctor_id varchar NOT NULL,
@@ -112,6 +117,12 @@ ALTER TABLE dicom_access_token_logs ADD COLUMN IF NOT EXISTS audit_session_id va
 ALTER TABLE dicom_access_token_logs ADD COLUMN IF NOT EXISTS allowed_series_uids jsonb;
 ALTER TABLE dicom_access_token_logs ADD COLUMN IF NOT EXISTS permission varchar;
 ALTER TABLE dicom_access_token_logs ADD COLUMN IF NOT EXISTS purpose varchar;
+ALTER TABLE dicom_access_token_logs ADD COLUMN IF NOT EXISTS token_hash varchar;
+ALTER TABLE dicom_access_token_logs ADD COLUMN IF NOT EXISTS jti varchar;
+ALTER TABLE dicom_access_token_logs ADD COLUMN IF NOT EXISTS issuer varchar;
+ALTER TABLE dicom_access_token_logs ADD COLUMN IF NOT EXISTS audience varchar;
+ALTER TABLE dicom_access_token_logs ADD COLUMN IF NOT EXISTS scope jsonb;
+ALTER TABLE dicom_access_token_logs ALTER COLUMN token DROP NOT NULL;
 
 CREATE TABLE IF NOT EXISTS audit_logs (
   audit_id varchar PRIMARY KEY,
@@ -204,7 +215,8 @@ CREATE INDEX IF NOT EXISTS idx_gateways_hospital ON gateways(hospital_id);
 CREATE INDEX IF NOT EXISTS idx_consents_lookup ON consents(patient_id, source_hospital_id, target_hospital_id, purpose, status);
 CREATE INDEX IF NOT EXISTS idx_consent_scopes_lookup ON consent_scopes(consent_id, study_instance_uid, series_instance_uid);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_consent_scopes_unique ON consent_scopes(consent_id, study_instance_uid, COALESCE(series_instance_uid, ''));
-CREATE INDEX IF NOT EXISTS idx_tokens_token ON dicom_access_token_logs(token);
+CREATE INDEX IF NOT EXISTS idx_tokens_token_hash ON dicom_access_token_logs(token_hash) WHERE token_hash IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tokens_jti ON dicom_access_token_logs(jti) WHERE jti IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_actor_created_at ON audit_logs(actor_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_action_created_at ON audit_logs(action, created_at);

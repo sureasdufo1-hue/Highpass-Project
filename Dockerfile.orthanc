@@ -1,6 +1,10 @@
-FROM jodogne/orthanc-plugins:1.12.11
+FROM busybox:1.37.0-musl@sha256:fc6dddc4c44b1bfe37f41cae8e67d1693828e8f42a91862816d7953e2c9d3f23 AS healthcheck
+
+FROM jodogne/orthanc-plugins:1.12.11@sha256:e7bffe0351cd391eacab8e78098e236efe6cafed987830e9b462b2050a0eae4a
 
 ENV DEBIAN_FRONTEND=noninteractive
+
+COPY --from=healthcheck /bin/busybox /usr/local/bin/busybox
 
 RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \
@@ -15,5 +19,11 @@ RUN apt-get update \
     && apt-get purge -y --allow-remove-essential gzip ncurses-base ncurses-bin bsdutils util-linux \
     && apt-get autoremove -y --purge \
     && apt-get purge -y --allow-remove-essential perl-base \
+    && apt-get purge -y --allow-remove-essential e2fsprogs logsave libblkid1 libuuid1 \
     && apt-get clean \
+    && apt-get purge -y --allow-remove-essential apt libapt-pkg6.0 libsystemd0 libudev1 \
     && rm -rf /var/lib/apt/lists/* /usr/share/perl /usr/lib/*/perl /usr/local/lib/*/perl /usr/share/doc/* /usr/share/man/*
+
+RUN dpkg --purge --force-depends --force-remove-essential bash libtinfo6 \
+    && (dpkg --purge --force-depends libacl1 \
+        || /usr/local/bin/busybox test ! -e /usr/lib/x86_64-linux-gnu/libacl.so.1)

@@ -2,6 +2,9 @@
 
 This is an ISMS-P readiness mapping only. It is not an ISMS-P certification or audit result.
 
+검토 기준일: 2026-08-26
+상세 통제 매핑은 `docs/compliance/isms-p-control-matrix.md`를 기준으로 한다.
+
 | Area | Status | Evidence |
 |---|---|---|
 | Management system | PARTIAL | governance docs added; formal organization process NOT VERIFIED |

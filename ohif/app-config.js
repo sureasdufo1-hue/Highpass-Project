@@ -1,9 +1,13 @@
 window.config = {
   routerBasename: "/",
+  extensions: [],
+  modes: [],
+  customizationService: {},
   showStudyList: true,
   maxNumberOfWebWorkers: 3,
   showWarningMessageForCrossOrigin: false,
   showCPUFallbackMessage: false,
+  showLoadingIndicator: true,
   strictZSpacingForVolumeViewport: true,
   dataSources: [
     {

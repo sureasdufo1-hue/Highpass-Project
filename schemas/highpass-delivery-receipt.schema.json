@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://highpass.example/schemas/highpass-delivery-receipt.schema.json",
+  "title": "Highpass Delivery Receipt",
+  "type": "object",
+  "required": ["schemaVersion", "receiptId", "packageId", "handoffId", "receiverInstitutionRef", "manifestHash", "receivedAt", "result", "signatureAlgorithm", "signature"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"}, "receiptId": {"type": "string", "pattern": "^rcpt_[A-Za-z0-9_-]{16,80}$"}, "packageId": {"type": "string", "maxLength": 96}, "handoffId": {"type": "string", "maxLength": 96}, "receiverInstitutionRef": {"type": "string", "maxLength": 96},
+    "manifestHash": {"type": "string", "contentEncoding": "base64url", "pattern": "^[A-Za-z0-9_-]{43}$"}, "receivedAt": {"type": "string", "format": "date-time"}, "result": {"enum": ["RECEIVED", "VERIFIED", "IMPORTED", "FAILED"]}, "failureCode": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,63}$"}, "signatureAlgorithm": {"enum": ["ES256", "EdDSA"]}, "signature": {"type": "string", "contentEncoding": "base64url", "maxLength": 4096}
+  },
+  "additionalProperties": false
+}

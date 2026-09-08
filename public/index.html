@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
+    <div class="environment-banner" role="status">CAPSTONE MVP · 합성 데이터 · 비운영 기술 테스트 환경</div>
     <header class="app-header">
       <a class="brand" href="#home" aria-label="HiPass Platform 홈">
         <span class="brand-mark">H</span>
@@ -118,7 +119,7 @@
             <p>현재 Orthanc는 로컬 가상 PACS입니다. 실제 병원 PACS나 실제 환자 데이터에는 연결하지 않습니다.</p>
           </article>
         </div>
-        <a class="button ghost-link orthanc-link" href="http://localhost:8042" target="_blank" rel="noreferrer">Orthanc Explorer 열기</a>
+        <p class="orthanc-link"><strong>보안 경계:</strong> Orthanc 직접 접근은 차단되며, 승인된 Gateway와 범위 제한 토큰을 통해서만 영상을 조회합니다.</p>
       </section>
 
       <section id="workflow" class="content-band workflow-band">
@@ -551,6 +552,7 @@
     <footer class="site-footer">
       <strong>HiPass Platform</strong>
       <span>가상 환자와 가상 병원 기반 MVP 데모입니다. 실제 환자 개인정보와 실제 PACS에는 연결하지 않습니다.</span>
+      <span>본 데모는 PIPA 법률 판단, ISMS-P 인증, 병원 보안 승인 또는 운영 준비 완료를 의미하지 않습니다.</span>
     </footer>
 
     <script src="/app.js" type="module"></script>

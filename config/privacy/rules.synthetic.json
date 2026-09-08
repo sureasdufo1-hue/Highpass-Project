@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "1.0.0",
+  "environment": "SYNTHETIC_LOCAL_TEST_ONLY",
+  "profiles": {
+    "synthetic-a-v1": {
+      "enabled": true,
+      "publicUrlAllowlist": ["public-info.example.invalid"],
+      "institutionIdentifierPatterns": [
+        {
+          "id": "HPP-P008-SYNTHETIC-A",
+          "fieldContext": "patient_number",
+          "pattern": "\\bA-\\d{4}-\\d{5}\\b"
+        }
+      ],
+      "replacement": {
+        "PERSON": "<PERSON>",
+        "ADDRESS": "<ADDRESS>",
+        "CONTACT_EMAIL": "<EMAIL>",
+        "CONTACT_PHONE": "<PHONE>",
+        "URL_IDENTIFIER": "<URL_IDENTIFIER>",
+        "DATE": "<DATE>",
+        "FINANCIAL_ACCOUNT": "<FINANCIAL_ACCOUNT>",
+        "SECRET": "<SECRET>",
+        "KR_IDENTIFIER": "<KR_IDENTIFIER>",
+        "HOSPITAL_ID": "<PATIENT_ID>"
+      }
+    }
+  }
+}

@@ -23,10 +23,12 @@ pnpm run ops:expiry
 pnpm run security:network
 pnpm run security:readiness
 pnpm run security:container
+pnpm run test:cert-fixtures
+pnpm run test:mtls-negative
 docker compose ps
 ```
 
-`ops:expiry` reports vulnerability exception and test certificate expiry without reading private keys.
+`ops:expiry` enforces runtime certificate expiry and vulnerability exception expiry without reading private keys. Negative security test certificates are classified in `config/certificate-lifecycle.json`, excluded from runtime expiry enforcement, and independently checked by `pnpm run test:cert-fixtures`.
 
 ## Independent Backend Validation
 

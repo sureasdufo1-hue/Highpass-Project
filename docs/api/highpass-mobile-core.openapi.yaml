@@ -1,0 +1,317 @@
+openapi: 3.1.0
+info:
+  title: Highpass Mobile-Core API
+  version: 1.0.0-draft
+  description: Contract baseline for synthetic-data capstone. New Mobile-Core operations are not yet implemented.
+servers:
+  - url: https://control.highpass.local/api/v1
+    description: Control Plane
+  - url: https://gateway.highpass.local/gateway/v1
+    description: Hospital Gateway
+tags:
+  - {name: Consent}
+  - {name: Device}
+  - {name: Package}
+  - {name: Handoff}
+  - {name: Key}
+  - {name: PACS}
+  - {name: Audit}
+security: [{oidc: []}]
+paths:
+  /auth/login:
+    post: {$ref: '#/components/x-operations/startLogin'}
+  /auth/callback:
+    get: {$ref: '#/components/x-operations/oidcCallback'}
+  /me/institution:
+    get: {$ref: '#/components/x-operations/readInstitution'}
+  /me/permissions:
+    get: {$ref: '#/components/x-operations/readPermissions'}
+  /tokens/introspect:
+    post: {$ref: '#/components/x-operations/introspectToken'}
+  /sessions/{sessionId}:
+    parameters: [{$ref: '#/components/parameters/SessionId'}]
+    delete: {$ref: '#/components/x-operations/endSession'}
+  /consents:
+    post: {$ref: '#/components/x-operations/createConsent'}
+  /consents/{consentId}:
+    parameters: [{$ref: '#/components/parameters/ConsentId'}]
+    get: {$ref: '#/components/x-operations/getConsent'}
+  /consents/{consentId}/approve:
+    parameters: [{$ref: '#/components/parameters/ConsentId'}]
+    post: {$ref: '#/components/x-operations/approveConsent'}
+  /consents/{consentId}/reject:
+    parameters: [{$ref: '#/components/parameters/ConsentId'}]
+    post: {$ref: '#/components/x-operations/rejectConsent'}
+  /consents/{consentId}/revoke:
+    parameters: [{$ref: '#/components/parameters/ConsentId'}]
+    post: {$ref: '#/components/x-operations/revokeConsent'}
+  /consents/{consentId}/validate:
+    parameters: [{$ref: '#/components/parameters/ConsentId'}]
+    post: {$ref: '#/components/x-operations/validateConsent'}
+  /mobile-devices:
+    post: {$ref: '#/components/x-operations/registerDevice'}
+  /mobile-devices/{deviceId}:
+    parameters: [{$ref: '#/components/parameters/DeviceId'}]
+    get: {$ref: '#/components/x-operations/getDevice'}
+  /mobile-devices/{deviceId}/keys:
+    parameters: [{$ref: '#/components/parameters/DeviceId'}]
+    put: {$ref: '#/components/x-operations/registerDeviceKey'}
+  /mobile-devices/{deviceId}/revoke:
+    parameters: [{$ref: '#/components/parameters/DeviceId'}]
+    post: {$ref: '#/components/x-operations/revokeDevice'}
+  /mobile-devices/{deviceId}/lost:
+    parameters: [{$ref: '#/components/parameters/DeviceId'}]
+    post: {$ref: '#/components/x-operations/reportDeviceLost'}
+  /mobile-devices/{deviceId}/remote-block:
+    parameters: [{$ref: '#/components/parameters/DeviceId'}]
+    post: {$ref: '#/components/x-operations/blockDevice'}
+  /mobile-devices/{deviceId}/reenroll:
+    parameters: [{$ref: '#/components/parameters/DeviceId'}]
+    post: {$ref: '#/components/x-operations/reenrollDevice'}
+  /packages:
+    post: {$ref: '#/components/x-operations/createPackage'}
+  /packages/{packageId}:
+    parameters: [{$ref: '#/components/parameters/PackageId'}]
+    get: {$ref: '#/components/x-operations/getPackage'}
+    delete: {$ref: '#/components/x-operations/deletePackage'}
+  /packages/{packageId}/manifest:
+    parameters: [{$ref: '#/components/parameters/PackageId'}]
+    get: {$ref: '#/components/x-operations/getManifest'}
+  /packages/{packageId}/download:
+    parameters: [{$ref: '#/components/parameters/PackageId'}]
+    get: {$ref: '#/components/x-operations/downloadPackage'}
+  /packages/{packageId}/chunks/{chunkNo}:
+    parameters: [{$ref: '#/components/parameters/PackageId'}, {$ref: '#/components/parameters/ChunkNo'}]
+    get: {$ref: '#/components/x-operations/downloadChunk'}
+  /packages/{packageId}/stored:
+    parameters: [{$ref: '#/components/parameters/PackageId'}]
+    post: {$ref: '#/components/x-operations/confirmStored'}
+  /packages/{packageId}/revoke:
+    parameters: [{$ref: '#/components/parameters/PackageId'}]
+    post: {$ref: '#/components/x-operations/revokePackage'}
+  /handoffs:
+    post: {$ref: '#/components/x-operations/createHandoff'}
+  /handoffs/{handoffId}:
+    parameters: [{$ref: '#/components/parameters/HandoffId'}]
+    get: {$ref: '#/components/x-operations/getHandoff'}
+  /handoffs/{handoffId}/tickets:
+    parameters: [{$ref: '#/components/parameters/HandoffId'}]
+    post: {$ref: '#/components/x-operations/issueTicket'}
+  /handoff-tickets/scan:
+    post: {$ref: '#/components/x-operations/scanTicket'}
+  /handoffs/{handoffId}/patient-approval:
+    parameters: [{$ref: '#/components/parameters/HandoffId'}]
+    post: {$ref: '#/components/x-operations/approveHandoff'}
+  /handoffs/{handoffId}/consume:
+    parameters: [{$ref: '#/components/parameters/HandoffId'}]
+    post: {$ref: '#/components/x-operations/consumeTicket'}
+  /handoffs/{handoffId}/cancel:
+    parameters: [{$ref: '#/components/parameters/HandoffId'}]
+    post: {$ref: '#/components/x-operations/cancelHandoff'}
+  /package-uploads:
+    post: {$ref: '#/components/x-operations/startUpload'}
+  /package-uploads/{uploadId}:
+    parameters: [{$ref: '#/components/parameters/UploadId'}]
+    get: {$ref: '#/components/x-operations/getUpload'}
+  /package-uploads/{uploadId}/chunks/{chunkNo}:
+    parameters: [{$ref: '#/components/parameters/UploadId'}, {$ref: '#/components/parameters/ChunkNo'}]
+    put: {$ref: '#/components/x-operations/uploadChunk'}
+  /package-uploads/{uploadId}/complete:
+    parameters: [{$ref: '#/components/parameters/UploadId'}]
+    post: {$ref: '#/components/x-operations/completeUpload'}
+  /delivery-receipts/{receiptId}:
+    parameters: [{$ref: '#/components/parameters/ReceiptId'}]
+    get: {$ref: '#/components/x-operations/getReceipt'}
+  /key-release-authorizations:
+    post: {$ref: '#/components/x-operations/createKeyRelease'}
+  /key-release-authorizations/{authorizationId}:
+    parameters: [{$ref: '#/components/parameters/AuthorizationId'}]
+    get: {$ref: '#/components/x-operations/getKeyRelease'}
+  /key-envelopes/{envelopeId}:
+    parameters: [{$ref: '#/components/parameters/EnvelopeId'}]
+    get: {$ref: '#/components/x-operations/getKeyEnvelope'}
+    delete: {$ref: '#/components/x-operations/destroyKeyEnvelope'}
+  /pacs-imports:
+    post: {$ref: '#/components/x-operations/createPacsImport'}
+  /pacs-imports/{importId}:
+    parameters: [{$ref: '#/components/parameters/ImportId'}]
+    get: {$ref: '#/components/x-operations/getPacsImport'}
+  /pacs-imports/{importId}/retry:
+    parameters: [{$ref: '#/components/parameters/ImportId'}]
+    post: {$ref: '#/components/x-operations/retryPacsImport'}
+  /pacs-imports/{importId}/complete:
+    parameters: [{$ref: '#/components/parameters/ImportId'}]
+    post: {$ref: '#/components/x-operations/completePacsImport'}
+  /pacs-imports/duplicates/check:
+    post: {$ref: '#/components/x-operations/checkDuplicateImport'}
+  /dicomweb/studies:
+    get: {$ref: '#/components/x-operations/qidoStudies'}
+    post: {$ref: '#/components/x-operations/stowStudies'}
+  /dicomweb/studies/{studyRef}/series:
+    parameters: [{$ref: '#/components/parameters/StudyRef'}]
+    get: {$ref: '#/components/x-operations/qidoSeries'}
+  /dicomweb/studies/{studyRef}/series/{seriesRef}/instances:
+    parameters: [{$ref: '#/components/parameters/StudyRef'}, {$ref: '#/components/parameters/SeriesRef'}]
+    get: {$ref: '#/components/x-operations/qidoInstances'}
+  /dicomweb/studies/{studyRef}/series/{seriesRef}/instances/{instanceRef}:
+    parameters: [{$ref: '#/components/parameters/StudyRef'}, {$ref: '#/components/parameters/SeriesRef'}, {$ref: '#/components/parameters/InstanceRef'}]
+    get: {$ref: '#/components/x-operations/wadoInstance'}
+  /dicomweb/studies/{studyRef}/series/{seriesRef}/instances/{instanceRef}/frames/{frameList}:
+    parameters: [{$ref: '#/components/parameters/StudyRef'}, {$ref: '#/components/parameters/SeriesRef'}, {$ref: '#/components/parameters/InstanceRef'}, {$ref: '#/components/parameters/FrameList'}]
+    get: {$ref: '#/components/x-operations/wadoFrames'}
+  /c-store:
+    post: {$ref: '#/components/x-operations/cStoreObjects'}
+  /audit-events:
+    post: {$ref: '#/components/x-operations/createAuditEvent'}
+    get: {$ref: '#/components/x-operations/listAuditEvents'}
+  /audit-events/search:
+    post: {$ref: '#/components/x-operations/searchAuditEvents'}
+  /audit-integrity:
+    get: {$ref: '#/components/x-operations/verifyAuditIntegrity'}
+components:
+  securitySchemes:
+    oidc:
+      type: openIdConnect
+      openIdConnectUrl: https://idp.highpass.local/.well-known/openid-configuration
+    oauth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://idp.highpass.local/authorize
+          tokenUrl: https://idp.highpass.local/token
+          scopes:
+            consent:read: Read consent
+            consent:write: Create or decide consent
+            consent:revoke: Revoke consent
+            device:register: Register device
+            device:revoke: Revoke device
+            package:create: Create package
+            package:read: Read package metadata
+            package:store: Store encrypted package
+            package:handoff: Approve handoff
+            package:transfer: Transfer ciphertext
+            package:delete: Delete package
+            handoff:create: Create handoff
+            handoff:approve: Approve handoff
+            handoff:consume: Consume ticket
+            key:release: Request key release
+            dicom:search: QIDO search
+            dicom:view: WADO view
+            dicom:download: Explicit download
+            pacs:import: Import to PACS
+            audit:read: Read audit
+            policy:check: Evaluate policy
+            breakglass:use: Emergency constrained access
+        clientCredentials:
+          tokenUrl: https://idp.highpass.local/token
+          scopes: {key:release: Request key release, policy:check: Evaluate policy}
+    mutualTLS: {type: mutualTLS}
+    internalServiceToken: {type: http, scheme: bearer, bearerFormat: JWT}
+  parameters:
+    ConsentId: {name: consentId, in: path, required: true, schema: {$ref: '#/components/schemas/OpaqueId'}}
+    DeviceId: {name: deviceId, in: path, required: true, schema: {$ref: '#/components/schemas/OpaqueId'}}
+    PackageId: {name: packageId, in: path, required: true, schema: {$ref: '#/components/schemas/OpaqueId'}}
+    HandoffId: {name: handoffId, in: path, required: true, schema: {$ref: '#/components/schemas/OpaqueId'}}
+    SessionId: {name: sessionId, in: path, required: true, schema: {$ref: '#/components/schemas/OpaqueId'}}
+    ChunkNo: {name: chunkNo, in: path, required: true, schema: {type: integer, minimum: 0}}
+    UploadId: {name: uploadId, in: path, required: true, schema: {$ref: '#/components/schemas/OpaqueId'}}
+    ReceiptId: {name: receiptId, in: path, required: true, schema: {$ref: '#/components/schemas/OpaqueId'}}
+    AuthorizationId: {name: authorizationId, in: path, required: true, schema: {$ref: '#/components/schemas/OpaqueId'}}
+    EnvelopeId: {name: envelopeId, in: path, required: true, schema: {$ref: '#/components/schemas/OpaqueId'}}
+    ImportId: {name: importId, in: path, required: true, schema: {$ref: '#/components/schemas/OpaqueId'}}
+    StudyRef: {name: studyRef, in: path, required: true, schema: {$ref: '#/components/schemas/OpaqueId'}}
+    SeriesRef: {name: seriesRef, in: path, required: true, schema: {$ref: '#/components/schemas/OpaqueId'}}
+    InstanceRef: {name: instanceRef, in: path, required: true, schema: {$ref: '#/components/schemas/OpaqueId'}}
+    FrameList: {name: frameList, in: path, required: true, schema: {type: string, pattern: '^[0-9]+(,[0-9]+)*$'}}
+    IdempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 16, maxLength: 128}}
+    AuditSessionId: {name: X-Audit-Session-Id, in: header, required: true, schema: {type: string, minLength: 8, maxLength: 128}}
+  headers:
+    XRequestId: {schema: {type: string}}
+    RateLimitRemaining: {schema: {type: integer}}
+  schemas:
+    OpaqueId: {type: string, pattern: '^[A-Za-z][A-Za-z0-9_-]{7,95}$'}
+    GenericResource: {type: object, additionalProperties: true}
+    StateDecision:
+      type: object
+      required: [id, status]
+      properties: {id: {$ref: '#/components/schemas/OpaqueId'}, status: {type: string}, version: {type: integer, minimum: 1}}
+      additionalProperties: false
+    Problem:
+      type: object
+      required: [type, title, status, code, requestId, traceId, auditSessionId, retryable]
+      properties:
+        type: {type: string, format: uri}
+        title: {type: string, maxLength: 128}
+        status: {type: integer, minimum: 400, maximum: 599}
+        code: {type: string, enum: [AUTHENTICATION_REQUIRED, MFA_REQUIRED, INSTITUTION_MISMATCH, USER_NOT_AUTHORIZED, CONSENT_REQUIRED, CONSENT_REVOKED, CONSENT_EXPIRED, SCOPE_MISMATCH, TICKET_NOT_FOUND, TICKET_EXPIRED, TICKET_REVOKED, TICKET_ALREADY_CONSUMED, TOKEN_REPLAY_DETECTED, TOKEN_AUDIENCE_MISMATCH, TOKEN_SCOPE_INSUFFICIENT, DEVICE_NOT_REGISTERED, DEVICE_REVOKED, DEVICE_COMPROMISED, PACKAGE_NOT_FOUND, PACKAGE_EXPIRED, PACKAGE_INTEGRITY_FAILED, DECRYPTION_FAILED, KEY_RELEASE_DENIED, GATEWAY_UNAVAILABLE, PACS_UNAVAILABLE, TRANSFER_INTERRUPTED, DUPLICATE_IMPORT, AUDIT_WRITE_FAILED, RATE_LIMITED]}
+        detail: {type: string, maxLength: 512}
+        requestId: {type: string}
+        traceId: {type: string}
+        auditSessionId: {type: string}
+        retryable: {type: boolean}
+      additionalProperties: false
+  responses:
+    Ok: {description: Success, content: {application/json: {schema: {$ref: '#/components/schemas/GenericResource'}}}}
+    Created: {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/StateDecision'}}}}
+    NoContent: {description: No content}
+    Problem: {description: Safe problem response, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+  x-operations:
+    startLogin: {operationId: startLogin, tags: [Consent], security: [], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/GenericResource'}}}}, responses: {'200': {$ref: '#/components/responses/Ok'}, default: {$ref: '#/components/responses/Problem'}}, x-audit-event: LOGIN_STARTED, x-rate-limit: 10/min, x-data-classification: CONFIDENTIAL}
+    oidcCallback: {operationId: handleOidcCallback, tags: [Consent], security: [], responses: {'200': {$ref: '#/components/responses/Ok'}, default: {$ref: '#/components/responses/Problem'}}, x-audit-event: LOGIN_RESULT, x-rate-limit: 20/min, x-data-classification: SECRET}
+    readInstitution: &read {operationId: readMyInstitution, tags: [Consent], responses: {'200': {$ref: '#/components/responses/Ok'}, default: {$ref: '#/components/responses/Problem'}}, x-audit-event: INSTITUTION_READ, x-rate-limit: 120/min, x-data-classification: INTERNAL}
+    readPermissions: {<<: *read, operationId: readMyPermissions, x-audit-event: PERMISSION_READ}
+    introspectToken: &post {operationId: introspectToken, tags: [Consent], security: [{mutualTLS: [], internalServiceToken: []}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/GenericResource'}}}}, responses: {'200': {$ref: '#/components/responses/Ok'}, default: {$ref: '#/components/responses/Problem'}}, x-required-scope: policy:check, x-consent-required: false, x-token-required: true, x-mtls-required: true, x-idempotency: false, x-retry: safe, x-rate-limit: 120/min, x-audit-event: TOKEN_INTROSPECTED, x-data-classification: SECRET, x-table: dicom_access_token_logs, x-test-id: API-AUTH-003}
+    endSession: {<<: *post, operationId: endSession, responses: {'204': {$ref: '#/components/responses/NoContent'}, default: {$ref: '#/components/responses/Problem'}}, x-audit-event: SESSION_ENDED}
+    createConsent: &create {<<: *post, operationId: createConsent, tags: [Consent], security: [{oauth2: [consent:write]}], parameters: [{$ref: '#/components/parameters/IdempotencyKey'}, {$ref: '#/components/parameters/AuditSessionId'}], responses: {'201': {$ref: '#/components/responses/Created'}, default: {$ref: '#/components/responses/Problem'}}, x-required-scope: consent:write, x-consent-required: false, x-token-required: true, x-mtls-required: false, x-idempotency: required, x-retry: idempotency-key, x-rate-limit: 30/min, x-audit-event: CONSENT_CREATED, x-data-classification: PHI, x-table: consents_v3, x-schema: Consent, x-test-id: API-CON-001}
+    getConsent: {<<: *read, operationId: getConsent, tags: [Consent], parameters: [{$ref: '#/components/parameters/ConsentId'}], security: [{oauth2: [consent:read]}], x-audit-event: CONSENT_READ}
+    approveConsent: &decision {<<: *create, operationId: approveConsent, x-required-scope: consent:write, x-audit-event: CONSENT_APPROVED}
+    rejectConsent: {<<: *decision, operationId: rejectConsent, x-audit-event: CONSENT_REJECTED}
+    revokeConsent: {<<: *decision, operationId: revokeConsent, security: [{oauth2: [consent:revoke]}], x-required-scope: consent:revoke, x-audit-event: CONSENT_REVOKED}
+    validateConsent: {<<: *post, operationId: validateConsent, x-audit-event: CONSENT_VALIDATED}
+    registerDevice: &deviceCreate {<<: *create, operationId: registerDevice, tags: [Device], security: [{oauth2: [device:register]}], x-required-scope: device:register, x-audit-event: DEVICE_REGISTERED, x-table: mobile_devices, x-schema: MobileDevice, x-test-id: API-DEV-001}
+    getDevice: {<<: *read, operationId: getDevice, tags: [Device], x-audit-event: DEVICE_READ}
+    registerDeviceKey: {<<: *deviceCreate, operationId: registerDeviceKey, x-audit-event: DEVICE_KEY_REGISTERED}
+    revokeDevice: &deviceRevoke {<<: *deviceCreate, operationId: revokeDevice, security: [{oauth2: [device:revoke]}], x-required-scope: device:revoke, x-audit-event: DEVICE_REVOKED}
+    reportDeviceLost: {<<: *deviceRevoke, operationId: reportDeviceLost, x-audit-event: DEVICE_LOST}
+    blockDevice: {<<: *deviceRevoke, operationId: blockDevice, security: [{mutualTLS: [], internalServiceToken: []}], x-mtls-required: true, x-audit-event: DEVICE_BLOCKED}
+    reenrollDevice: {<<: *deviceCreate, operationId: reenrollDevice, x-audit-event: DEVICE_REENROLLED}
+    createPackage: &packageCreate {<<: *create, operationId: createPackage, tags: [Package], security: [{oauth2: [package:create]}], x-required-scope: package:create, x-consent-required: true, x-audit-event: PACKAGE_CREATED, x-table: imaging_packages, x-schema: HighpassImagingManifest, x-test-id: API-PKG-001}
+    getPackage: {<<: *read, operationId: getPackage, tags: [Package], security: [{oauth2: [package:read]}], x-audit-event: PACKAGE_READ}
+    deletePackage: {<<: *post, operationId: deletePackage, tags: [Package], security: [{oauth2: [package:delete]}], x-audit-event: PACKAGE_DELETE_REQUESTED}
+    getManifest: {<<: *read, operationId: getManifest, tags: [Package], x-audit-event: MANIFEST_READ}
+    downloadPackage: {<<: *read, operationId: downloadPackage, tags: [Package], security: [{oauth2: [package:store]}], x-audit-event: PACKAGE_DOWNLOADED}
+    downloadChunk: {<<: *read, operationId: downloadPackageChunk, tags: [Package], x-audit-event: PACKAGE_CHUNK_DOWNLOADED}
+    confirmStored: {<<: *packageCreate, operationId: confirmPackageStored, x-audit-event: PACKAGE_STORED}
+    revokePackage: {<<: *packageCreate, operationId: revokePackage, x-audit-event: PACKAGE_REVOKED}
+    createHandoff: &handoff {<<: *create, operationId: createHandoff, tags: [Handoff], security: [{oauth2: [handoff:create]}], x-required-scope: handoff:create, x-consent-required: true, x-audit-event: HANDOFF_CREATED, x-table: handoff_sessions, x-test-id: API-HOF-001}
+    getHandoff: {<<: *read, operationId: getHandoff, tags: [Handoff], x-audit-event: HANDOFF_READ}
+    issueTicket: {<<: *handoff, operationId: issueHandoffTicket, x-audit-event: TICKET_ISSUED}
+    scanTicket: {<<: *handoff, operationId: scanHandoffTicket, security: [{oauth2: [package:handoff]}], x-audit-event: TICKET_SCANNED}
+    approveHandoff: {<<: *handoff, operationId: approveHandoff, security: [{oauth2: [handoff:approve]}], x-audit-event: HANDOFF_APPROVED}
+    consumeTicket: {<<: *handoff, operationId: consumeHandoffTicket, security: [{mutualTLS: [], internalServiceToken: []}], x-mtls-required: true, x-audit-event: TICKET_CONSUMED}
+    cancelHandoff: {<<: *handoff, operationId: cancelHandoff, x-audit-event: HANDOFF_CANCELLED}
+    startUpload: &upload {<<: *create, operationId: startPackageUpload, tags: [Handoff], security: [{oauth2: [package:transfer]}], x-required-scope: package:transfer, x-mtls-required: false, x-audit-event: UPLOAD_STARTED, x-table: package_chunks, x-test-id: API-GW-001}
+    getUpload: {<<: *read, operationId: getPackageUpload, tags: [Handoff], x-audit-event: UPLOAD_READ}
+    uploadChunk: {<<: *upload, operationId: uploadPackageChunk, x-audit-event: CHUNK_UPLOADED}
+    completeUpload: {<<: *upload, operationId: completePackageUpload, x-audit-event: UPLOAD_COMPLETED}
+    getReceipt: {<<: *read, operationId: getDeliveryReceipt, tags: [Handoff], x-audit-event: RECEIPT_READ}
+    createKeyRelease: &key {<<: *create, operationId: createKeyReleaseAuthorization, tags: [Key], security: [{mutualTLS: [], oauth2: [key:release]}], x-required-scope: key:release, x-mtls-required: true, x-audit-event: KEY_RELEASE_DECIDED, x-table: key_envelopes, x-test-id: SEC-KEY-001}
+    getKeyRelease: {<<: *read, operationId: getKeyReleaseAuthorization, tags: [Key], security: [{mutualTLS: [], oauth2: [key:release]}], x-audit-event: KEY_RELEASE_READ}
+    getKeyEnvelope: {<<: *read, operationId: getKeyEnvelope, tags: [Key], security: [{mutualTLS: [], oauth2: [key:release]}], x-audit-event: KEY_ENVELOPE_READ}
+    destroyKeyEnvelope: {<<: *key, operationId: destroyKeyEnvelope, x-audit-event: KEY_DESTROYED}
+    createPacsImport: &pacs {<<: *create, operationId: createPacsImport, tags: [PACS], security: [{mutualTLS: [], oauth2: [pacs:import]}], x-required-scope: pacs:import, x-mtls-required: true, x-audit-event: PACS_IMPORT_CREATED, x-table: pacs_imports, x-test-id: API-PACS-001}
+    getPacsImport: {<<: *read, operationId: getPacsImport, tags: [PACS], x-audit-event: PACS_IMPORT_READ}
+    retryPacsImport: {<<: *pacs, operationId: retryPacsImport, x-audit-event: PACS_IMPORT_RETRIED}
+    completePacsImport: {<<: *pacs, operationId: completePacsImport, x-audit-event: PACS_IMPORT_COMPLETED}
+    checkDuplicateImport: {<<: *pacs, operationId: checkDuplicatePacsImport, x-audit-event: PACS_DUPLICATE_CHECKED}
+    qidoStudies: &dicomRead {<<: *read, operationId: qidoSearchStudies, tags: [PACS], security: [{oauth2: [dicom:search]}], x-required-scope: dicom:search, x-consent-required: true, x-token-required: true, x-mtls-required: false, x-audit-event: QIDO_STUDY, x-data-classification: PHI, x-test-id: DCM-QIDO-001}
+    qidoSeries: {<<: *dicomRead, operationId: qidoSearchSeries, x-audit-event: QIDO_SERIES}
+    qidoInstances: {<<: *dicomRead, operationId: qidoSearchInstances, x-audit-event: QIDO_INSTANCE}
+    wadoInstance: {<<: *dicomRead, operationId: wadoRetrieveInstance, security: [{oauth2: [dicom:view]}], x-required-scope: dicom:view, x-audit-event: WADO_INSTANCE, x-test-id: DCM-WADO-001}
+    wadoFrames: {<<: *dicomRead, operationId: wadoRetrieveFrames, security: [{oauth2: [dicom:view]}], x-required-scope: dicom:view, x-audit-event: WADO_FRAME, x-test-id: DCM-WADO-002}
+    stowStudies: {<<: *pacs, operationId: stowStoreStudies, x-audit-event: STOW_RESULT}
+    cStoreObjects: {<<: *pacs, operationId: cStoreObjects, x-audit-event: CSTORE_RESULT}
+    createAuditEvent: &audit {<<: *create, operationId: createAuditEvent, tags: [Audit], security: [{mutualTLS: [], internalServiceToken: []}], x-mtls-required: true, x-audit-event: AUDIT_APPENDED, x-table: audit_logs_v3, x-test-id: API-AUD-001}
+    listAuditEvents: {<<: *read, operationId: listAuditEvents, tags: [Audit], security: [{oauth2: [audit:read]}], x-audit-event: AUDIT_READ}
+    searchAuditEvents: {<<: *audit, operationId: searchAuditEvents, security: [{oauth2: [audit:read]}], x-audit-event: AUDIT_SEARCHED}
+    verifyAuditIntegrity: {<<: *read, operationId: verifyAuditIntegrity, tags: [Audit], security: [{oauth2: [audit:read]}], x-audit-event: AUDIT_INTEGRITY_VERIFIED}

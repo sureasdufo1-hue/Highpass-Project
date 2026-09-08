@@ -1,11 +1,31 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-export async function readJson(request) {
+export class RequestBodyError extends Error {
+  constructor(statusCode, code) {
+    super(code);
+    this.name = "RequestBodyError";
+    this.statusCode = statusCode;
+    this.code = code;
+  }
+}
+
+export async function readJson(request, options = {}) {
+  const maxBytes = options.maxBytes ?? 1024 * 1024;
   const chunks = [];
-  for await (const chunk of request) chunks.push(chunk);
+  let total = 0;
+  for await (const chunk of request) {
+    total += chunk.length;
+    if (total > maxBytes) throw new RequestBodyError(413, "INPUT_TOO_LARGE");
+    chunks.push(chunk);
+  }
   if (chunks.length === 0) return {};
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  try {
+    const decoder = new TextDecoder("utf-8", { fatal: options.strictUtf8 === true });
+    return JSON.parse(decoder.decode(Buffer.concat(chunks)));
+  } catch {
+    throw new RequestBodyError(422, "INVALID_CONTENT");
+  }
 }
 
 export function sendJson(response, statusCode, body) {
@@ -18,6 +38,14 @@ export function sendJson(response, statusCode, body) {
 
 export function sendError(response, statusCode, message, details = undefined) {
   sendJson(response, statusCode, { error: message, details });
+}
+
+export function sendProblem(response, problem) {
+  response.writeHead(problem.status, {
+    "content-type": "application/problem+json; charset=utf-8",
+    "cache-control": "no-store",
+  });
+  response.end(JSON.stringify(problem, null, 2));
 }
 
 export function getBearerToken(request) {

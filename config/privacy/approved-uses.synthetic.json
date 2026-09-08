@@ -1,0 +1,44 @@
+{
+  "schemaVersion": "1.0.0",
+  "environment": "SYNTHETIC_LOCAL_TEST_ONLY",
+  "records": [
+    {
+      "approvedUseRef": "use_research_synthetic_001",
+      "sourceOrganizationId": "HOSP-A",
+      "requesterRef": "internal-service",
+      "allowedActions": ["privacy:inspect"],
+      "sourceArtifactRef": "synthetic-report-c001",
+      "sourceArtifactVersion": 1,
+      "purpose": "RESEARCH",
+      "recipientRef": "HOSP-B-RESEARCH-SANDBOX",
+      "consentOrBasisVersion": "synthetic-basis-v1",
+      "policyVersion": "text-research-v1@1.0.0",
+      "rulesProfile": "synthetic-a-v1",
+      "mappingScope": "research-a-b-synthetic",
+      "dateShiftDays": 12,
+      "referenceDate": "2026-09-01",
+      "issuedAt": "2026-09-01T00:00:00.000Z",
+      "expiresAt": "2026-12-31T23:59:59.000Z",
+      "revokedAt": null
+    },
+    {
+      "approvedUseRef": "use_demo_synthetic_001",
+      "sourceOrganizationId": "HOSP-A",
+      "requesterRef": "internal-service",
+      "allowedActions": ["privacy:inspect"],
+      "sourceArtifactRef": "synthetic-report-demo-001",
+      "sourceArtifactVersion": 1,
+      "purpose": "DEMO",
+      "recipientRef": "HOSP-B-DEMO-SANDBOX",
+      "consentOrBasisVersion": "synthetic-demo-basis-v1",
+      "policyVersion": "text-demo-v1@1.0.0",
+      "rulesProfile": "synthetic-a-v1",
+      "mappingScope": "demo-a-b-synthetic",
+      "dateShiftDays": 0,
+      "referenceDate": "2026-09-01",
+      "issuedAt": "2026-09-01T00:00:00.000Z",
+      "expiresAt": "2026-12-31T23:59:59.000Z",
+      "revokedAt": null
+    }
+  ]
+}

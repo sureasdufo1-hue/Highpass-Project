@@ -45,7 +45,7 @@ export class InternalServiceProvider extends AuthenticationProvider {
       actorType: PrincipalRole.INTERNAL_SERVICE,
       role: PrincipalRole.INTERNAL_SERVICE,
       roles: [PrincipalRole.INTERNAL_SERVICE],
-      scopes: ["audit:write", "gateway:introspect"],
+      scopes: ["audit:write", "gateway:introspect", "privacy:inspect"],
       hospitalId: null,
       patientId: null,
       doctorId: null,

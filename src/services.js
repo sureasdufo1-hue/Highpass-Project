@@ -19,6 +19,8 @@ import {
   RequestedAction,
   Role,
   TransferMode,
+  TransferRequestStatus,
+  TransferTicketStatus,
   UidPolicy,
   addMinutesIso,
   isWithinWindow,
@@ -43,8 +45,12 @@ export class HipassService {
     this.store = store;
     this.clock = clock;
     this.tokenSecret = options.tokenSecret ?? process.env.DICOM_TOKEN_SECRET ?? randomBytes(32).toString("hex");
+    this.dicomTokenIssuer = options.dicomTokenIssuer ?? process.env.DICOM_TOKEN_ISSUER ?? "highpass-control-plane";
+    this.dicomTokenAudience = options.dicomTokenAudience ?? process.env.DICOM_TOKEN_AUDIENCE ?? "highpass-dicomweb-gateway";
     this.dicomTokenKeyProvider = options.dicomTokenKeyProvider ?? createKeyProvider(this.tokenSecret, process.env);
     this.tokenTtlMinutes = normalizeTokenTtlMinutes(options.tokenTtlMinutes ?? process.env.DICOM_TOKEN_TTL_MINUTES);
+    this.ticketTtlMinutes = normalizeTicketTtlMinutes(options.ticketTtlMinutes ?? process.env.HIPASS_TICKET_TTL_MINUTES);
+    this.publicBaseUrl = String(options.publicBaseUrl ?? process.env.HIPASS_PUBLIC_BASE_URL ?? "https://localhost:3443").replace(/\/+$/, "");
     this.anomalyRules = normalizeAnomalyRules(options.anomalyRules);
     this.deIdentificationPolicy = normalizeDeIdentificationPolicy(options.deIdentificationPolicy);
     this.orthanc = options.orthancClient ?? new OrthancClient();
@@ -420,6 +426,35 @@ export class HipassService {
       .forEach((token) => {
         token.status = "REVOKED";
       });
+    const revokedTickets = this.store
+      .get("transferTickets")
+      .filter((ticket) => ticket.consentId === consentId && ticket.status === TransferTicketStatus.ISSUED);
+    revokedTickets.forEach((ticket) => {
+      ticket.status = TransferTicketStatus.REVOKED;
+      ticket.revokedAt = now;
+    });
+    this.store
+      .get("transferRequests")
+      .filter((request) => request.consentId === consentId && [TransferRequestStatus.PENDING_CONSENT, TransferRequestStatus.TICKET_ISSUED].includes(request.status))
+      .forEach((request) => {
+        request.status = TransferRequestStatus.REVOKED;
+        request.updatedAt = now;
+      });
+    for (const ticket of revokedTickets) {
+      await this.writeAudit({
+        auditSessionId: ticket.auditSessionId,
+        actorType: ActorType.PATIENT,
+        actorId,
+        ticketId: ticket.ticketId,
+        patientId: consent.patientId,
+        consentId,
+        sourceHospitalId: consent.sourceHospitalId,
+        targetHospitalId: consent.targetHospitalId,
+        action: AuditAction.TICKET_REVOKED,
+        result: "SUCCESS",
+        reason: "TICKET_REVOKED",
+      });
+    }
     await this.writeAudit({
       actorType: ActorType.PATIENT,
       actorId,
@@ -432,6 +467,314 @@ export class HipassService {
     });
     await this.store.save();
     return this.getConsent(consentId);
+  }
+
+  async createTransferRequest(input, requestMeta = {}) {
+    const requiredFields = ["requesterDoctorId", "patientId", "sourceHospitalId", "targetHospitalId", "purpose", "permission", "scopes"];
+    const missing = requiredFields.filter((field) => input[field] === undefined || input[field] === null || input[field] === "" || (field === "scopes" && !input.scopes?.length));
+    const purpose = normalizePurpose(input.purpose);
+    if (missing.length || !Object.values(Permission).includes(input.permission) || !Object.values(ConsentPurpose).includes(purpose)) {
+      throw new ServiceValidationError("INVALID_TRANSFER_REQUEST", "Transfer request validation failed", missing.length ? missing : ["PURPOSE_OR_PERMISSION_INVALID"]);
+    }
+
+    const doctor = this.store.get("doctors").find((item) => item.doctorId === input.requesterDoctorId);
+    if (!doctor || !doctor.roles?.includes(Role.DOCTOR) || doctor.hospitalId !== input.sourceHospitalId) {
+      throw new ServiceValidationError("REQUESTER_NOT_SOURCE_HOSPITAL_DOCTOR", "Transfer requests must come from a source-hospital doctor");
+    }
+    const patient = this.store.get("patients").find((item) => item.patientId === input.patientId);
+    if (!patient) {
+      throw new ServiceValidationError("PATIENT_NOT_FOUND", "Patient not found");
+    }
+    if (input.sourceHospitalId === input.targetHospitalId) {
+      throw new ServiceValidationError("HOSPITAL_RELATION_INVALID", "Source and target hospitals must differ");
+    }
+    for (const [hospitalId, code] of [[input.sourceHospitalId, "SOURCE_HOSPITAL_NOT_FOUND"], [input.targetHospitalId, "TARGET_HOSPITAL_NOT_FOUND"]]) {
+      if (!this.store.get("hospitals").some((hospital) => hospital.hospitalId === hospitalId)) {
+        throw new ServiceValidationError(code, "Hospital not found");
+      }
+    }
+
+    const scopes = [];
+    for (const scope of input.scopes) {
+      const study = this.store.get("imagingStudies").find((item) => item.studyInstanceUid === scope.studyInstanceUid);
+      if (!study || study.patientId !== input.patientId || study.sourceHospitalId !== input.sourceHospitalId) {
+        throw new ServiceValidationError("STUDY_SCOPE_INVALID", "Study is not owned by the patient at the source hospital");
+      }
+      if (scope.seriesInstanceUid && !study.series?.some((series) => series.seriesInstanceUid === scope.seriesInstanceUid)) {
+        throw new ServiceValidationError("SERIES_NOT_FOUND", "Series not found");
+      }
+      scopes.push({ studyInstanceUid: study.studyInstanceUid, seriesInstanceUid: scope.seriesInstanceUid ?? null });
+    }
+
+    const now = this.clock();
+    const requestId = makeId("treq");
+    const request = {
+      requestId,
+      requesterDoctorId: input.requesterDoctorId,
+      patientId: input.patientId,
+      sourceHospitalId: input.sourceHospitalId,
+      targetHospitalId: input.targetHospitalId,
+      purpose,
+      permission: input.permission,
+      scopes,
+      status: TransferRequestStatus.PENDING_CONSENT,
+      consentId: null,
+      ticketId: null,
+      note: input.note ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.store.get("transferRequests").push(request);
+    await this.writeAudit({
+      actorType: ActorType.DOCTOR,
+      actorId: input.requesterDoctorId,
+      patientId: input.patientId,
+      sourceHospitalId: input.sourceHospitalId,
+      targetHospitalId: input.targetHospitalId,
+      action: AuditAction.TRANSFER_REQUEST_CREATED,
+      studyInstanceUid: scopes[0]?.studyInstanceUid,
+      seriesInstanceUid: scopes[0]?.seriesInstanceUid,
+      result: "SUCCESS",
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+    });
+    await this.store.save();
+    return { ...request };
+  }
+
+  async approveTransferRequest(requestId, input, requestMeta = {}) {
+    const request = this.store.get("transferRequests").find((item) => item.requestId === requestId);
+    if (!request) return null;
+    if (!input.patientId || input.patientId !== request.patientId) {
+      throw new ServiceValidationError("PATIENT_IDENTITY_MISMATCH", "Only the referenced patient can approve this transfer request");
+    }
+    if (request.status !== TransferRequestStatus.PENDING_CONSENT) {
+      throw new ServiceValidationError("TRANSFER_REQUEST_STATE_INVALID", "Transfer request is not awaiting consent");
+    }
+    if (!Object.values(Permission).includes(input.permission)) {
+      throw new ServiceValidationError("PERMISSION_INVALID", "Permission is invalid");
+    }
+    if (request.permission === Permission.VIEW_ONLY && input.permission === Permission.DOWNLOAD_ALLOWED) {
+      throw new ServiceValidationError("PERMISSION_EXCEEDS_REQUEST", "Patient cannot widen the requested permission");
+    }
+    if (!input.validUntil) {
+      throw new ServiceValidationError("VALID_UNTIL_REQUIRED", "Consent end time is required");
+    }
+
+    const consent = await this.createConsent({
+      patientId: request.patientId,
+      sourceHospitalId: request.sourceHospitalId,
+      targetHospitalId: request.targetHospitalId,
+      purpose: request.purpose,
+      permission: input.permission,
+      validFrom: input.validFrom ?? this.clock(),
+      validUntil: input.validUntil,
+      scopes: request.scopes,
+    });
+
+    const now = this.clock();
+    const nonce = randomBytes(32).toString("base64url");
+    const ticketId = makeId("ticket");
+    const allowedStudyUids = [...new Set(consent.scopes.map((scope) => scope.studyInstanceUid))];
+    const allowedSeriesUids = [...new Set(consent.scopes.map((scope) => scope.seriesInstanceUid).filter(Boolean))];
+    const ticket = {
+      ticketId,
+      nonceHash: digestToken(nonce),
+      requestId,
+      consentId: consent.consentId,
+      patientId: request.patientId,
+      sourceHospitalId: request.sourceHospitalId,
+      targetHospitalId: request.targetHospitalId,
+      purpose: consent.purpose,
+      permission: consent.permission,
+      allowedStudyUids,
+      allowedSeriesUids,
+      status: TransferTicketStatus.ISSUED,
+      auditSessionId: makeId("audit-session"),
+      issuedAt: now,
+      expiresAt: addMinutesIso(this.ticketTtlMinutes, new Date(now)),
+      usedAt: null,
+      revokedAt: null,
+      redeemedDoctorId: null,
+      redeemedHospitalId: null,
+    };
+    this.store.get("transferTickets").push(ticket);
+    request.status = TransferRequestStatus.TICKET_ISSUED;
+    request.consentId = consent.consentId;
+    request.ticketId = ticketId;
+    request.updatedAt = now;
+
+    await this.writeAudit({
+      auditSessionId: ticket.auditSessionId,
+      actorType: ActorType.PATIENT,
+      actorId: request.patientId,
+      ticketId,
+      patientId: request.patientId,
+      consentId: consent.consentId,
+      sourceHospitalId: request.sourceHospitalId,
+      targetHospitalId: request.targetHospitalId,
+      action: AuditAction.TICKET_ISSUED,
+      studyInstanceUid: allowedStudyUids[0] ?? null,
+      result: "SUCCESS",
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+    });
+    await this.store.save();
+
+    return {
+      requestId,
+      ticketId,
+      consentId: consent.consentId,
+      ticket: this.publicTicketView(ticket),
+      qr: {
+        payload: `${this.publicBaseUrl}/t/${nonce}`,
+        expiresAt: ticket.expiresAt,
+      },
+      nonce,
+    };
+  }
+
+  async redeemTransferTicket(nonce, input, requestMeta = {}) {
+    const redeemAuditSessionId = makeId("audit-session");
+    const ticket = findTicketByNonce(this.store.get("transferTickets"), nonce);
+
+    const denied = async (reasonCode) => {
+      await this.writeAudit({
+        auditSessionId: ticket?.auditSessionId ?? redeemAuditSessionId,
+        actorType: ActorType.DOCTOR,
+        actorId: input?.doctorId ?? "UNKNOWN",
+        ticketId: ticket?.ticketId ?? null,
+        patientId: ticket?.patientId ?? null,
+        consentId: ticket?.consentId ?? null,
+        sourceHospitalId: ticket?.sourceHospitalId ?? null,
+        targetHospitalId: input?.requestingHospitalId ?? ticket?.targetHospitalId ?? null,
+        action: AuditAction.TICKET_DENIED,
+        studyInstanceUid: input?.studyInstanceUid ?? null,
+        seriesInstanceUid: input?.seriesInstanceUid ?? null,
+        result: "FAIL",
+        reason: reasonCode,
+        ipAddress: requestMeta.ipAddress,
+        userAgent: requestMeta.userAgent,
+      });
+      await this.store.save();
+      return { decision: AccessDecision.DENIED, reasonCode, auditSessionId: ticket?.auditSessionId ?? redeemAuditSessionId };
+    };
+
+    const requiredFields = ["doctorId", "requestingHospitalId", "studyInstanceUid", "purpose", "requestedAction"];
+    if (!nonce || typeof nonce !== "string" || requiredFields.some((field) => !input?.[field])) {
+      return denied(nonce ? AccessDenyReason.INVALID_REQUEST : "ACCESS_DENIED_NO_TICKET");
+    }
+    if (!Object.values(RequestedAction).includes(input.requestedAction) || !Object.values(ConsentPurpose).includes(normalizePurpose(input.purpose))) {
+      return denied(AccessDenyReason.INVALID_REQUEST);
+    }
+    if (!ticket) {
+      return denied("ACCESS_DENIED_NO_TICKET");
+    }
+    if (ticket.status === TransferTicketStatus.USED) {
+      return denied("TICKET_ALREADY_USED");
+    }
+    if (ticket.status === TransferTicketStatus.REVOKED) {
+      return denied("TICKET_REVOKED");
+    }
+    if (ticket.status !== TransferTicketStatus.ISSUED) {
+      return denied("TICKET_INVALID");
+    }
+    if (new Date(ticket.expiresAt).getTime() < new Date(this.clock()).getTime()) {
+      ticket.status = TransferTicketStatus.EXPIRED;
+      return denied("TICKET_EXPIRED");
+    }
+    if (input.requestingHospitalId !== ticket.targetHospitalId) {
+      return denied(AccessDenyReason.HOSPITAL_MISMATCH);
+    }
+    const doctor = this.store.get("doctors").find((item) => item.doctorId === input.doctorId);
+    if (!doctor || !doctor.roles?.includes(Role.DOCTOR) || doctor.hospitalId !== input.requestingHospitalId) {
+      return denied(AccessDenyReason.DOCTOR_HOSPITAL_MISMATCH);
+    }
+    if (normalizePurpose(input.purpose) !== ticket.purpose) {
+      return denied(AccessDenyReason.PURPOSE_MISMATCH);
+    }
+    if (!ticket.allowedStudyUids.includes(input.studyInstanceUid)) {
+      return denied(AccessDenyReason.STUDY_SCOPE_MISMATCH);
+    }
+    if (input.seriesInstanceUid && ticket.allowedSeriesUids.length && !ticket.allowedSeriesUids.includes(input.seriesInstanceUid)) {
+      return denied(AccessDenyReason.SERIES_SCOPE_MISMATCH);
+    }
+    if (input.requestedAction === RequestedAction.DOWNLOAD && ticket.permission !== Permission.DOWNLOAD_ALLOWED) {
+      return denied(AccessDenyReason.DOWNLOAD_NOT_ALLOWED);
+    }
+
+    ticket.status = TransferTicketStatus.USED;
+    ticket.usedAt = this.clock();
+    ticket.redeemedDoctorId = input.doctorId;
+    ticket.redeemedHospitalId = input.requestingHospitalId;
+    const request = this.store.get("transferRequests").find((item) => item.requestId === ticket.requestId);
+    if (request && request.status === TransferRequestStatus.TICKET_ISSUED) {
+      request.status = TransferRequestStatus.REDEEMED;
+      request.updatedAt = ticket.usedAt;
+    }
+    await this.writeAudit({
+      auditSessionId: ticket.auditSessionId,
+      actorType: ActorType.DOCTOR,
+      actorId: input.doctorId,
+      ticketId: ticket.ticketId,
+      patientId: ticket.patientId,
+      consentId: ticket.consentId,
+      sourceHospitalId: ticket.sourceHospitalId,
+      targetHospitalId: ticket.targetHospitalId,
+      action: AuditAction.TICKET_REDEEMED,
+      studyInstanceUid: input.studyInstanceUid,
+      seriesInstanceUid: input.seriesInstanceUid ?? null,
+      result: "SUCCESS",
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+    });
+    await this.store.save();
+
+    const tokenResult = await this.requestDicomAccessToken({
+      consentId: ticket.consentId,
+      doctorId: input.doctorId,
+      requestingHospitalId: input.requestingHospitalId,
+      studyInstanceUid: input.studyInstanceUid,
+      seriesInstanceUid: input.seriesInstanceUid ?? null,
+      purpose: input.purpose,
+      requestedAction: input.requestedAction,
+    }, requestMeta);
+    if (tokenResult.decision !== AccessDecision.ALLOWED) {
+      return {
+        decision: AccessDecision.DENIED,
+        reasonCode: tokenResult.reasonCode,
+        ticketId: ticket.ticketId,
+        ticketConsumed: true,
+        auditSessionId: tokenResult.auditSessionId,
+      };
+    }
+    return {
+      ...tokenResult,
+      ticketId: ticket.ticketId,
+      ticketAuditSessionId: ticket.auditSessionId,
+      expiresAtTicket: ticket.expiresAt,
+    };
+  }
+
+  publicTicketView(ticket) {
+    if (!ticket) return null;
+    const { nonceHash, ...rest } = ticket;
+    return { ...rest };
+  }
+
+  getTransferRequest(requestId) {
+    const request = this.store.get("transferRequests").find((item) => item.requestId === requestId);
+    if (!request) return null;
+    const ticket = this.store.get("transferTickets").find((item) => item.ticketId === request.ticketId);
+    return { ...request, ticket: this.publicTicketView(ticket) };
+  }
+
+  listTransferRequestsByPatient(patientId) {
+    return this.store
+      .get("transferRequests")
+      .filter((request) => request.patientId === patientId)
+      .map((request) => this.getTransferRequest(request.requestId))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
   checkAccess(input) {
@@ -608,6 +951,8 @@ export class HipassService {
     const tokenId = makeId("jti");
     const claims = {
       jti: tokenId,
+      iss: this.dicomTokenIssuer,
+      aud: this.dicomTokenAudience,
       kid: this.dicomTokenKeyProvider.currentKey()?.kid ?? null,
       consentId: consent.consentId,
       doctorId: input.doctorId,
@@ -623,7 +968,11 @@ export class HipassService {
     const accessToken = this.signAccessToken(claims);
     this.store.get("dicomAccessTokenLogs").push({
       tokenId,
-      token: digestToken(accessToken),
+      jti: tokenId,
+      tokenHash: digestToken(accessToken),
+      issuer: this.dicomTokenIssuer,
+      audience: this.dicomTokenAudience,
+      scope: buildDicomTokenScope(input.studyInstanceUid, allowedSeriesUids, consent.permission),
       auditSessionId: policy.auditSessionId,
       consentId: consent.consentId,
       doctorId: input.doctorId,
@@ -689,8 +1038,15 @@ export class HipassService {
     const claims = parsed.claims;
     const auditSessionId = claims.auditSessionId ?? makeId("audit-session");
     const tokenLog = this.store.get("dicomAccessTokenLogs").find((token) => token.tokenId === claims.jti);
-    if (!tokenLog || tokenLog.token !== digestToken(rawToken)) {
+    if (!tokenLog || !safeEqual(tokenLog.tokenHash ?? "", digestToken(rawToken))) {
       return invalid("TOKEN_INVALID", auditSessionId, claims);
+    }
+    if (claims.iss !== this.dicomTokenIssuer || tokenLog.issuer !== this.dicomTokenIssuer) {
+      return invalid("TOKEN_ISSUER_MISMATCH", auditSessionId, claims);
+    }
+    const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+    if (!audiences.includes(this.dicomTokenAudience) || tokenLog.audience !== this.dicomTokenAudience) {
+      return invalid("TOKEN_AUDIENCE_MISMATCH", auditSessionId, claims);
     }
     if (tokenLog.status === AccessTokenStatus.REVOKED) {
       return invalid("TOKEN_CONSENT_INACTIVE", auditSessionId, claims);
@@ -743,7 +1099,7 @@ export class HipassService {
     const ttl = tokenTtlByPurposeMinutes[access.consent.purpose] ?? 5;
     const token = {
       tokenId: makeId("token"),
-      token: makeId("dicom"),
+      jti: null,
       consentId: access.consent.consentId,
       doctorId: input.doctorId,
       targetHospitalId: input.targetHospitalId,
@@ -753,6 +1109,12 @@ export class HipassService {
       expiresAt: addMinutesIso(ttl, new Date(this.clock())),
       status: "ACTIVE",
     };
+    token.jti = token.tokenId;
+    const rawToken = makeId("dicom");
+    token.tokenHash = digestToken(rawToken);
+    token.issuer = this.dicomTokenIssuer;
+    token.audience = this.dicomTokenAudience;
+    token.scope = buildDicomTokenScope(input.studyInstanceUid, input.seriesInstanceUid ? [input.seriesInstanceUid] : [], "VIEW_ONLY");
     this.store.get("dicomAccessTokenLogs").push(token);
     await this.writeAudit({
       actorType: ActorType.DOCTOR,
@@ -765,11 +1127,12 @@ export class HipassService {
       result: "SUCCESS",
     });
     await this.store.save();
-    return { allowed: true, reason: "TOKEN_ISSUED", token };
+    return { allowed: true, reason: "TOKEN_ISSUED", token: { ...token, token: rawToken, tokenHash: undefined } };
   }
 
   introspectToken(rawToken, studyInstanceUid, seriesInstanceUid) {
-    const token = this.store.get("dicomAccessTokenLogs").find((item) => item.token === rawToken);
+    const presentedHash = digestToken(rawToken);
+    const token = this.store.get("dicomAccessTokenLogs").find((item) => safeEqual(item.tokenHash ?? "", presentedHash));
     if (!token) return { active: false, reason: "TOKEN_NOT_FOUND" };
     if (token.status !== "ACTIVE") return { active: false, reason: `TOKEN_${token.status}` };
     if (new Date(token.expiresAt).getTime() < new Date(this.clock()).getTime()) {
@@ -1155,6 +1518,7 @@ export class HipassService {
       hospitalId: input.hospitalId ?? input.targetHospitalId ?? input.sourceHospitalId ?? null,
       patientId: input.patientId ?? null,
       consentId: input.consentId ?? null,
+      ticketId: input.ticketId ?? null,
       sourceHospitalId: input.sourceHospitalId ?? null,
       targetHospitalId: input.targetHospitalId ?? null,
       action: input.action,
@@ -1500,6 +1864,18 @@ function normalizeTokenTtlMinutes(value) {
   return Math.min(10, Math.max(5, parsed));
 }
 
+function normalizeTicketTtlMinutes(value) {
+  const parsed = Number(value ?? 10);
+  if (!Number.isFinite(parsed)) return 10;
+  return Math.min(15, Math.max(1, parsed));
+}
+
+function findTicketByNonce(tickets, nonce) {
+  if (!nonce || typeof nonce !== "string") return null;
+  const presentedHash = digestToken(nonce);
+  return tickets.find((ticket) => safeEqual(ticket.nonceHash ?? "", presentedHash)) ?? null;
+}
+
 function normalizeAnomalyRules(overrides = {}) {
   return {
     bulkAccessWindowMinutes: numberFromEnv("HIPASS_BULK_ACCESS_WINDOW_MINUTES", overrides.bulkAccessWindowMinutes, 5),
@@ -1681,6 +2057,7 @@ function auditRecordHash(log) {
     hospitalId: log.hospitalId ?? null,
     patientId: log.patientId ?? null,
     consentId: log.consentId ?? null,
+    ticketId: log.ticketId ?? null,
     sourceHospitalId: log.sourceHospitalId ?? null,
     targetHospitalId: log.targetHospitalId ?? null,
     action: log.action,
@@ -1717,6 +2094,14 @@ function safeEqual(left, right) {
 
 function digestToken(token) {
   return `sha256:${createHash("sha256").update(token).digest("hex")}`;
+}
+
+function buildDicomTokenScope(studyInstanceUid, allowedSeriesUids, permission) {
+  return {
+    studyInstanceUid,
+    allowedSeriesUids: [...new Set(allowedSeriesUids ?? [])],
+    actions: permission === Permission.DOWNLOAD_ALLOWED ? ["VIEW", "DOWNLOAD"] : ["VIEW"],
+  };
 }
 
 function dicomValue(row, tag) {

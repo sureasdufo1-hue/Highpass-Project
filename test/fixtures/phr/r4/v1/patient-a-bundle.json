@@ -1,0 +1,124 @@
+{
+  "resourceType": "Bundle",
+  "id": "phr-synthetic-a-bundle-v1",
+  "meta": { "versionId": "phr-r4-v1", "lastUpdated": "2026-09-08T00:00:00Z" },
+  "type": "collection",
+  "timestamp": "2026-09-08T00:00:00Z",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:10000000-0000-4000-8000-000000000001",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "synthetic-patient-a",
+        "meta": { "source": "urn:highpass:synthetic:phr-r4-v1" },
+        "identifier": [{ "system": "urn:highpass:synthetic:hospital-a:patient", "value": "SYN-A-0001" }],
+        "active": true,
+        "name": [{ "use": "official", "text": "합성환자 A" }]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:10000000-0000-4000-8000-000000000002",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "synthetic-encounter-a-1",
+        "status": "finished",
+        "class": { "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode", "code": "AMB", "display": "ambulatory" },
+        "subject": { "reference": "Patient/synthetic-patient-a" },
+        "period": { "start": "2026-05-18T01:00:00Z", "end": "2026-05-18T02:00:00Z" },
+        "serviceProvider": { "reference": "Organization/synthetic-hospital-a", "display": "가상 병원 A" }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:10000000-0000-4000-8000-000000000003",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "synthetic-condition-a-1",
+        "clinicalStatus": { "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": "active" }] },
+        "verificationStatus": { "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status", "code": "confirmed" }] },
+        "code": { "coding": [{ "system": "urn:highpass:synthetic:condition", "code": "SYN-CHEST-EVAL", "display": "합성 흉부 평가" }], "text": "합성 흉부 평가" },
+        "subject": { "reference": "Patient/synthetic-patient-a" },
+        "encounter": { "reference": "Encounter/synthetic-encounter-a-1" },
+        "recordedDate": "2026-05-18"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:10000000-0000-4000-8000-000000000004",
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "synthetic-medication-a-1",
+        "status": "completed",
+        "intent": "order",
+        "medicationCodeableConcept": { "coding": [{ "system": "urn:highpass:synthetic:medication", "code": "SYN-MED-A", "display": "합성 의약품 A" }] },
+        "subject": { "reference": "Patient/synthetic-patient-a" },
+        "encounter": { "reference": "Encounter/synthetic-encounter-a-1" },
+        "authoredOn": "2026-05-18",
+        "dosageInstruction": [{ "text": "합성 시험용 제공값: 1일 1회 3일" }]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:10000000-0000-4000-8000-000000000005",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "synthetic-observation-a-1",
+        "status": "final",
+        "category": [{ "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "laboratory" }] }],
+        "code": { "coding": [{ "system": "http://loinc.org", "code": "718-7", "display": "Hemoglobin [Mass/volume] in Blood" }] },
+        "subject": { "reference": "Patient/synthetic-patient-a" },
+        "encounter": { "reference": "Encounter/synthetic-encounter-a-1" },
+        "effectiveDateTime": "2026-05-18T01:30:00Z",
+        "valueQuantity": { "value": 13.2, "unit": "g/dL", "system": "http://unitsofmeasure.org", "code": "g/dL" },
+        "referenceRange": [{ "low": { "value": 12, "unit": "g/dL", "system": "http://unitsofmeasure.org", "code": "g/dL" }, "high": { "value": 16, "unit": "g/dL", "system": "http://unitsofmeasure.org", "code": "g/dL" } }]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:10000000-0000-4000-8000-000000000006",
+      "resource": {
+        "resourceType": "DiagnosticReport",
+        "id": "synthetic-report-a-1",
+        "status": "final",
+        "code": { "coding": [{ "system": "urn:highpass:synthetic:report", "code": "SYN-REPORT-A", "display": "합성 검사보고서 A" }] },
+        "subject": { "reference": "Patient/synthetic-patient-a" },
+        "encounter": { "reference": "Encounter/synthetic-encounter-a-1" },
+        "effectiveDateTime": "2026-05-18T01:30:00Z",
+        "issued": "2026-05-18T02:00:00Z",
+        "result": [{ "reference": "Observation/synthetic-observation-a-1" }],
+        "imagingStudy": [{ "reference": "ImagingStudy/synthetic-imaging-a-ct" }],
+        "conclusion": "합성 데이터 기반 검사보고서이며 임상 판단에 사용할 수 없음"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:10000000-0000-4000-8000-000000000007",
+      "resource": {
+        "resourceType": "ImagingStudy",
+        "id": "synthetic-imaging-a-ct",
+        "identifier": [{ "system": "urn:dicom:uid", "value": "urn:oid:1.2.826.0.1.3680043.10.5432.20260908.1001.1" }],
+        "status": "available",
+        "modality": [{ "system": "http://dicom.nema.org/resources/ontology/DCM", "code": "CT" }],
+        "subject": { "reference": "Patient/synthetic-patient-a" },
+        "encounter": { "reference": "Encounter/synthetic-encounter-a-1" },
+        "started": "2026-05-18T01:20:00Z",
+        "numberOfSeries": 1,
+        "numberOfInstances": 1,
+        "description": "합성 흉부 CT",
+        "series": [{
+          "uid": "1.2.826.0.1.3680043.10.5432.20260908.1001.1.1",
+          "number": 1,
+          "modality": { "system": "http://dicom.nema.org/resources/ontology/DCM", "code": "CT" },
+          "description": "합성 Lung window",
+          "numberOfInstances": 1,
+          "instance": [{ "uid": "1.2.826.0.1.3680043.10.5432.20260908.1001.1.1.1", "sopClass": { "system": "urn:ietf:rfc:3986", "code": "urn:oid:1.2.840.10008.5.1.4.1.1.7" }, "number": 1 }]
+        }]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:10000000-0000-4000-8000-000000000008",
+      "resource": {
+        "resourceType": "Organization",
+        "id": "synthetic-hospital-a",
+        "identifier": [{ "system": "urn:highpass:synthetic:hospital", "value": "HOSP-A" }],
+        "active": true,
+        "name": "가상 병원 A"
+      }
+    }
+  ]
+}

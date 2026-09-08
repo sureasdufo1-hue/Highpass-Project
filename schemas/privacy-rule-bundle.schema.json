@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://highpass.local/schemas/privacy-rule-bundle.schema.json",
+  "title": "Highpass synthetic privacy rule bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "environment", "profiles"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "environment": { "const": "SYNTHETIC_LOCAL_TEST_ONLY" },
+    "profiles": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["enabled", "publicUrlAllowlist", "institutionIdentifierPatterns", "replacement"],
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "publicUrlAllowlist": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+          "institutionIdentifierPatterns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "fieldContext", "pattern"],
+              "properties": {
+                "id": { "type": "string" },
+                "fieldContext": { "type": "string" },
+                "pattern": { "type": "string" }
+              }
+            }
+          },
+          "replacement": { "type": "object", "minProperties": 1, "additionalProperties": { "type": "string" } }
+        }
+      }
+    }
+  }
+}
