@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "1.0",
+  "fixtureVersion": "phr-r4-v1",
+  "fhirVersion": "4.0.1",
+  "seed": "highpass-phr-r4-v1-20260908",
+  "synthetic": true,
+  "clinicalUseProhibited": true,
+  "license": "project-generated synthetic test data",
+  "source": "Highpass project-authored minimal FHIR R4 fixtures",
+  "generatedAt": "2026-09-08T00:00:00Z",
+  "files": {
+    "patient-a-bundle.json": "583e30200c7282200cc75d637e65e65d73722cbde1cf8c65e0f19f7ea79e7897",
+    "patient-b-bundle.json": "d4ec06c7a5d73e4dc8ee4768cd4248782287968b26c085d1a79380c05925d2e0",
+    "identity-map.synthetic.json": "f34620c3a9e061c223d61c3b1a0003b09b287dc15e0c6f826e3a510682fa924e",
+    "imaging-map.synthetic.json": "c4dc9400d2ccaa3d4b5ead1881f17daf908b802f0a16b8064cc13922e59d6277"
+  },
+  "orthancSeed": {
+    "source": "scripts/load-sample-dicom.js",
+    "sha256": "402474595488aeee123c3458903986b9ed7392302114c9cd5f1bf2c4091b5773",
+    "mappedStudyUids": ["1.2.826.0.1.3680043.10.5432.20260908.1001.1"],
+    "knownMetadataOnlyStudyUids": ["1.2.826.0.1.3680043.10.5432.20260908.1002.1"]
+  },
+  "review": {
+    "fhirStructureAndProviderContractOwner": "LEE_JAESEOK",
+    "clinicalMappingAndDicomOwner": "KIM_BEOMHEE",
+    "status": "PENDING_OWNER_REVIEW"
+  }
+}

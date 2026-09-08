@@ -27,6 +27,21 @@ export const GatewayStatus = Object.freeze({
   DEGRADED: "DEGRADED",
 });
 
+export const TransferRequestStatus = Object.freeze({
+  PENDING_CONSENT: "PENDING_CONSENT",
+  TICKET_ISSUED: "TICKET_ISSUED",
+  REDEEMED: "REDEEMED",
+  EXPIRED: "EXPIRED",
+  REVOKED: "REVOKED",
+});
+
+export const TransferTicketStatus = Object.freeze({
+  ISSUED: "ISSUED",
+  USED: "USED",
+  REVOKED: "REVOKED",
+  EXPIRED: "EXPIRED",
+});
+
 export const AccessTokenStatus = Object.freeze({
   ACTIVE: "ACTIVE",
   REVOKED: "REVOKED",
@@ -66,6 +81,11 @@ export const AuditAction = Object.freeze({
   SERIES_VIEW: "SERIES_VIEW",
   INSTANCE_DOWNLOAD: "INSTANCE_DOWNLOAD",
   REVOKE: "REVOKE",
+  TRANSFER_REQUEST_CREATED: "TRANSFER_REQUEST_CREATED",
+  TICKET_ISSUED: "TICKET_ISSUED",
+  TICKET_REDEEMED: "TICKET_REDEEMED",
+  TICKET_DENIED: "TICKET_DENIED",
+  TICKET_REVOKED: "TICKET_REVOKED",
 });
 
 export const ResearchExportStatus = Object.freeze({
@@ -117,6 +137,11 @@ export const AccessDenyReason = Object.freeze({
   PURPOSE_MISMATCH: "PURPOSE_MISMATCH",
   DOWNLOAD_NOT_ALLOWED: "DOWNLOAD_NOT_ALLOWED",
   INVALID_REQUEST: "INVALID_REQUEST",
+  ACCESS_DENIED_NO_TICKET: "ACCESS_DENIED_NO_TICKET",
+  TICKET_ALREADY_USED: "TICKET_ALREADY_USED",
+  TICKET_EXPIRED: "TICKET_EXPIRED",
+  TICKET_REVOKED: "TICKET_REVOKED",
+  TICKET_INVALID: "TICKET_INVALID",
 });
 
 export const TransferMode = Object.freeze({

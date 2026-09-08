@@ -9,6 +9,8 @@ const tableOrder = [
   "series",
   "consents",
   "consentScopes",
+  "transferRequests",
+  "transferTickets",
   "dicomAccessTokenLogs",
   "auditLogs",
   "transferUsageLogs",
@@ -82,6 +84,8 @@ export class PostgresStore {
     try {
       await this.client.query(`
         TRUNCATE
+          transfer_tickets,
+          transfer_requests,
           pseudonym_mappings,
           research_export_requests,
           transfer_usage_logs,
@@ -106,6 +110,8 @@ export class PostgresStore {
       await this.insertStudies(this.data.imagingStudies);
       await this.insertConsents(this.data.consents);
       await this.insertConsentScopes(this.data.consentScopes);
+      await this.insertTransferRequests(this.data.transferRequests);
+      await this.insertTransferTickets(this.data.transferTickets);
       await this.insertTokenLogs(this.data.dicomAccessTokenLogs);
       await this.insertAuditLogs(this.data.auditLogs);
       await this.insertTransferUsageLogs(this.data.transferUsageLogs);
@@ -124,6 +130,8 @@ export class PostgresStore {
     const appendable = new Map([
       ["consents", "consentId"],
       ["consentScopes", "scopeId"],
+      ["transferTickets", "ticketId"],
+      ["transferRequests", "requestId"],
       ["dicomAccessTokenLogs", "tokenId"],
       ["auditLogs", "auditId"],
       ["transferUsageLogs", "usageId"],
@@ -153,6 +161,8 @@ export class PostgresStore {
     try {
       await this.insertConsents(changes.consents);
       await this.insertConsentScopes(changes.consentScopes);
+      await this.insertTransferRequests(changes.transferRequests);
+      await this.insertTransferTickets(changes.transferTickets);
       await this.insertTokenLogs(changes.dicomAccessTokenLogs);
       await this.insertAuditLogs(changes.auditLogs);
       await this.insertTransferUsageLogs(changes.transferUsageLogs);
@@ -182,6 +192,8 @@ export class PostgresStore {
     const seriesRows = await this.readTable("series");
     const consents = await this.readTable("consents");
     const consentScopes = await this.readTable("consentScopes");
+    const transferRequests = await this.readTable("transferRequests");
+    const transferTickets = await this.readTable("transferTickets");
     const tokenLogs = await this.readTable("dicomAccessTokenLogs");
     const auditLogs = await this.readTable("auditLogs");
     const transferUsageLogs = await this.readTable("transferUsageLogs");
@@ -200,6 +212,8 @@ export class PostgresStore {
       })),
       consents,
       consentScopes,
+      transferRequests,
+      transferTickets,
       dicomAccessTokenLogs: tokenLogs,
       auditLogs,
       transferUsageLogs,
@@ -218,6 +232,8 @@ export class PostgresStore {
       series: () => this.client.query("SELECT * FROM imaging_series ORDER BY series_instance_uid"),
       consents: () => this.client.query("SELECT * FROM consents ORDER BY created_at, consent_id"),
       consentScopes: () => this.client.query("SELECT * FROM consent_scopes ORDER BY scope_id"),
+      transferRequests: () => this.client.query("SELECT * FROM transfer_requests ORDER BY created_at, request_id"),
+      transferTickets: () => this.client.query("SELECT * FROM transfer_tickets ORDER BY issued_at, ticket_id"),
       dicomAccessTokenLogs: () => this.client.query("SELECT * FROM dicom_access_token_logs ORDER BY issued_at, token_id"),
       auditLogs: () => this.client.query("SELECT * FROM audit_logs ORDER BY created_at, audit_id"),
       transferUsageLogs: () => this.client.query("SELECT * FROM transfer_usage_logs ORDER BY transfer_started_at, usage_id"),
@@ -360,6 +376,67 @@ export class PostgresStore {
     }
   }
 
+  async insertTransferRequests(rows) {
+    for (const row of rows ?? []) {
+      await this.client.query(
+        `INSERT INTO transfer_requests (
+           request_id, requester_doctor_id, patient_id, source_hospital_id, target_hospital_id,
+           purpose, permission, scopes, status, consent_id, ticket_id, created_at, updated_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13)`,
+        [
+          row.requestId,
+          row.requesterDoctorId,
+          row.patientId,
+          row.sourceHospitalId,
+          row.targetHospitalId,
+          row.purpose,
+          row.permission,
+          JSON.stringify(row.scopes ?? []),
+          row.status,
+          row.consentId ?? null,
+          row.ticketId ?? null,
+          row.createdAt,
+          row.updatedAt ?? row.createdAt,
+        ],
+      );
+    }
+  }
+
+  async insertTransferTickets(rows) {
+    for (const row of rows ?? []) {
+      await this.client.query(
+        `INSERT INTO transfer_tickets (
+           ticket_id, request_id, consent_id, patient_id, source_hospital_id, target_hospital_id,
+           purpose, permission, allowed_study_uids, allowed_series_uids, nonce_hash, status,
+           audit_session_id, issued_at, expires_at, used_at, revoked_at, redeemed_doctor_id, redeemed_hospital_id
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+        [
+          row.ticketId,
+          row.requestId,
+          row.consentId,
+          row.patientId,
+          row.sourceHospitalId,
+          row.targetHospitalId,
+          row.purpose,
+          row.permission,
+          JSON.stringify(row.allowedStudyUids ?? []),
+          JSON.stringify(row.allowedSeriesUids ?? []),
+          row.nonceHash,
+          row.status,
+          row.auditSessionId,
+          row.issuedAt,
+          row.expiresAt,
+          row.usedAt ?? null,
+          row.revokedAt ?? null,
+          row.redeemedDoctorId ?? null,
+          row.redeemedHospitalId ?? null,
+        ],
+      );
+    }
+  }
+
   async insertTokenLogs(rows) {
     for (const row of rows) {
       await this.client.query(
@@ -397,12 +474,12 @@ export class PostgresStore {
     for (const row of rows) {
       await this.client.query(
         `INSERT INTO audit_logs (
-           audit_id, audit_session_id, actor_type, actor_id, hospital_id, patient_id, consent_id,
+           audit_id, audit_session_id, actor_type, actor_id, hospital_id, patient_id, consent_id, ticket_id,
            source_hospital_id, target_hospital_id, action, study_instance_uid, series_instance_uid,
            sop_instance_uid, ip_address, user_agent, created_at, result, reason, reason_code,
            previous_hash, record_hash
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`,
         [
           row.auditId,
           row.auditSessionId,
@@ -411,6 +488,7 @@ export class PostgresStore {
           row.hospitalId ?? null,
           row.patientId ?? null,
           row.consentId ?? null,
+          row.ticketId ?? null,
           row.sourceHospitalId,
           row.targetHospitalId,
           row.action,
@@ -585,6 +663,42 @@ const rowMappers = {
     allowed: row.allowed,
     createdAt: toIsoString(row.created_at),
   }),
+  transferRequests: (row) => ({
+    requestId: row.request_id,
+    requesterDoctorId: row.requester_doctor_id,
+    patientId: row.patient_id,
+    sourceHospitalId: row.source_hospital_id,
+    targetHospitalId: row.target_hospital_id,
+    purpose: row.purpose,
+    permission: row.permission,
+    scopes: row.scopes ?? [],
+    status: row.status,
+    consentId: row.consent_id,
+    ticketId: row.ticket_id,
+    createdAt: toIsoString(row.created_at),
+    updatedAt: toIsoString(row.updated_at),
+  }),
+  transferTickets: (row) => ({
+    ticketId: row.ticket_id,
+    requestId: row.request_id,
+    consentId: row.consent_id,
+    patientId: row.patient_id,
+    sourceHospitalId: row.source_hospital_id,
+    targetHospitalId: row.target_hospital_id,
+    purpose: row.purpose,
+    permission: row.permission,
+    allowedStudyUids: row.allowed_study_uids ?? [],
+    allowedSeriesUids: row.allowed_series_uids ?? [],
+    nonceHash: row.nonce_hash,
+    status: row.status,
+    auditSessionId: row.audit_session_id,
+    issuedAt: toIsoString(row.issued_at),
+    expiresAt: toIsoString(row.expires_at),
+    usedAt: toIsoString(row.used_at),
+    revokedAt: toIsoString(row.revoked_at),
+    redeemedDoctorId: row.redeemed_doctor_id,
+    redeemedHospitalId: row.redeemed_hospital_id,
+  }),
   dicomAccessTokenLogs: (row) => ({
     tokenId: row.token_id,
     tokenHash: row.token_hash,
@@ -613,6 +727,7 @@ const rowMappers = {
     hospitalId: row.hospital_id,
     patientId: row.patient_id,
     consentId: row.consent_id,
+    ticketId: row.ticket_id,
     sourceHospitalId: row.source_hospital_id,
     targetHospitalId: row.target_hospital_id,
     action: row.action,
@@ -690,6 +805,8 @@ function normalizeStoreData(data) {
   data.doctors = uniqueBy(data.doctors, "doctorId");
   data.consents = uniqueBy(data.consents, "consentId");
   data.consentScopes = uniqueBy(data.consentScopes, "scopeId");
+  data.transferRequests = uniqueBy(data.transferRequests ?? [], "requestId");
+  data.transferTickets = uniqueBy(data.transferTickets ?? [], "ticketId");
   data.dicomAccessTokenLogs = uniqueBy(data.dicomAccessTokenLogs, "tokenId");
   data.auditLogs = uniqueBy(data.auditLogs, "auditId");
   data.transferUsageLogs = uniqueBy(data.transferUsageLogs, "usageId");
@@ -812,6 +929,44 @@ ALTER TABLE consent_scopes ADD COLUMN IF NOT EXISTS created_at timestamptz;
 UPDATE consent_scopes SET created_at = now() WHERE created_at IS NULL;
 ALTER TABLE consent_scopes ALTER COLUMN created_at SET NOT NULL;
 
+CREATE TABLE IF NOT EXISTS transfer_requests (
+  request_id varchar PRIMARY KEY,
+  requester_doctor_id varchar NOT NULL,
+  patient_id varchar NOT NULL REFERENCES patients(patient_id),
+  source_hospital_id varchar NOT NULL REFERENCES hospitals(hospital_id),
+  target_hospital_id varchar NOT NULL REFERENCES hospitals(hospital_id),
+  purpose varchar NOT NULL,
+  permission varchar NOT NULL,
+  scopes jsonb NOT NULL,
+  status varchar NOT NULL,
+  consent_id varchar REFERENCES consents(consent_id),
+  ticket_id varchar,
+  created_at timestamptz NOT NULL,
+  updated_at timestamptz NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS transfer_tickets (
+  ticket_id varchar PRIMARY KEY,
+  request_id varchar NOT NULL REFERENCES transfer_requests(request_id),
+  consent_id varchar NOT NULL REFERENCES consents(consent_id),
+  patient_id varchar NOT NULL REFERENCES patients(patient_id),
+  source_hospital_id varchar NOT NULL,
+  target_hospital_id varchar NOT NULL,
+  purpose varchar NOT NULL,
+  permission varchar NOT NULL,
+  allowed_study_uids jsonb NOT NULL,
+  allowed_series_uids jsonb NOT NULL,
+  nonce_hash varchar NOT NULL UNIQUE,
+  status varchar NOT NULL,
+  audit_session_id varchar NOT NULL,
+  issued_at timestamptz NOT NULL,
+  expires_at timestamptz NOT NULL,
+  used_at timestamptz,
+  revoked_at timestamptz,
+  redeemed_doctor_id varchar,
+  redeemed_hospital_id varchar
+);
+
 CREATE TABLE IF NOT EXISTS dicom_access_token_logs (
   token_id varchar PRIMARY KEY,
   token varchar UNIQUE,
@@ -872,6 +1027,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS hospital_id varchar;
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS patient_id varchar;
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS consent_id varchar;
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS ticket_id varchar;
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS sop_instance_uid varchar;
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS reason_code varchar;
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS previous_hash varchar;
@@ -938,6 +1094,10 @@ CREATE INDEX IF NOT EXISTS idx_consent_scopes_lookup ON consent_scopes(consent_i
 CREATE UNIQUE INDEX IF NOT EXISTS idx_consent_scopes_unique ON consent_scopes(consent_id, study_instance_uid, COALESCE(series_instance_uid, ''));
 CREATE INDEX IF NOT EXISTS idx_tokens_token_hash ON dicom_access_token_logs(token_hash) WHERE token_hash IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tokens_jti ON dicom_access_token_logs(jti) WHERE jti IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_transfer_requests_patient ON transfer_requests(patient_id, status);
+CREATE INDEX IF NOT EXISTS idx_transfer_tickets_consent ON transfer_tickets(consent_id, status);
+CREATE INDEX IF NOT EXISTS idx_transfer_tickets_expiry ON transfer_tickets(status, expires_at);
+CREATE INDEX IF NOT EXISTS idx_audit_ticket_id ON audit_logs(ticket_id) WHERE ticket_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_actor_created_at ON audit_logs(actor_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_action_created_at ON audit_logs(action, created_at);

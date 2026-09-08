@@ -40,6 +40,14 @@ export function sendError(response, statusCode, message, details = undefined) {
   sendJson(response, statusCode, { error: message, details });
 }
 
+export function sendProblem(response, problem) {
+  response.writeHead(problem.status, {
+    "content-type": "application/problem+json; charset=utf-8",
+    "cache-control": "no-store",
+  });
+  response.end(JSON.stringify(problem, null, 2));
+}
+
 export function getBearerToken(request) {
   const header = request.headers.authorization ?? "";
   const [scheme, token] = header.split(" ");

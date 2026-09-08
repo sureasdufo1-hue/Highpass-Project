@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "1.0",
+  "fixtureVersion": "phr-r4-v1",
+  "synthetic": true,
+  "bindings": [
+    {
+      "accountSubject": "synthetic-account-a",
+      "patientRef": "P-1001",
+      "providerId": "synthetic-r4",
+      "sourceOrganizationRef": "HOSP-A",
+      "fhirPatientId": "synthetic-patient-a",
+      "fhirIdentifier": { "system": "urn:highpass:synthetic:hospital-a:patient", "value": "SYN-A-0001" },
+      "dicomPatientId": "P-1001"
+    },
+    {
+      "accountSubject": "synthetic-account-b",
+      "patientRef": "P-1002",
+      "providerId": "synthetic-r4",
+      "sourceOrganizationRef": "HOSP-B",
+      "fhirPatientId": "synthetic-patient-b",
+      "fhirIdentifier": { "system": "urn:highpass:synthetic:hospital-b:patient", "value": "SYN-B-0001" },
+      "dicomPatientId": "P-1002"
+    }
+  ]
+}

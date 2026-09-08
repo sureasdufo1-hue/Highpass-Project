@@ -5,6 +5,7 @@ export const RetentionDataType = Object.freeze({
   IMAGING_STUDY_METADATA: "IMAGING_STUDY_METADATA",
   AUDIT_LOG: "AUDIT_LOG",
   ACCESS_TOKEN_LOG: "ACCESS_TOKEN_LOG",
+  TRANSFER_TICKET: "TRANSFER_TICKET",
   IP_ADDRESS: "IP_ADDRESS",
   TEMPORARY_CACHE: "TEMPORARY_CACHE",
   TEMPORARY_DICOM: "TEMPORARY_DICOM",
@@ -25,6 +26,7 @@ export function buildRetentionPolicies(env = process.env) {
     policy(RetentionDataType.IMAGING_STUDY_METADATA, "Minimum routing and consent scope metadata", "Control Plane DB: imaging_studies, imaging_series", "LEGAL RETENTION PERIOD NOT DETERMINED", "Source hospital/patient lifecycle decision", "metadata purge candidate only", false),
     policy(RetentionDataType.AUDIT_LOG, "Security audit and dispute evidence", "Control Plane DB: audit_logs", "LEGAL RETENTION PERIOD NOT DETERMINED", "Legal retention decision", "append-only retention; no normal purge", false),
     policy(RetentionDataType.ACCESS_TOKEN_LOG, "Short-lived DICOMweb token audit evidence", "Control Plane DB: dicom_access_token_logs", env.HIPASS_TOKEN_LOG_RETENTION_DAYS ?? "LEGAL RETENTION PERIOD NOT DETERMINED", "Token log age exceeds configured policy", "dry-run candidate; enforce only after approval", true),
+    policy(RetentionDataType.TRANSFER_TICKET, "One-time QR transfer ticket state and nonce digest (plaintext nonce is never stored)", "Control Plane DB: transfer_tickets", env.HIPASS_TICKET_LOG_RETENTION_DAYS ?? "LEGAL RETENTION PERIOD NOT DETERMINED", "Ticket expired or consumed beyond configured policy", "dry-run candidate; enforce only after approval", true),
     policy(RetentionDataType.IP_ADDRESS, "Security audit metadata", "Control Plane DB: audit_logs, transfer_usage_logs", "LEGAL RETENTION PERIOD NOT DETERMINED", "Legal retention decision", "minimize or truncate after approved period", false),
     policy(RetentionDataType.TEMPORARY_CACHE, "Transient viewer/gateway cache if introduced", "No persistent Control Plane cache currently identified", env.HIPASS_TEMP_CACHE_RETENTION_DAYS ?? "0", "Cache expires", "delete transient cache", true),
     policy(RetentionDataType.TEMPORARY_DICOM, "Temporary DICOM if introduced", "No Control Plane DICOM storage currently identified", env.HIPASS_TEMP_DICOM_RETENTION_DAYS ?? "0", "Temporary processing complete", "delete temporary object and audit", true),
@@ -37,31 +39,38 @@ export function planRetentionPurge(store, clock = () => new Date().toISOString()
   const mode = normalizePurgeMode(env.RETENTION_PURGE_MODE);
   const now = new Date(clock()).getTime();
   const policies = buildRetentionPolicies(env);
-  const tokenRetentionDays = Number(env.HIPASS_TOKEN_LOG_RETENTION_DAYS);
-  const tokenCandidates = Number.isFinite(tokenRetentionDays) && tokenRetentionDays >= 0
-    ? collection(store, "dicomAccessTokenLogs").filter((token) => isOlderThan(token.expiresAt ?? token.issuedAt, tokenRetentionDays, now))
-    : [];
-  const tokenIds = tokenCandidates.map((token) => token.tokenId);
-  const heldIds = legalHoldIds(store, RetentionDataType.ACCESS_TOKEN_LOG);
-  const approvedIds = deletionApprovalIds(store, RetentionDataType.ACCESS_TOKEN_LOG);
-  const heldCount = tokenIds.filter((id) => heldIds.has(id)).length;
-  const approvedCount = tokenIds.filter((id) => approvedIds.has(id)).length;
 
   return {
     mode,
     generatedAt: new Date(now).toISOString(),
     destructiveActionTaken: false,
     candidates: [
-      {
-        dataType: RetentionDataType.ACCESS_TOKEN_LOG,
-        count: tokenCandidates.length,
-        ids: tokenIds,
-        legalHoldCount: heldCount,
-        approvedCount,
-        action: retentionAction(mode, tokenIds.length, heldCount, approvedCount, env),
-      },
+      candidateFor(store, env, mode, now, RetentionDataType.ACCESS_TOKEN_LOG, "dicomAccessTokenLogs", "tokenId", "HIPASS_TOKEN_LOG_RETENTION_DAYS"),
+      candidateFor(store, env, mode, now, RetentionDataType.TRANSFER_TICKET, "transferTickets", "ticketId", "HIPASS_TICKET_LOG_RETENTION_DAYS"),
     ],
     policies,
+  };
+}
+
+function candidateFor(store, env, mode, now, dataType, collectionName, idField, retentionEnvKey) {
+  const retentionDays = Number(env[retentionEnvKey]);
+  const candidates = Number.isFinite(retentionDays) && retentionDays >= 0
+    ? collection(store, collectionName).filter((row) => isOlderThan(row.expiresAt ?? row.issuedAt, retentionDays, now))
+    : [];
+  const ids = candidates.map((row) => row[idField]);
+  const heldIds = legalHoldIds(store, dataType);
+  const approvedIds = deletionApprovalIds(store, dataType);
+  const heldCount = ids.filter((id) => heldIds.has(id)).length;
+  const approvedCount = ids.filter((id) => approvedIds.has(id)).length;
+  return {
+    dataType,
+    collectionName,
+    idField,
+    count: candidates.length,
+    ids,
+    legalHoldCount: heldCount,
+    approvedCount,
+    action: retentionAction(mode, ids.length, heldCount, approvedCount, env),
   };
 }
 
@@ -71,20 +80,21 @@ export async function executeRetentionPurge(store, clock = () => new Date().toIS
     return { ...plan, destructiveActionTaken: false, deleted: [] };
   }
 
-  const candidate = plan.candidates.find((item) => item.dataType === RetentionDataType.ACCESS_TOKEN_LOG);
-  const legalHold = legalHoldIds(store, RetentionDataType.ACCESS_TOKEN_LOG);
-  const approved = deletionApprovalIds(store, RetentionDataType.ACCESS_TOKEN_LOG);
-  const deletableIds = new Set((candidate?.ids ?? []).filter((id) => approved.has(id) && !legalHold.has(id)));
-  if (!deletableIds.size) return { ...plan, destructiveActionTaken: false, deleted: [] };
-
-  const before = collection(store, "dicomAccessTokenLogs");
-  store.set("dicomAccessTokenLogs", before.filter((token) => !deletableIds.has(token.tokenId)));
-  await store.save?.();
-  return {
-    ...plan,
-    destructiveActionTaken: true,
-    deleted: [{ dataType: RetentionDataType.ACCESS_TOKEN_LOG, ids: [...deletableIds] }],
-  };
+  const deleted = [];
+  let destructiveActionTaken = false;
+  for (const candidate of plan.candidates) {
+    if (!candidate.count) continue;
+    const legalHold = legalHoldIds(store, candidate.dataType);
+    const approved = deletionApprovalIds(store, candidate.dataType);
+    const deletableIds = new Set(candidate.ids.filter((id) => approved.has(id) && !legalHold.has(id)));
+    if (!deletableIds.size) continue;
+    const before = collection(store, candidate.collectionName);
+    store.set(candidate.collectionName, before.filter((row) => !deletableIds.has(row[candidate.idField])));
+    deleted.push({ dataType: candidate.dataType, ids: [...deletableIds] });
+    destructiveActionTaken = true;
+  }
+  if (destructiveActionTaken) await store.save?.();
+  return { ...plan, destructiveActionTaken, deleted };
 }
 
 function policy(dataType, purpose, storageLocation, retentionPeriod, deletionTrigger, deletionMethod, configurable) {

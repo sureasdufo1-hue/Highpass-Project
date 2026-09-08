@@ -236,6 +236,8 @@ export function createSeedData() {
       },
     ],
     dicomAccessTokenLogs: [],
+    transferRequests: [],
+    transferTickets: [],
     auditLogs: [],
     transferUsageLogs: [],
     researchExportRequests: [],

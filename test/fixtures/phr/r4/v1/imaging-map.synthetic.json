@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "1.0",
+  "fixtureVersion": "phr-r4-v1",
+  "synthetic": true,
+  "mappings": [
+    {
+      "mappingRef": "imgmap-synthetic-a-ct-v1",
+      "providerId": "synthetic-r4",
+      "sourceOrganizationRef": "HOSP-A",
+      "patientRef": "P-1001",
+      "fhirImagingStudyId": "synthetic-imaging-a-ct",
+      "fhirStudyUidOriginal": "urn:oid:1.2.826.0.1.3680043.10.5432.20260908.1001.1",
+      "studyInstanceUid": "1.2.826.0.1.3680043.10.5432.20260908.1001.1",
+      "allowedSeriesUids": ["1.2.826.0.1.3680043.10.5432.20260908.1001.1.1"],
+      "gatewayRef": "GW-HOSP-A",
+      "mappingStatus": "MAPPED",
+      "pacsEvidence": {
+        "seedSource": "scripts/load-sample-dicom.js",
+        "sopInstanceUids": ["1.2.826.0.1.3680043.10.5432.20260908.1001.1.1.1"],
+        "verificationMode": "STATIC_SEED_CONTRACT"
+      }
+    },
+    {
+      "mappingRef": "imgmap-synthetic-b-cr-v1",
+      "providerId": "synthetic-r4",
+      "sourceOrganizationRef": "HOSP-B",
+      "patientRef": "P-1002",
+      "fhirImagingStudyId": "synthetic-imaging-b-cr",
+      "fhirStudyUidOriginal": "urn:oid:1.2.826.0.1.3680043.10.5432.20260908.1002.1",
+      "studyInstanceUid": "1.2.826.0.1.3680043.10.5432.20260908.1002.1",
+      "allowedSeriesUids": ["1.2.826.0.1.3680043.10.5432.20260908.1002.1.1"],
+      "gatewayRef": null,
+      "mappingStatus": "NOT_MAPPED",
+      "pacsEvidence": null
+    }
+  ]
+}
