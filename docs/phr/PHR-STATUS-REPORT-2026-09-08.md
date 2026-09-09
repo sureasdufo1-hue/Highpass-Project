@@ -1,5 +1,15 @@
 # Highpass FHIR PHR MVP 진행상황 보고서
 
+## 2026-09-09 상태 갱신
+
+- PHR-W06 live ImagingStudy–Orthanc mapping validator: 구현·시험 완료
+- PHR-W07 합성 수직경로 `PHR → 동의 → 의료진 단기토큰 → QIDO/WADO → 감사 → 철회`: 구현·시험 완료
+- 전체 Node 회귀: 135/135 PASS at validated SHA `36e667a6f5817d125a615616e48004d109b3b1ed`
+- 남은 PHR 로컬 작업: PHR-W05 최소 환자 UI, OpenAPI 계약 반영, PHR-T01~T15 상태·증적 통합
+- 실제 MyHealthWay, IdP, 병원 PACS와 모바일 package/key release는 계속 `NOT IMPLEMENTED` 또는 `DEFERRED/BLOCKED`
+
+아래 W02~W04 보고는 해당 시점의 역사적 기준선이며 현재 구현 상태를 제한하지 않는다.
+
 보고 기준일: 2026-09-08  
 보고 대상: 프로젝트 보고자/PM  
 기준 branch: `codex/fix-edge-platform-assets`  

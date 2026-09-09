@@ -18,6 +18,7 @@
     "security:readiness": "node scripts/production-readiness-check.js",
     "security:gate": "node scripts/security-gate.js",
     "security:container": "node scripts/container-vulnerability-gate.js",
+    "security:container:scan": "node scripts/container-scan.js",
     "ops:expiry": "node scripts/operations-expiry-check.js",
     "ops:monitor": "node scripts/ops-monitoring-check.js",
     "e2e:https": "node scripts/e2e-integration-test.js",
@@ -32,6 +33,7 @@
     "mvp:demo": "node scripts/e2e-integration-test.js",
     "mvp:negative": "node scripts/mtls-negative-check.js",
     "mvp:verify": "node scripts/mvp-verify.js",
+    "mvp:finalize": "node scripts/phase5-final-gate.js",
     "mvp:cleanup": "node scripts/mvp-verify.js --cleanup",
     "staging:smoke": "node scripts/staging-smoke-test.js",
     "sbom": "node scripts/generate-sbom.js"

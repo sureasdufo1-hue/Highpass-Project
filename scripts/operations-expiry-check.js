@@ -7,20 +7,24 @@ const root = process.cwd();
 const now = new Date(process.env.HIPASS_CERTIFICATE_NOW ?? Date.now());
 const warningDays = Number(process.env.HIPASS_OPS_CERT_WARNING_DAYS ?? 30);
 const highDays = Number(process.env.HIPASS_OPS_CERT_HIGH_DAYS ?? 7);
-const exceptionPath = path.join(root, "security", "container-vulnerability-exceptions.json");
+const exceptionPath = resolveProjectPath(process.env.HIPASS_CONTAINER_EXCEPTIONS ?? "security/container-vulnerability-exceptions.json");
 const certificateManifestPath = resolveProjectPath(process.env.HIPASS_CERTIFICATE_MANIFEST ?? "config/certificate-lifecycle.json");
 
 const risk = JSON.parse(readFileSync(exceptionPath, "utf8"));
+const currentImageDigest = risk.image?.imageDigest ?? null;
 const exceptionResults = (risk.exceptions ?? []).map((item) => {
   const expiresAt = new Date(item.expiresAt);
-  const expired = Number.isNaN(expiresAt.getTime()) || expiresAt <= now;
+  const active = item.status === "APPROVED" && Boolean(currentImageDigest) && item.imageDigest === currentImageDigest;
+  const expired = active && (Number.isNaN(expiresAt.getTime()) || expiresAt <= now);
   return {
     cve: item.cve,
     package: item.package,
     status: item.status,
     approvedBy: item.approvedBy,
     expiresAt: item.expiresAt,
-    result: expired ? "EXPIRED" : "VALID",
+    imageDigest: item.imageDigest,
+    scope: active ? "CURRENT_IMAGE" : "HISTORICAL_IMAGE",
+    result: active ? (expired ? "EXPIRED" : "VALID") : "HISTORICAL",
   };
 });
 
@@ -41,6 +45,8 @@ const testFixtureResults = certificateEntries
   }));
 
 const expiredExceptions = exceptionResults.filter((item) => item.result === "EXPIRED");
+const activeExceptions = exceptionResults.filter((item) => item.scope === "CURRENT_IMAGE");
+const historicalExceptions = exceptionResults.filter((item) => item.scope === "HISTORICAL_IMAGE");
 const criticalCerts = runtimeCertificateResults.filter((item) => item.severity === "CRITICAL");
 const status = expiredExceptions.length === 0 && criticalCerts.length === 0 ? "PASS" : "FAIL";
 
@@ -49,6 +55,9 @@ console.log(JSON.stringify({
   generatedAt: now.toISOString(),
   riskExceptions: {
     total: exceptionResults.length,
+    currentImageDigest,
+    active: activeExceptions.length,
+    historical: historicalExceptions.length,
     expired: expiredExceptions.length,
     results: exceptionResults,
   },

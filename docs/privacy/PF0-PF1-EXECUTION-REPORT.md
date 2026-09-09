@@ -1,5 +1,15 @@
 # PF-0 계약 동결·PF-1 로컬 텍스트 처리 실행 보고서
 
+## 2026-09-09 Closure Addendum
+
+- Docker Engine 29.5.3: `PASS`
+- `pnpm run privacy:db-gate`: `PASS`
+- PostgreSQL 16 migrations and FORCE RLS positive/negative isolation: `PASS`
+- PF-0: `PASS / LOCAL TECHNICAL CONTRACT FROZEN`
+- PF-1 code/fake adapter: `PASS`; actual OPF runtime remains `ENVIRONMENT BLOCKED — EXPLICIT_CHECKPOINT_REQUIRED`
+
+The historical Docker-blocked execution record below is preserved for auditability and is superseded by this addendum.
+
 작성일: 2026-09-07  
 Repository 시작 SHA: `fb1e1a1eff2ab59ef5e11d62b0bb846e58580699`  
 데이터: 합성 fixture 전용

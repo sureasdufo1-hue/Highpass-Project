@@ -15,8 +15,10 @@ The generator defaults to 90 days and accepts only 31–397 days. Key Usage is c
 
 ## Rollback material
 
-Pre-renewal development files were copied to `tmp/certs-phase2-rollback-20260908T080400Z`. Certificate/key pairing and CA chains were checked without printing private-key material. Because the former Gateway certificate predates the new SPIFFE SAN requirement, rollback must restore the previous certificate and the corresponding proxy identity policy together. A live rollback was not executed and is therefore `NOT VERIFIED`; backup integrity is verified.
+Pre-renewal development files were copied to `tmp/certs-phase2-rollback-20260908T080400Z`. Certificate/key pairing and CA chains were checked without printing private-key material. Because the former Gateway certificate predates the new SPIFFE SAN requirement, rollback uses an explicit legacy subject-CN pin rather than disabling client identity validation.
+
+On 2026-09-09 an isolated live rollback rehearsal ran the old CA, server certificate, and client certificate on `highpass-phase2_dicom_private_net`. The old pinned client was allowed, a client without a certificate was denied, and the current-CA client was denied by the old CA. The temporary proxy was removed and the active current-certificate stack remained healthy. Result: `PASS — ISOLATED DEVELOPMENT CERTIFICATE ROLLBACK REHEARSAL`.
 
 Private keys and generated fixtures remain outside Git. Repository and container log scans found no private-key body, token, or secret assignment.
 
-Evidence: `evidence/generated/2026-09-08T11-08-07-528Z/certificate-metadata.json`, `expiry-gate.txt`, and `cert-fixtures.txt`.
+Evidence: `pnpm run test:cert-rollback`, `evidence/generated/2026-09-09T05-14-59-590Z/certificate-metadata.json`, `expiry-gate.txt`, and `cert-fixtures.txt`.

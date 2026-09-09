@@ -1,10 +1,29 @@
 # Runtime Security Validation
 
+## 2026-09-09 Superseding Local Validation
+
+The Docker failure record below is retained as historical diagnosis. It is no longer the current local state.
+
+| Control | Current result |
+|---|---|
+| Docker Engine 29.5.3 | PASS |
+| Six-service Compose readiness | PASS |
+| HTTPS health | PASS, HTTP 200 |
+| Node regression | PASS, 135/135 at validated SHA `36e667a6f5817d125a615616e48004d109b3b1ed` |
+| HTTPS consent-to-Viewer E2E | PASS |
+| mTLS positive and six negative cases | PASS |
+| Browser image rendering and bearer-header trace | PASS |
+| Network boundary / direct Orthanc denial | PASS |
+| PF-0 PostgreSQL migration and FORCE RLS | PASS |
+| Actual IdP / KMS / hospital PACS | NOT VERIFIED / BLOCKED |
+
+The current phase remains a synthetic local capstone MVP, not a production-readiness or compliance determination.
+
 ## Status
 
 Previous status: `CONDITIONALLY READY FOR NEXT SECURITY VALIDATION`
 
-Current validation result: `LEVEL 3+ - RUNTIME SECURITY VALIDATED POC`
+Historical validation result: `LEVEL 3+ - RUNTIME SECURITY VALIDATED POC`
 
 `LEVEL 4 - PRODUCTION CANDIDATE` is not achieved because Docker full stack, TLS/mTLS, real CI execution, real IdP, and real KMS/HSM are not fully verified in the target runtime.
 

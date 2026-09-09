@@ -5,6 +5,7 @@ import test from "node:test";
 const script = readFileSync("scripts/privacy-db-gate.ps1", "utf8");
 
 test("PF-0 DB gate waits for the final PostgreSQL server, not bootstrap readiness", () => {
+  assert.match(script, /postgres:16-alpine@sha256:[a-f0-9]{64}/);
   assert.ok(script.includes("PostgreSQL init process complete; ready for start up\\."));
   assert.match(script, /startupTimeoutSeconds = 90/);
   assert.match(script, /SELECT 1/);

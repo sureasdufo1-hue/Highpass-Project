@@ -124,6 +124,12 @@ node scripts\mvp-verify.js
 
 패키지 실행이 가능한 환경에서는 `pnpm run mvp:verify`도 같다. 자동 생성 증적은 `evidence/generated/`에 저장되며 검토 전 `DRAFT / UNASSIGNED`다. 발표 재현은 `docs/DEMO-RUNBOOK.md`, 범위는 `docs/MVP-SCOPE.md`, 상용화 전 작업은 `docs/COMMERCIALIZATION-BACKLOG.md`를 참고한다.
 
+발표 전 최종 Gate는 PF-0 DB/RLS, 개발 인증서 rollback, 최신 컨테이너 스캔, CycloneDX SBOM과 전체 MVP를 고정된 순서로 실행한다.
+
+```powershell
+pnpm run mvp:finalize
+```
+
 보안 게이트:
 
 ```bash
@@ -157,6 +163,12 @@ pnpm run privacy:model-smoke
 ```
 
 `privacy:db-gate`는 Docker Engine이 없으면 `ENVIRONMENT BLOCKED`를 반환한다. 실제 OPF model은 `HIPASS_PRIVACY_PYTHON`과 `HIPASS_PRIVACY_MODEL_PATH`에 명시적 local runtime/checkpoint가 준비된 경우에만 `privacy:model-smoke`가 성공한다.
+
+개발 인증서 rollback 호환성은 현재 실행 스택을 교체하지 않는 격리된 Docker 네트워크에서 검증한다.
+
+```powershell
+pnpm run test:cert-rollback
+```
 
 인증서 수명주기는 `config/certificate-lifecycle.json`에서 관리합니다. Runtime 인증서는 `ops:expiry`에서 만료를 강제하고, 만료된 mTLS 거부 테스트용 인증서는 `test:cert-fixtures`에서 별도로 검증합니다.
 
@@ -219,10 +231,16 @@ Target:
 CAPSTONE MVP / TECHNICAL TEST ENVIRONMENT ONLY
 
 Repository SHA:
-22f9df96e02d377ee7083f6bfe70478d17143d19
+36e667a6f5817d125a615616e48004d109b3b1ed
 
 Local MVP E2E:
-PASS — 14/14 stages, current Node tests 125/125
+PASS — 14/14 stages, Node tests 135/135 at the validated SHA
+
+PF-0 PostgreSQL/RLS:
+PASS — final-server readiness, migrations, FORCE RLS positive/negative gate
+
+Container scan:
+PASS — scanner 1 Critical / 0 High; confirmed runtime Critical 0
 
 Phase 4 recovery rehearsal:
 PASS — readiness recovered in 34.62 seconds; named volumes preserved
