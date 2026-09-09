@@ -21,4 +21,4 @@ On 2026-09-09 an isolated live rollback rehearsal ran the old CA, server certifi
 
 Private keys and generated fixtures remain outside Git. Repository and container log scans found no private-key body, token, or secret assignment.
 
-Evidence: `pnpm run test:cert-rollback`, `evidence/generated/2026-09-09T05-14-59-590Z/certificate-metadata.json`, `expiry-gate.txt`, and `cert-fixtures.txt`.
+Evidence: `pnpm run test:cert-rollback`, `evidence/generated/2026-09-09T05-35-19-746Z/certificate-metadata.json`, `expiry-gate.txt`, and `cert-fixtures.txt`.

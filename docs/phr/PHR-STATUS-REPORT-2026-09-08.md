@@ -4,7 +4,7 @@
 
 - PHR-W06 live ImagingStudy–Orthanc mapping validator: 구현·시험 완료
 - PHR-W07 합성 수직경로 `PHR → 동의 → 의료진 단기토큰 → QIDO/WADO → 감사 → 철회`: 구현·시험 완료
-- 전체 Node 회귀: 135/135 PASS at validated SHA `36e667a6f5817d125a615616e48004d109b3b1ed`
+- 전체 Node 회귀: 139/139 PASS at validated SHA `9f3c8cc376808d1c0f452312c071b2a0522c7546`
 - 남은 PHR 로컬 작업: PHR-W05 최소 환자 UI, OpenAPI 계약 반영, PHR-T01~T15 상태·증적 통합
 - 실제 MyHealthWay, IdP, 병원 PACS와 모바일 package/key release는 계속 `NOT IMPLEMENTED` 또는 `DEFERRED/BLOCKED`
 

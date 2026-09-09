@@ -5,8 +5,8 @@
 - Previous level: Phase 4 demo reproducibility and recovery rehearsal PASS
 - Target: Phase 5 presentation package freeze and final handoff
 - Achieved: **YES — TECHNICAL PACKAGE FROZEN**
-- Validated code SHA: `36e667a6f5817d125a615616e48004d109b3b1ed`
-- Evidence generated: `2026-09-09T05-14-59-590Z`
+- Validated code SHA: `9f3c8cc376808d1c0f452312c071b2a0522c7546`
+- Evidence generated: `2026-09-09T05-35-19-746Z`
 
 `CAPSTONE MVP / TECHNICAL TEST ENVIRONMENT ONLY — NOT A PIPA LEGAL DETERMINATION, ISMS-P CERTIFICATION, HOSPITAL SECURITY APPROVAL, OR PRODUCTION READINESS CLAIM`
 

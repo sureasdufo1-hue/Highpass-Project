@@ -2,8 +2,8 @@
 
 ## Baseline
 
-- Validated code SHA: `36e667a6f5817d125a615616e48004d109b3b1ed`
-- Generated evidence root: `evidence/generated/2026-09-09T05-14-59-590Z/`
+- Validated code SHA: `9f3c8cc376808d1c0f452312c071b2a0522c7546`
+- Generated evidence root: `evidence/generated/2026-09-09T05-35-19-746Z/`
 - Review status: `DRAFT / UNASSIGNED`
 - Data classification: synthetic-only; manifest flags `containsPersonalData=false`, `containsSecrets=false`
 
@@ -11,7 +11,7 @@
 
 | Evidence | Result |
 |---|---|
-| Node unit/integration | PASS, 135/135 at validated SHA |
+| Node unit/integration | PASS, 139/139 at validated SHA |
 | Docker Compose | PASS, six required services healthy |
 | HTTPS E2E | PASS |
 | mTLS positive/negative | PASS |

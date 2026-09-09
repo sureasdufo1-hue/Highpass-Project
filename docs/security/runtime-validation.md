@@ -9,7 +9,7 @@ The Docker failure record below is retained as historical diagnosis. It is no lo
 | Docker Engine 29.5.3 | PASS |
 | Six-service Compose readiness | PASS |
 | HTTPS health | PASS, HTTP 200 |
-| Node regression | PASS, 135/135 at validated SHA `36e667a6f5817d125a615616e48004d109b3b1ed` |
+| Node regression | PASS, 139/139 at validated SHA `9f3c8cc376808d1c0f452312c071b2a0522c7546` |
 | HTTPS consent-to-Viewer E2E | PASS |
 | mTLS positive and six negative cases | PASS |
 | Browser image rendering and bearer-header trace | PASS |

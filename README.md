@@ -231,10 +231,10 @@ Target:
 CAPSTONE MVP / TECHNICAL TEST ENVIRONMENT ONLY
 
 Repository SHA:
-36e667a6f5817d125a615616e48004d109b3b1ed
+9f3c8cc376808d1c0f452312c071b2a0522c7546
 
 Local MVP E2E:
-PASS — 14/14 stages, Node tests 135/135 at the validated SHA
+PASS — Phase 5 final Gate 5/5, nested MVP 14/14, Node tests 139/139
 
 PF-0 PostgreSQL/RLS:
 PASS — final-server readiness, migrations, FORCE RLS positive/negative gate
