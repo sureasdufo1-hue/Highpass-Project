@@ -24,6 +24,7 @@
     "phr:verify-mapping": "node scripts/verify-phr-imaging-mapping.js",
     "compliance:evidence": "node scripts/collect-compliance-evidence.js",
     "test:cert-fixtures": "node scripts/cert-fixture-check.js",
+    "test:cert-rollback": "node scripts/rehearse-dev-cert-rollback.js",
     "test:mtls-negative": "node scripts/mtls-negative-check.js",
     "mvp:preflight": "node scripts/mvp-verify.js --preflight",
     "mvp:start": "node scripts/mvp-verify.js --start",
