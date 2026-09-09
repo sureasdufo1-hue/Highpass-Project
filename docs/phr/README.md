@@ -1,10 +1,10 @@
 # Highpass PHR MVP 문서 묶음
 
-상태: `PROPOSED / APPROVAL REQUIRED`  
-기준일: 2026-09-08  
-범위: 합성데이터 기반 로컬 PoC의 Phase 0~1
+상태: `W02~W07 LOCAL IMPLEMENTED / EXTERNAL INTEGRATIONS DEFERRED`
+기준일: 2026-09-09
+범위: 합성데이터 기반 로컬 PoC
 
-이 디렉터리는 기존 Highpass v2.1 원격조회 기준선을 보존하면서 FHIR R4 기반 개인의료정보 조회를 증분 확장하기 위한 제안 계약이다. 실행 API, DB migration, 인증서·키, 모바일 앱 및 실제 의료자료는 이번 단계에서 변경하지 않았다.
+이 디렉터리는 기존 Highpass v2.1 원격조회 기준선을 보존하면서 FHIR R4 기반 개인의료정보 조회를 증분 확장한다. 합성 Provider/API, 환자 UI, ImagingStudy 매핑과 서비스 수직경로는 구현됐으며 실제 MyHealthWay·IdP·병원 PACS·모바일 앱은 범위 밖이다.
 
 ## 문서 순서
 
@@ -18,8 +18,9 @@
 8. [PHR-W02 실행 보고서](PHR-W02-EXECUTION-REPORT.md) — 합성 fixture·UID·checksum 계약 구현 및 검증
 9. [PHR-W03 실행 보고서](PHR-W03-EXECUTION-REPORT.md) — Provider·환자격리·pagination·MyHealthWay 비활성 구현
 10. [PHR-W04 실행 보고서](PHR-W04-EXECUTION-REPORT.md) — `/me` PHR API·opaque 영상참조·canonical 감사 구현
-11. [진행상황 보고서](PHR-STATUS-REPORT-2026-09-08.md) — 보고자용 현재 상태·시험·위험·결정 요청
-12. [WBS 변경 영향](../project-management/PHR-WBS-CHANGE-IMPACT.md) — 공수, 일정, Critical Path, 승인 Gate
+11. [PHR-W05 실행 보고서](PHR-W05-EXECUTION-REPORT.md) — 최소 환자 UI·OpenAPI·브라우저 검증
+12. [진행상황 보고서](PHR-STATUS-REPORT-2026-09-08.md) — 보고자용 현재 상태·시험·위험·결정 요청
+13. [WBS 변경 영향](../project-management/PHR-WBS-CHANGE-IMPACT.md) — 공수, 일정, Critical Path, 승인 Gate
 
 ## 기준선 해석
 

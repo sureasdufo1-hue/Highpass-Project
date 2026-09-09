@@ -4,8 +4,9 @@
 
 - PHR-W06 live ImagingStudy–Orthanc mapping validator: 구현·시험 완료
 - PHR-W07 합성 수직경로 `PHR → 동의 → 의료진 단기토큰 → QIDO/WADO → 감사 → 철회`: 구현·시험 완료
-- 전체 Node 회귀: 139/139 PASS at validated SHA `9f3c8cc376808d1c0f452312c071b2a0522c7546`
-- 남은 PHR 로컬 작업: PHR-W05 최소 환자 UI, OpenAPI 계약 반영, PHR-T01~T15 상태·증적 통합
+- PHR-W05 최소 환자 UI, PHR OpenAPI, 브라우저 PHR 조회·동의 생성: 구현·시험 완료
+- PHR 전용 targeted suite: 6/6 PASS, Compose 6/6 healthy, 브라우저 console warning/error 0
+- 남은 PHR 로컬 작업: W08/W09의 opaque 역할전환 handoff와 단일 브라우저 Viewer 종단 증적
 - 실제 MyHealthWay, IdP, 병원 PACS와 모바일 package/key release는 계속 `NOT IMPLEMENTED` 또는 `DEFERRED/BLOCKED`
 
 아래 W02~W04 보고는 해당 시점의 역사적 기준선이며 현재 구현 상태를 제한하지 않는다.
@@ -87,8 +88,8 @@
 | MyHealthWay adapter | VERIFIED (disabled) | 외부 호출 없이 `NOT_CONFIGURED` |
 | PHR HTTP API | VERIFIED (local) | Development Mock + JSON Store 기준 |
 | PHR 감사 | VERIFIED (local) / PARTIAL schema | 기존 audit store 사용, correlation은 auditSession에 바인딩 |
-| ImagingStudy 매핑 | PARTIAL | 정적 seed 계약 검증, live QIDO 미실행 |
-| 기존 DICOMweb/OHIF | 기존 기능 유지 | PHR Viewer launch 연결은 후속 |
+| ImagingStudy 매핑 | VERIFIED (local synthetic) | live QIDO validator와 W07 수직경로 PASS |
+| 기존 DICOMweb/OHIF | VERIFIED (local synthetic) | W07 서비스 수직경로 PASS, 전용 PHR 역할전환 UI 후속 |
 | 실제 환자정보 | NOT USED | 합성자료만 사용 |
 | 실제 MyHealthWay | NOT IMPLEMENTED | 공식 명세·자격·환경 없음 |
 | 모바일 package/key release | PLANNED/DEFERRED | PHR-JA-005 PM 승인 및 후속 수직경로 |

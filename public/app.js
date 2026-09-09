@@ -50,6 +50,8 @@ const consentValidUntilInput = document.querySelector("#consent-valid-until");
 const downloadButton = document.querySelector("#download-instance");
 const auditResultFilter = document.querySelector("#audit-result-filter");
 const auditActionFilter = document.querySelector("#audit-action-filter");
+const phrLoadState = document.querySelector("#phr-load-state");
+const phrImagingList = document.querySelector("#phr-imaging-list");
 
 initNavigation();
 renderAdminShell();
@@ -77,6 +79,7 @@ function bindEvents() {
   });
   auditResultFilter?.addEventListener("change", loadDashboard);
   auditActionFilter?.addEventListener("change", loadDashboard);
+  document.querySelector("#phr-refresh")?.addEventListener("click", loadPhrDashboard);
 }
 
 function initNavigation() {
@@ -136,6 +139,92 @@ async function loadDashboard() {
   renderConsentHistory(Array.isArray(consents) ? consents : []);
   renderMetrics(lastStudies, Array.isArray(logs) ? logs : [], Array.isArray(usage) ? usage : []);
   renderHealth(health);
+  await loadPhrDashboard();
+}
+
+async function loadPhrDashboard() {
+  setPhrState("합성 PHR 데이터를 불러오는 중입니다.", "loading");
+  try {
+    const [summary, imaging] = await Promise.all([
+      fetchJson("/api/v1/me/phr/summary"),
+      fetchJson("/api/v1/me/phr/imaging-studies?limit=20"),
+    ]);
+    if (!summary?.data || !Array.isArray(imaging?.data)) {
+      throw new Error(summary?.code ?? imaging?.code ?? "PHR_REQUEST_FAILED");
+    }
+    document.querySelector("#phr-patient-name").textContent = summary.data.patient?.displayName ?? "합성 환자";
+    document.querySelector("#phr-encounter-count").textContent = String(summary.data.counts?.encounters ?? 0);
+    document.querySelector("#phr-observation-count").textContent = String(summary.data.counts?.observations ?? 0);
+    document.querySelector("#phr-imaging-count").textContent = String(summary.data.counts?.imagingStudies ?? 0);
+    renderPhrImaging(imaging.data);
+    setPhrState(`합성 FHIR R4 자료 ${imaging.data.length}건을 확인했습니다.`, "success");
+  } catch (error) {
+    renderPhrImaging([]);
+    setPhrState(toFriendlyError(error?.message), "fail");
+  }
+}
+
+function renderPhrImaging(items) {
+  if (!phrImagingList) return;
+  if (!items.length) {
+    phrImagingList.innerHTML = '<div class="empty-state">표시할 합성 ImagingStudy가 없습니다.</div>';
+    return;
+  }
+  phrImagingList.innerHTML = items.map((item) => {
+    const mapped = item.mappingStatus === "MAPPED";
+    const modality = Array.isArray(item.modality)
+      ? item.modality.map((entry) => entry?.code ?? entry?.display).filter(Boolean).join(", ")
+      : "DICOM";
+    return `
+      <article class="item phr-imaging-item">
+        <div>
+          <strong>${escapeHtml(item.description)}</strong>
+          <div class="meta">${escapeHtml(modality || "DICOM")} / ${escapeHtml(item.started)} / 합성 데이터</div>
+          <div class="meta">매핑: ${escapeHtml(item.mappingStatus)} / 접근: ${escapeHtml(item.accessStatus)}</div>
+        </div>
+        ${mapped
+          ? `<button type="button" data-phr-consent-ref="${escapeHtml(item.imagingStudyRef)}">이 영상 공유 동의</button>`
+          : '<span class="status-pill warning">Viewer 연결 불가</span>'}
+      </article>
+    `;
+  }).join("");
+  document.querySelectorAll("[data-phr-consent-ref]").forEach((button) => {
+    button.addEventListener("click", () => createPhrConsent(button.dataset.phrConsentRef));
+  });
+}
+
+async function createPhrConsent(imagingStudyRef) {
+  setPhrState("선택한 ImagingStudy의 공유 범위를 서버에서 검증하고 있습니다.", "loading");
+  const result = await postJson(`/api/v1/me/phr/imaging-studies/${encodeURIComponent(imagingStudyRef)}/consents`, {
+    targetHospitalId: targetHospitalSelect.value,
+    purpose: accessPurposeSelect.value,
+    permission: accessModeSelect.value,
+    validFrom: toIsoFromLocal(consentValidFromInput.value),
+    validUntil: toIsoFromLocal(consentValidUntilInput.value),
+  });
+  if (result?.data?.consentId) {
+    latestConsentId = result.data.consentId;
+    setPhrState("공유 동의가 생성되었습니다. 보호된 영상 식별자는 브라우저에 노출하지 않습니다.", "success");
+    renderOutput({
+      status: result.data.status,
+      consentId: result.data.consentId,
+      permission: result.data.permission,
+      purpose: result.data.purpose,
+      targetHospital: result.data.targetHospitalId,
+    });
+    await loadDashboard();
+    activateRole("PATIENT");
+    activateView("patient-phr");
+    return;
+  }
+  setPhrState(toFriendlyError(result?.code ?? result?.error), "fail");
+  renderOutput(result);
+}
+
+function setPhrState(message, tone) {
+  if (!phrLoadState) return;
+  phrLoadState.textContent = message;
+  phrLoadState.dataset.tone = tone;
 }
 
 function updateConsentState(consents) {
@@ -629,6 +718,11 @@ function toFriendlyError(code) {
     ORTHANC_QIDO_INSTANCE_FAILED: "Gateway could not query Instance metadata.",
     ORTHANC_WADO_INSTANCE_FAILED: "Gateway could not stream the selected Instance.",
     ORTHANC_UNAVAILABLE: "Medical imaging server is temporarily unavailable. Try again later.",
+    PHR_PROVIDER_NOT_CONFIGURED: "PHR provider is not configured in this environment.",
+    PHR_PATIENT_BINDING_MISMATCH: "This PHR request is not authorized for the current patient.",
+    PHR_IMAGING_NOT_MAPPED: "This imaging record is not connected to the approved synthetic PACS source.",
+    PHR_CONSENT_REQUEST_INVALID: "The PHR sharing request is incomplete or outside the allowed scope.",
+    PHR_REQUEST_FAILED: "PHR data could not be loaded. Retry after checking service readiness.",
   };
   return messages[code] ?? "Access failed. Check consent, token, gateway, and Orthanc status.";
 }
@@ -681,6 +775,14 @@ async function fetchJson(path, options = {}) {
 function developmentPrincipalHeaders(path) {
   if (!path.startsWith("/api/")) return {};
   if (path === "/api/health") return {};
+  if (path.startsWith("/api/v1/me/phr/")) {
+    return {
+      "x-hipass-role": "PATIENT",
+      "x-hipass-user-id": "synthetic-account-a",
+      "x-hipass-patient-id": demo.patientId,
+      "x-hipass-session-id": "dev-phr-patient-session",
+    };
+  }
   if (
     path.startsWith("/api/audit-logs") ||
     path.startsWith("/api/anomaly-alerts") ||

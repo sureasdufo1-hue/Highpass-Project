@@ -241,6 +241,7 @@
             </div>
             <nav class="view-tabs" aria-label="환자 화면">
               <button class="view-tab active" type="button" data-view-target="patient-dashboard">Dashboard</button>
+              <button class="view-tab" type="button" data-view-target="patient-phr">나의 PHR</button>
               <button class="view-tab" type="button" data-view-target="patient-studies">내 의료영상</button>
               <button class="view-tab" type="button" data-view-target="patient-consent-view">공유 동의</button>
               <button class="view-tab" type="button" data-view-target="patient-history">동의 내역</button>
@@ -263,6 +264,32 @@
                   <p class="panel-copy">환자가 제공 병원, 수신 병원, 대상 Study, 목적, 권한을 선택합니다.</p>
                 </article>
               </div>
+            </div>
+
+            <div class="view-panel" id="patient-phr">
+              <div class="panel-heading">
+                <div>
+                  <p class="panel-kicker">FHIR R4 Personal Health Record</p>
+                  <h3>나의 진료·영상 요약</h3>
+                </div>
+                <button id="phr-refresh" type="button">PHR 새로고침</button>
+              </div>
+              <p id="phr-load-state" class="inline-notice" role="status">합성 PHR 데이터를 불러오는 중입니다.</p>
+              <div class="phr-summary-grid" aria-label="PHR 요약">
+                <article class="panel"><span>환자</span><strong id="phr-patient-name">-</strong></article>
+                <article class="panel"><span>진료</span><strong id="phr-encounter-count">0</strong></article>
+                <article class="panel"><span>검사</span><strong id="phr-observation-count">0</strong></article>
+                <article class="panel"><span>영상검사</span><strong id="phr-imaging-count">0</strong></article>
+              </div>
+              <article class="panel phr-imaging-panel">
+                <div class="panel-heading">
+                  <div>
+                    <h3>FHIR ImagingStudy</h3>
+                    <p class="panel-copy">매핑된 합성 영상만 동의 생성이 가능하며, DICOM UID는 화면과 URL에 노출하지 않습니다.</p>
+                  </div>
+                </div>
+                <div id="phr-imaging-list" class="list" aria-live="polite"></div>
+              </article>
             </div>
 
             <div class="view-panel" id="patient-studies">
