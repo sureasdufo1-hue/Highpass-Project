@@ -1,5 +1,22 @@
 # PHR 통합 시험계획
 
+## 2026-09-09 실행 갱신
+
+| 시험 | 최신 로컬 판정 | 근거 |
+|---|---|---|
+| PHR-T01~T03 | PASS (합성 로컬 API) | 본인 binding, 타환자·비환자 거부, FHIR fixture 계약 |
+| PHR-T04~T06 | PASS (합성 Orthanc) | live mapping validator와 W07 QIDO/WADO 수직경로 |
+| PHR-T07 | PASS (local fail-closed) | 외부 endpoint 신뢰 금지와 provider allowlist |
+| PHR-T08 | PASS (local service/E2E) | ImagingStudy reference에서 Study/Series 범위 동의 생성 |
+| PHR-T09 | PASS (기존 QR 정책 회귀) | 재사용·만료·기관·범위·철회 거부 |
+| PHR-T10 | NOT RUN / DEFERRED | Mobile-Core 암호문 package 경로 미구현 |
+| PHR-T11 | PASS | 전체 Node 및 Compose MVP 회귀 |
+| PHR-T12 | PARTIAL | 임상경로 독립/fallback 0 단위시험 PASS, 실제 OPF 모델 BLOCKED |
+| PHR-T13~T14 | PASS (local) | MyHealthWay NOT_CONFIGURED outbound 0, 감사 UID·secret 비노출 |
+| PHR-T15 | PARTIAL PASS | 합성 PHR→동의→Viewer 데이터 경로 PASS, 전용 PHR 환자 UI 미구현 |
+
+기존 `NOT RUN` 표는 계획 당시 기준선으로 보존한다. 위 표가 최신 판정이며 실제 외부·운영환경으로 확대 해석하지 않는다.
+
 상태: `PHR-W02~W04 LOCAL GATES PASS / INTEGRATED PHR-T01~T15 PARTIAL`  
 주의: 이 문서 작성은 PHR 기능 시험 성공을 의미하지 않는다.
 

@@ -72,6 +72,20 @@ Orthanc 직접 포트는 호스트에 공개되지 않는 것이 정상이다.
 pnpm run mvp:verify
 ```
 
+발표 패키지 동결 전 추가 로컬 Gate:
+
+```powershell
+pnpm run privacy:db-gate
+pnpm run test:cert-rollback
+pnpm run ops:expiry
+```
+
+위 순서와 fresh Trivy scan, 전체 MVP를 한 번에 실행하려면 다음을 사용한다.
+
+```powershell
+pnpm run mvp:finalize
+```
+
 검증기는 프로젝트명·네트워크명·mTLS 시험 이미지를 `highpass-phase2` 기준으로 결정한다. 필요하면 `HIPASS_COMPOSE_PROJECT`, `HIPASS_NETWORK_PREFIX`, `HIPASS_MTLS_TEST_NETWORK`, `HIPASS_MTLS_TEST_IMAGE`로 명시적으로 재정의한다.
 
 포함 항목:

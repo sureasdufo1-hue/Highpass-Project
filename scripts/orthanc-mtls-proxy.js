@@ -4,7 +4,12 @@ import https from "node:https";
 
 const port = Number(process.env.ORTHANC_MTLS_PORT ?? 8443);
 const upstreamOrigin = process.env.ORTHANC_UPSTREAM_ORIGIN ?? "http://hospital-a-orthanc:8042";
-const allowedClientSan = requiredEnv("ORTHANC_MTLS_ALLOWED_CLIENT_SAN");
+const allowedClientSan = optionalEnv("ORTHANC_MTLS_ALLOWED_CLIENT_SAN");
+const allowedClientSubjectCn = optionalEnv("ORTHANC_MTLS_ALLOWED_CLIENT_SUBJECT_CN");
+
+if (Boolean(allowedClientSan) === Boolean(allowedClientSubjectCn)) {
+  throw new Error("exactly one client certificate identity policy is required");
+}
 
 https.createServer({
   cert: readFileSync(requiredEnv("ORTHANC_MTLS_CERT_FILE")),
@@ -20,7 +25,10 @@ https.createServer({
   }
   const peer = request.socket.getPeerCertificate();
   const presentedSans = parseSubjectAltName(peer.subjectaltname);
-  if (!presentedSans.includes(allowedClientSan)) {
+  const identityMatches = allowedClientSan
+    ? presentedSans.includes(allowedClientSan)
+    : peer.subject?.CN === allowedClientSubjectCn;
+  if (!identityMatches) {
     response.writeHead(403, { "content-type": "application/json" });
     response.end(JSON.stringify({ error: "CLIENT_CERT_IDENTITY_DENIED" }));
     return;
@@ -53,6 +61,11 @@ function requiredEnv(name) {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required`);
   return value;
+}
+
+function optionalEnv(name) {
+  const value = process.env[name]?.trim();
+  return value || null;
 }
 
 function parseSubjectAltName(value) {
