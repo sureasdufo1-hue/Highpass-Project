@@ -42,8 +42,14 @@ try {
     $ErrorActionPreference = 'Stop'
     if ($logExit -ne 0) { throw 'Unable to read PF-0 PostgreSQL startup log' }
     if ($startupLog -match 'PostgreSQL init process complete; ready for start up\.') {
+      # A normal final-server transition can emit "database system is starting up".
+      # Treat that as a bounded not-ready result instead of a terminating
+      # PowerShell NativeCommandError; every other command remains fail closed.
+      $ErrorActionPreference = 'Continue'
       docker exec $container psql -v ON_ERROR_STOP=1 -U postgres -d hipass_pf0 -tAc 'SELECT 1' 2>$null | Out-Null
-      if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+      $probeExit = $LASTEXITCODE
+      $ErrorActionPreference = 'Stop'
+      if ($probeExit -eq 0) { $ready = $true; break }
     }
     Start-Sleep -Seconds 1
   }
