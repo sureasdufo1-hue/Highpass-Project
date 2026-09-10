@@ -280,7 +280,10 @@ test("OPF adapter readiness fails closed when no explicit local checkpoint is co
 test("OPF adapter translates normal, decode, span, timeout, queue and load failures", async () => {
   const checkpointPath = fileURLToPath(new URL("./fixtures/privacy/fake-checkpoint", import.meta.url));
   const bridgePath = fileURLToPath(new URL("./fixtures/privacy/fake-opf-bridge.py", import.meta.url));
-  const adapter = new OpfLocalAdapter({ checkpointPath, bridgePath, pythonCommand: "python", timeoutMs: 500 });
+  // Windows Python launchers can take >500ms on a cold start; keep the
+  // production timeout behavior covered separately while avoiding a platform
+  // dependent readiness false negative in this local fixture test.
+  const adapter = new OpfLocalAdapter({ checkpointPath, bridgePath, pythonCommand: "python", timeoutMs: 2_000 });
   assert.equal((await adapter.readiness()).ready, true);
   assert.deepEqual((await adapter.detect("ok")).findings, []);
   await assert.rejects(adapter.detect("bad-json"), hasCode(PrivacyErrorCode.MODEL_OUTPUT_INVALID));
