@@ -29,6 +29,7 @@ https.createServer({
 function routeTarget(pathname) {
   const url = new URL(pathname, "https://localhost");
   if (url.pathname === "/hipass/") return new URL("/", apiOrigin);
+  if (/^\/t\/[A-Za-z0-9_-]{22,128}$/.test(url.pathname)) return new URL(url.pathname, apiOrigin);
   if (["/styles.css", "/app.js"].includes(url.pathname) || url.pathname.startsWith("/images/") || isPlatformAsset(url.pathname)) {
     return new URL(`${url.pathname}${url.search}`, apiOrigin);
   }
