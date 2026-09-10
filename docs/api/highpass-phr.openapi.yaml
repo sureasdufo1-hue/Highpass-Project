@@ -61,6 +61,51 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/ConsentEnvelope'}
         default: {$ref: '#/components/responses/Problem'}
+  /api/consents/{consentId}/handoff-ticket:
+    post:
+      operationId: issueConsentHandoffTicket
+      description: Issue one short-lived, one-time opaque Viewer handoff for the authenticated patient's active consent.
+      security: [{patientOidc: [consent:write]}]
+      parameters: [{$ref: '#/components/parameters/ConsentId'}]
+      responses:
+        '201':
+          description: Opaque handoff route issued; the response intentionally omits the authorized DICOM scope.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HandoffTicket'}
+        '409':
+          description: Consent is inactive or an unused handoff already exists.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SafeError'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/transfers/tickets/redeem-viewer:
+    post:
+      operationId: redeemViewerHandoff
+      description: Consume an opaque one-time handoff. Doctor and hospital come only from the authenticated principal; Study and Series scope come only from the stored ticket.
+      security: [{doctorOidc: [dicom:view]}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [nonce]
+              properties:
+                nonce: {type: string, pattern: '^[A-Za-z0-9_-]{22,128}$'}
+      responses:
+        '200':
+          description: Handoff consumed and a short-lived in-memory Viewer token issued.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ViewerHandoffResult'}
+        '403':
+          description: Safe fail-closed denial for invalid, expired, revoked, replayed, or institution-mismatched handoff.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ViewerHandoffDenied'}
+        default: {$ref: '#/components/responses/Problem'}
 components:
   securitySchemes:
     patientOidc:
@@ -72,6 +117,14 @@ components:
           scopes:
             phr:read: Read the authenticated patient's PHR
             consent:write: Create patient consent
+    doctorOidc:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://idp.invalid/authorize
+          tokenUrl: https://idp.invalid/token
+          scopes:
+            dicom:view: Redeem an authorized Viewer handoff
   parameters:
     ImagingStudyRef:
       name: imagingStudyRef
@@ -79,6 +132,12 @@ components:
       required: true
       description: Server-issued opaque reference; never a DICOM UID.
       schema: {type: string, pattern: '^phr_[A-Za-z0-9_-]{32,}$'}
+    ConsentId:
+      name: consentId
+      in: path
+      required: true
+      description: Server-issued consent identifier bound to the authenticated patient.
+      schema: {type: string, minLength: 8, maxLength: 128}
   responses:
     Problem:
       description: Safe problem response without internal paths, tokens, or identifiers
@@ -174,6 +233,59 @@ components:
             validUntil: {type: string, format: date-time}
             scopeCount: {type: integer, minimum: 1}
         meta: {$ref: '#/components/schemas/Meta'}
+    HandoffTicket:
+      type: object
+      additionalProperties: false
+      required: [ticketId, consentId, ticket, qr]
+      properties:
+        ticketId: {type: string}
+        consentId: {type: string}
+        ticket:
+          type: object
+          additionalProperties: false
+          required: [ticketId, status, targetHospitalId, expiresAt]
+          properties:
+            ticketId: {type: string}
+            status: {type: string, enum: [ISSUED]}
+            targetHospitalId: {type: string}
+            expiresAt: {type: string, format: date-time}
+        qr:
+          type: object
+          additionalProperties: false
+          required: [payload, expiresAt]
+          properties:
+            payload: {type: string, description: Same-origin path containing only a one-time opaque nonce.}
+            expiresAt: {type: string, format: date-time}
+    ViewerHandoffResult:
+      type: object
+      required: [decision, accessToken, expiresAt, viewerContext]
+      properties:
+        decision: {type: string, const: ALLOWED}
+        accessToken: {type: string, description: Short-lived token retained in browser memory only.}
+        expiresAt: {type: string, format: date-time}
+        permission: {type: string, enum: [VIEW_ONLY, DOWNLOAD_ALLOWED]}
+        viewerContext:
+          type: object
+          description: Authorized scope returned only after doctor and ticket validation; never placed in the URL.
+          required: [studyInstanceUid, permission, targetHospitalId]
+          properties:
+            studyInstanceUid: {type: string}
+            seriesInstanceUid: {type: [string, 'null']}
+            permission: {type: string, enum: [VIEW_ONLY, DOWNLOAD_ALLOWED]}
+            targetHospitalId: {type: string}
+    ViewerHandoffDenied:
+      type: object
+      required: [decision, reasonCode]
+      properties:
+        decision: {type: string, const: DENIED}
+        reasonCode: {type: string}
+        auditSessionId: {type: string}
+    SafeError:
+      type: object
+      required: [error]
+      properties:
+        error: {type: string}
+        details: {type: array, items: {type: string}}
     Problem:
       type: object
       required: [type, title, status, code, requestId]

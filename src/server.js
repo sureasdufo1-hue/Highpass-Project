@@ -183,6 +183,28 @@ async function routeApi(request, response, url) {
     return;
   }
 
+  if (method === "POST" && segments[1] === "consents" && segments[2] && segments[3] === "handoff-ticket") {
+    const consentForAuth = service.getConsent(segments[2]);
+    if (!consentForAuth) return sendError(response, 404, "Consent not found");
+    assertPatientPrincipal(principal, consentForAuth.patientId);
+    try {
+      const result = await service.issueConsentHandoffTicket(
+        segments[2],
+        principal.patientId,
+        requestMeta(request, principal),
+      );
+      sendJson(response, 201, result);
+    } catch (error) {
+      if (error instanceof ServiceValidationError) {
+        const conflictCodes = ["HANDOFF_TICKET_ALREADY_ISSUED", "CONSENT_REVOKED", "CONSENT_EXPIRED"];
+        sendJson(response, conflictCodes.includes(error.code) ? 409 : error.statusCode, { error: error.code, details: error.details });
+        return;
+      }
+      throw error;
+    }
+    return;
+  }
+
   if (method === "GET" && segments[1] === "patients" && segments[2] && segments[3] === "transfer-requests") {
     assertPatientPrincipal(principal, segments[2]);
     sendJson(response, 200, service.listTransferRequestsByPatient(segments[2]));
@@ -233,6 +255,19 @@ async function routeApi(request, response, url) {
     if (!candidate) return sendError(response, 404, "Transfer request not found");
     authorizeTransferRequestRead(principal, candidate);
     sendJson(response, 200, candidate);
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/transfers/tickets/redeem-viewer") {
+    const body = await readJson(request);
+    const validation = requireFields(body, ["nonce"]);
+    if (validation) return sendError(response, 400, validation);
+    assertDoctorPrincipal(principal, {
+      doctorId: principal.doctorId,
+      hospitalId: principal.hospitalId,
+    });
+    const result = await service.redeemViewerHandoff(body.nonce, principal, requestMeta(request, principal));
+    sendJson(response, result.decision === "ALLOWED" ? 200 : 403, result);
     return;
   }
 

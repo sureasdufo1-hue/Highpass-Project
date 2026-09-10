@@ -51,6 +51,56 @@ test("PHR-W04 HTTP API enforces /me binding, problem details, UID minimization, 
   assert.equal(JSON.stringify(imaging.body).includes("1.2.826"), false);
   assert.equal(JSON.stringify(imaging.body).includes("urn:dicom:uid"), false);
 
+  const imagingRef = imaging.body.data.find((item) => item.mappingStatus === "MAPPED").imagingStudyRef;
+  const consent = await request(port, `/api/v1/me/phr/imaging-studies/${encodeURIComponent(imagingRef)}/consents`, patientHeaders, {
+    method: "POST",
+    body: {
+      targetHospitalId: "HOSP-B",
+      purpose: "TREATMENT",
+      permission: "VIEW_ONLY",
+      validUntil: "2026-12-31T10:00:00.000Z",
+    },
+  });
+  assert.equal(consent.status, 201);
+  const handoff = await request(port, `/api/consents/${consent.body.data.consentId}/handoff-ticket`, patientHeaders, {
+    method: "POST",
+    body: {},
+  });
+  assert.equal(handoff.status, 201);
+  assert.match(handoff.body.qr.payload, /\/t\/[A-Za-z0-9_-]{43}$/);
+  assert.equal(JSON.stringify(handoff.body).includes("1.2.410"), false);
+
+  const wrongPatientHandoff = await request(port, `/api/consents/${consent.body.data.consentId}/handoff-ticket`, {
+    ...patientHeaders,
+    "x-hipass-user-id": "synthetic-account-b",
+    "x-hipass-patient-id": "P-1002",
+  }, { method: "POST", body: {} });
+  assert.equal(wrongPatientHandoff.status, 403);
+  assert.equal(wrongPatientHandoff.body.error, "PATIENT_IDENTITY_MISMATCH");
+
+  const nonce = handoff.body.qr.payload.split("/").at(-1);
+  const doctorHeaders = {
+    "x-hipass-role": "DOCTOR",
+    "x-hipass-user-id": "DOC-B-01",
+    "x-hipass-doctor-id": "DOC-B-01",
+    "x-hipass-hospital-id": "HOSP-B",
+  };
+  const redemption = await request(port, "/api/transfers/tickets/redeem-viewer", doctorHeaders, {
+    method: "POST",
+    body: { nonce },
+  });
+  assert.equal(redemption.status, 200);
+  assert.equal(redemption.body.decision, "ALLOWED");
+  assert.ok(redemption.body.accessToken);
+  assert.ok(redemption.body.viewerContext.studyInstanceUid);
+  assert.equal(redemption.body.viewerContext.targetHospitalId, "HOSP-B");
+  const replay = await request(port, "/api/transfers/tickets/redeem-viewer", doctorHeaders, {
+    method: "POST",
+    body: { nonce },
+  });
+  assert.equal(replay.status, 403);
+  assert.equal(replay.body.reasonCode, "TICKET_ALREADY_USED");
+
   const forbiddenQuery = await request(port, "/api/v1/me/phr/observations?patientId=P-1002", patientHeaders);
   assert.equal(forbiddenQuery.status, 422);
   assert.match(forbiddenQuery.contentType, /^application\/problem\+json/);
@@ -113,8 +163,14 @@ async function waitForHealth(port, child, output) {
   throw new Error(`PHR API startup timeout: ${output()}`);
 }
 
-async function request(port, pathname, headers) {
-  const response = await fetch(`http://127.0.0.1:${port}${pathname}`, { headers });
+async function request(port, pathname, headers, options = {}) {
+  const requestHeaders = { ...headers };
+  if (options.body !== undefined) requestHeaders["content-type"] = "application/json";
+  const response = await fetch(`http://127.0.0.1:${port}${pathname}`, {
+    method: options.method ?? "GET",
+    headers: requestHeaders,
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+  });
   return {
     status: response.status,
     contentType: response.headers.get("content-type") ?? "",

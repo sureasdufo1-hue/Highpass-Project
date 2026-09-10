@@ -634,6 +634,115 @@ export class HipassService {
     };
   }
 
+  async issueConsentHandoffTicket(consentId, patientId, requestMeta = {}) {
+    const consent = this.getConsent(consentId);
+    if (!consent) return null;
+    if (!patientId || consent.patientId !== patientId) {
+      throw new ServiceValidationError("PATIENT_IDENTITY_MISMATCH", "Only the consented patient can issue a handoff ticket");
+    }
+    if (consent.effectiveStatus === ConsentStatus.REVOKED) {
+      throw new ServiceValidationError("CONSENT_REVOKED", "Revoked consent cannot issue a handoff ticket");
+    }
+    if (consent.effectiveStatus === ConsentStatus.EXPIRED) {
+      throw new ServiceValidationError("CONSENT_EXPIRED", "Expired consent cannot issue a handoff ticket");
+    }
+    if (consent.effectiveStatus !== ConsentStatus.ACTIVE || !isWithinWindow(this.clock(), consent.validFrom, consent.validUntil)) {
+      throw new ServiceValidationError("CONSENT_NOT_ACTIVE", "Consent is not active in the current validity window");
+    }
+    const existing = this.store.get("transferTickets").find((ticket) => (
+      ticket.consentId === consentId && ticket.status === TransferTicketStatus.ISSUED
+    ));
+    if (existing) {
+      throw new ServiceValidationError("HANDOFF_TICKET_ALREADY_ISSUED", "An active handoff ticket already exists for this consent");
+    }
+
+    const now = this.clock();
+    const nonce = randomBytes(32).toString("base64url");
+    const allowedStudyUids = [...new Set(consent.scopes.filter((scope) => scope.allowed !== false).map((scope) => scope.studyInstanceUid))];
+    const allowedSeriesUids = [...new Set(consent.scopes.filter((scope) => scope.allowed !== false).map((scope) => scope.seriesInstanceUid).filter(Boolean))];
+    if (!allowedStudyUids.length) {
+      throw new ServiceValidationError("CONSENT_SCOPE_EMPTY", "Consent has no authorized imaging scope");
+    }
+    const ticket = {
+      ticketId: makeId("ticket"),
+      nonceHash: digestToken(nonce),
+      requestId: null,
+      consentId,
+      patientId: consent.patientId,
+      sourceHospitalId: consent.sourceHospitalId,
+      targetHospitalId: consent.targetHospitalId,
+      purpose: consent.purpose,
+      permission: consent.permission,
+      allowedStudyUids,
+      allowedSeriesUids,
+      status: TransferTicketStatus.ISSUED,
+      auditSessionId: makeId("audit-session"),
+      issuedAt: now,
+      expiresAt: new Date(Math.min(
+        new Date(addMinutesIso(this.ticketTtlMinutes, new Date(now))).getTime(),
+        new Date(consent.validUntil).getTime(),
+      )).toISOString(),
+      usedAt: null,
+      revokedAt: null,
+      redeemedDoctorId: null,
+      redeemedHospitalId: null,
+    };
+    this.store.get("transferTickets").push(ticket);
+    await this.writeAudit({
+      auditSessionId: ticket.auditSessionId,
+      actorType: ActorType.PATIENT,
+      actorId: patientId,
+      ticketId: ticket.ticketId,
+      patientId,
+      consentId,
+      sourceHospitalId: consent.sourceHospitalId,
+      targetHospitalId: consent.targetHospitalId,
+      action: AuditAction.TICKET_ISSUED,
+      studyInstanceUid: allowedStudyUids[0],
+      seriesInstanceUid: allowedSeriesUids[0] ?? null,
+      result: "SUCCESS",
+      ipAddress: requestMeta.ipAddress,
+      userAgent: requestMeta.userAgent,
+    });
+    await this.store.save();
+    return {
+      ticketId: ticket.ticketId,
+      consentId,
+      ticket: {
+        ticketId: ticket.ticketId,
+        status: ticket.status,
+        targetHospitalId: ticket.targetHospitalId,
+        expiresAt: ticket.expiresAt,
+      },
+      qr: {
+        payload: `${this.publicBaseUrl}/t/${nonce}`,
+        expiresAt: ticket.expiresAt,
+      },
+    };
+  }
+
+  async redeemViewerHandoff(nonce, principal, requestMeta = {}) {
+    const ticket = findTicketByNonce(this.store.get("transferTickets"), nonce);
+    const result = await this.redeemTransferTicket(nonce, {
+      doctorId: principal?.doctorId,
+      requestingHospitalId: principal?.hospitalId,
+      studyInstanceUid: ticket?.allowedStudyUids?.[0] ?? "UNKNOWN",
+      seriesInstanceUid: ticket?.allowedSeriesUids?.[0] ?? null,
+      purpose: ticket?.purpose ?? ConsentPurpose.TREATMENT,
+      requestedAction: RequestedAction.VIEW,
+    }, requestMeta);
+    if (result.decision !== AccessDecision.ALLOWED) return result;
+    return {
+      ...result,
+      viewerContext: {
+        studyInstanceUid: ticket.allowedStudyUids[0],
+        seriesInstanceUid: ticket.allowedSeriesUids[0] ?? null,
+        permission: ticket.permission,
+        targetHospitalId: ticket.targetHospitalId,
+      },
+    };
+  }
+
   async redeemTransferTicket(nonce, input, requestMeta = {}) {
     const redeemAuditSessionId = makeId("audit-session");
     const ticket = findTicketByNonce(this.store.get("transferTickets"), nonce);

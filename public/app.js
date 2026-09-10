@@ -52,12 +52,15 @@ const auditResultFilter = document.querySelector("#audit-result-filter");
 const auditActionFilter = document.querySelector("#audit-action-filter");
 const phrLoadState = document.querySelector("#phr-load-state");
 const phrImagingList = document.querySelector("#phr-imaging-list");
+const phrHandoffLink = document.querySelector("#phr-handoff-link");
+const pendingPhrHandoffNonce = capturePhrHandoffNonce();
 
 initNavigation();
 renderAdminShell();
 initConsentDateDefaults();
 bindEvents();
 await loadDashboard();
+if (pendingPhrHandoffNonce) await redeemPhrHandoff(pendingPhrHandoffNonce);
 
 function bindEvents() {
   document.querySelector("#refresh")?.addEventListener("click", loadDashboard);
@@ -194,6 +197,8 @@ function renderPhrImaging(items) {
 }
 
 async function createPhrConsent(imagingStudyRef) {
+  phrHandoffLink.hidden = true;
+  phrHandoffLink.removeAttribute("data-expires-at");
   setPhrState("선택한 ImagingStudy의 공유 범위를 서버에서 검증하고 있습니다.", "loading");
   const result = await postJson(`/api/v1/me/phr/imaging-studies/${encodeURIComponent(imagingStudyRef)}/consents`, {
     targetHospitalId: targetHospitalSelect.value,
@@ -204,13 +209,25 @@ async function createPhrConsent(imagingStudyRef) {
   });
   if (result?.data?.consentId) {
     latestConsentId = result.data.consentId;
-    setPhrState("공유 동의가 생성되었습니다. 보호된 영상 식별자는 브라우저에 노출하지 않습니다.", "success");
+    const handoff = await postJson(`/api/consents/${encodeURIComponent(result.data.consentId)}/handoff-ticket`, {});
+    const handoffUrl = safeSameOriginHandoffUrl(handoff?.qr?.payload);
+    if (!handoffUrl) {
+      setPhrState(`공유 동의는 생성됐지만 Viewer handoff 발급이 거부되었습니다: ${toFriendlyError(handoff?.error)}`, "fail");
+      renderOutput({ status: result.data.status, consentId: result.data.consentId, handoff: handoff?.error ?? "HANDOFF_FAILED" });
+      return;
+    }
+    phrHandoffLink.href = handoffUrl;
+    phrHandoffLink.dataset.expiresAt = handoff.qr.expiresAt;
+    phrHandoffLink.hidden = false;
+    setPhrState(`공유 동의와 일회용 Viewer handoff가 생성되었습니다. ${formatExpiry(handoff.qr.expiresAt)}까지 사용할 수 있습니다.`, "success");
     renderOutput({
       status: result.data.status,
       consentId: result.data.consentId,
       permission: result.data.permission,
       purpose: result.data.purpose,
       targetHospital: result.data.targetHospitalId,
+      handoffStatus: handoff.ticket?.status,
+      handoffExpiresAt: handoff.qr.expiresAt,
     });
     await loadDashboard();
     activateRole("PATIENT");
@@ -219,6 +236,62 @@ async function createPhrConsent(imagingStudyRef) {
   }
   setPhrState(toFriendlyError(result?.code ?? result?.error), "fail");
   renderOutput(result);
+}
+
+function capturePhrHandoffNonce() {
+  const match = location.pathname.match(/^\/t\/([A-Za-z0-9_-]{22,128})$/);
+  if (!match) return null;
+  history.replaceState(null, "", "/hipass/#DOCTOR");
+  return match[1];
+}
+
+function safeSameOriginHandoffUrl(payload) {
+  try {
+    const parsed = new URL(payload, location.origin);
+    if (parsed.origin !== location.origin || !/^\/t\/[A-Za-z0-9_-]{22,128}$/.test(parsed.pathname)) return null;
+    return `${parsed.pathname}`;
+  } catch {
+    return null;
+  }
+}
+
+function formatExpiry(value) {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "잠시 후" : parsed.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+}
+
+async function redeemPhrHandoff(nonce) {
+  activateRole("DOCTOR");
+  activateView("doctor-viewer");
+  showViewerMessage("일회용 handoff와 의료진 소속을 서버에서 검증하고 있습니다.", "info");
+  const result = await postJson("/api/transfers/tickets/redeem-viewer", { nonce });
+  if (result?.decision !== "ALLOWED" || !result.accessToken || !result.viewerContext?.studyInstanceUid) {
+    latestToken = null;
+    latestTokenInfo = null;
+    viewerStatus.textContent = "Handoff denied";
+    showViewerMessage(toFriendlyError(result?.reasonCode ?? result?.error), "fail");
+    renderOutput({ decision: result?.decision ?? "DENIED", reasonCode: result?.reasonCode ?? result?.error ?? "HANDOFF_FAILED" });
+    return;
+  }
+
+  latestToken = result.accessToken;
+  latestTokenInfo = result;
+  latestConsentId = result.consentId ?? latestConsentId;
+  selectedStudyUid = result.viewerContext.studyInstanceUid;
+  selectedSeriesUid = result.viewerContext.seriesInstanceUid ?? "";
+  selectedStudy = lastStudies.find((study) => study.studyInstanceUid === selectedStudyUid) ?? selectedStudy;
+  viewerStatus.textContent = "Handoff verified";
+  syncSelectedStudyUi();
+  setDownloadState();
+  showViewerMessage("일회용 handoff 검증이 완료되었습니다. 승인된 Series만 불러옵니다.", "success");
+  renderOutput({
+    decision: result.decision,
+    handoff: "CONSUMED",
+    permission: result.viewerContext.permission,
+    targetHospital: result.viewerContext.targetHospitalId,
+  });
+  await loadGatewayStudies();
+  await loadSeriesForActiveToken();
 }
 
 function setPhrState(message, tone) {
@@ -781,6 +854,15 @@ function developmentPrincipalHeaders(path) {
       "x-hipass-user-id": "synthetic-account-a",
       "x-hipass-patient-id": demo.patientId,
       "x-hipass-session-id": "dev-phr-patient-session",
+    };
+  }
+  if (path === "/api/transfers/tickets/redeem-viewer") {
+    return {
+      "x-hipass-role": "DOCTOR",
+      "x-hipass-user-id": demo.doctorId,
+      "x-hipass-doctor-id": demo.doctorId,
+      "x-hipass-hospital-id": demo.targetHospitalId,
+      "x-hipass-session-id": "dev-doctor-handoff-session",
     };
   }
   if (

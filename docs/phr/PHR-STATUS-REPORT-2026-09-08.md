@@ -179,3 +179,9 @@ git diff --check
 ## 9. 결론
 
 현재 단계의 성과는 PHR 전체 완료가 아니다. 기존 Highpass 인증·동의·DICOM 보안 경계를 보존하면서, 합성 FHIR 개인의료정보 조회와 향후 영상 공유를 연결할 수 있는 실행 가능한 Provider/API/감사 기반을 확보한 것이다. 다음 판정은 실제 Orthanc 매핑과 PHR→DICOMweb→공유 통합시험 이후에만 갱신한다.
+
+## 10. 2026-09-10 W08 갱신
+
+PHR-W08을 구현했다. 활성 동의에서 환자 본인만 일회용 opaque Viewer handoff를 발급할 수 있고, 수신 의료진은 인증 principal의 병원·의사 식별자와 서버 티켓 범위로만 교환된다. nonce 원문은 저장하지 않으며, 브라우저는 `/t` 진입 직후 `/hipass/#DOCTOR`로 주소를 정리한다. 서비스·HTTP 회귀는 148/148 PASS이다.
+
+Docker Desktop은 Windows 기능 활성화 DISM `0x80240021` 및 stale IPC socket 복구 후에도 Engine이 기동하지 않아 브라우저·Compose 종단검증은 `NOT VERIFIED / ENVIRONMENT BLOCKED`로 유지한다. 상세 근거는 `docs/phr/PHR-W08-EXECUTION-REPORT.md`에 기록한다.

@@ -301,3 +301,119 @@ test("redeeming after consent expiry is denied even if ticket still within TTL",
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("an active PHR consent issues one opaque handoff ticket without persisting its nonce", async () => {
+  const { dir, store, service } = await createService({ publicBaseUrl: "https://hipass.example" });
+  try {
+    const consent = await service.createConsent({
+      patientId: "P-1001",
+      sourceHospitalId: "HOSP-A",
+      targetHospitalId: "HOSP-B",
+      purpose: "TREATMENT",
+      permission: "VIEW_ONLY",
+      validUntil: "2026-06-26T10:00:00.000Z",
+      scopes: [{ studyInstanceUid: STUDY_001, seriesInstanceUid: SERIES_001_1 }],
+    });
+    const handoff = await service.issueConsentHandoffTicket(consent.consentId, "P-1001");
+    assert.match(handoff.qr.payload, /^https:\/\/hipass\.example\/t\/[A-Za-z0-9_-]{43}$/);
+    assert.equal(handoff.ticket.status, "ISSUED");
+    assert.equal(handoff.ticket.targetHospitalId, "HOSP-B");
+    assert.ok(!JSON.stringify(handoff).includes(STUDY_001), "patient response must not expose raw DICOM scope");
+    const stored = store.get("transferTickets").find((ticket) => ticket.ticketId === handoff.ticketId);
+    const nonce = handoff.qr.payload.split("/").at(-1);
+    assert.deepEqual(stored.allowedStudyUids, [STUDY_001]);
+    assert.deepEqual(stored.allowedSeriesUids, [SERIES_001_1]);
+    assert.match(stored.nonceHash, /^sha256:/);
+    assert.ok(!JSON.stringify(stored).includes(nonce));
+    await assert.rejects(
+      () => service.issueConsentHandoffTicket(consent.consentId, "P-1001"),
+      (error) => error instanceof ServiceValidationError && error.code === "HANDOFF_TICKET_ALREADY_ISSUED",
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("PHR handoff issuance is patient-bound and fails closed for expired or revoked consent", async () => {
+  const clock = clockAt(Date.parse("2026-06-25T10:00:00.000Z"));
+  const { dir, service } = await createService({ clock });
+  try {
+    const consent = await service.createConsent({
+      patientId: "P-1001",
+      sourceHospitalId: "HOSP-A",
+      targetHospitalId: "HOSP-B",
+      purpose: "TREATMENT",
+      permission: "VIEW_ONLY",
+      validUntil: "2026-06-25T10:05:00.000Z",
+      scopes: [{ studyInstanceUid: STUDY_001 }],
+    });
+    await assert.rejects(
+      () => service.issueConsentHandoffTicket(consent.consentId, "P-9999"),
+      (error) => error instanceof ServiceValidationError && error.code === "PATIENT_IDENTITY_MISMATCH",
+    );
+    clock.advance(6);
+    await assert.rejects(
+      () => service.issueConsentHandoffTicket(consent.consentId, "P-1001"),
+      (error) => error instanceof ServiceValidationError && error.code === "CONSENT_EXPIRED",
+    );
+
+    const revoked = await service.createConsent({
+      patientId: "P-1001",
+      sourceHospitalId: "HOSP-A",
+      targetHospitalId: "HOSP-B",
+      purpose: "TREATMENT",
+      permission: "VIEW_ONLY",
+      validUntil: "2026-06-26T10:00:00.000Z",
+      scopes: [{ studyInstanceUid: STUDY_001 }],
+    });
+    await service.revokeConsent(revoked.consentId, "P-1001");
+    await assert.rejects(
+      () => service.issueConsentHandoffTicket(revoked.consentId, "P-1001"),
+      (error) => error instanceof ServiceValidationError && error.code === "CONSENT_REVOKED",
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Viewer handoff derives scope from the ticket, returns context, and rejects replay", async () => {
+  const { dir, service } = await createService();
+  try {
+    const consent = await service.createConsent({
+      patientId: "P-1001",
+      sourceHospitalId: "HOSP-A",
+      targetHospitalId: "HOSP-B",
+      purpose: "TREATMENT",
+      permission: "VIEW_ONLY",
+      validUntil: "2026-06-26T10:00:00.000Z",
+      scopes: [{ studyInstanceUid: STUDY_001, seriesInstanceUid: SERIES_001_1 }],
+    });
+    const handoff = await service.issueConsentHandoffTicket(consent.consentId, "P-1001");
+    const nonce = handoff.qr.payload.split("/").at(-1);
+    const result = await service.redeemViewerHandoff(nonce, {
+      doctorId: "DOC-B-01",
+      hospitalId: "HOSP-B",
+    });
+    assert.equal(result.decision, "ALLOWED");
+    assert.ok(result.accessToken);
+    assert.deepEqual(result.viewerContext, {
+      studyInstanceUid: STUDY_001,
+      seriesInstanceUid: SERIES_001_1,
+      permission: "VIEW_ONLY",
+      targetHospitalId: "HOSP-B",
+    });
+    const replay = await service.redeemViewerHandoff(nonce, {
+      doctorId: "DOC-B-01",
+      hospitalId: "HOSP-B",
+    });
+    assert.equal(replay.decision, "DENIED");
+    assert.equal(replay.reasonCode, "TICKET_ALREADY_USED");
+    const missing = await service.redeemViewerHandoff("unknown-opaque-handoff-nonce-value", {
+      doctorId: "DOC-B-01",
+      hospitalId: "HOSP-B",
+    });
+    assert.equal(missing.reasonCode, "ACCESS_DENIED_NO_TICKET");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
