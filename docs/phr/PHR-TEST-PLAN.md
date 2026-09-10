@@ -13,7 +13,7 @@
 | PHR-T11 | PASS | 전체 Node 및 Compose MVP 회귀 |
 | PHR-T12 | PARTIAL | 임상경로 독립/fallback 0 단위시험 PASS, 실제 OPF 모델 BLOCKED |
 | PHR-T13~T14 | PASS (local) | MyHealthWay NOT_CONFIGURED outbound 0, 감사 UID·secret 비노출 |
-| PHR-T15 | PARTIAL PASS | 합성 PHR→동의→Viewer 데이터 경로 PASS, 전용 PHR 환자 UI 미구현 |
+| PHR-T15 | PARTIAL PASS | 환자 UI PHR 조회·동의 생성과 서비스 Viewer 수직경로는 각각 PASS, 단일 브라우저 역할전환 handoff 후속 |
 
 기존 `NOT RUN` 표는 계획 당시 기준선으로 보존한다. 위 표가 최신 판정이며 실제 외부·운영환경으로 확대 해석하지 않는다.
 

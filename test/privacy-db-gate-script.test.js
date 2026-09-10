@@ -9,6 +9,8 @@ test("PF-0 DB gate waits for the final PostgreSQL server, not bootstrap readines
   assert.ok(script.includes("PostgreSQL init process complete; ready for start up\\."));
   assert.match(script, /startupTimeoutSeconds = 90/);
   assert.match(script, /SELECT 1/);
+  assert.match(script, /\$probeExit = \$LASTEXITCODE/);
+  assert.match(script, /if \(\$probeExit -eq 0\)/);
   assert.doesNotMatch(script, /foreach \(\$attempt in 1\.\.30\)/);
 });
 
