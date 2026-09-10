@@ -13,12 +13,14 @@
 | PHR-T11 | PASS | 전체 Node 및 Compose MVP 회귀 |
 | PHR-T12 | PARTIAL | 임상경로 독립/fallback 0 단위시험 PASS, 실제 OPF 모델 BLOCKED |
 | PHR-T13~T14 | PASS (local) | MyHealthWay NOT_CONFIGURED outbound 0, 감사 UID·secret 비노출 |
-| PHR-T15 | PARTIAL PASS | 환자 UI PHR 조회·동의 생성과 서비스 Viewer 수직경로는 각각 PASS, 단일 브라우저 역할전환 handoff 후속 |
+| PHR-T15 | PASS (local synthetic) | 환자 UI·opaque handoff·Viewer 역할전환·QIDO/WADO·토큰 URL 비노출 브라우저 trace PASS; 실제 IdP/PACS는 범위 제외 |
 
 기존 `NOT RUN` 표는 계획 당시 기준선으로 보존한다. 위 표가 최신 판정이며 실제 외부·운영환경으로 확대 해석하지 않는다.
 
-상태: `PHR-W02~W04 LOCAL GATES PASS / INTEGRATED PHR-T01~T15 PARTIAL`  
+상태: `PHR-W02~W10 LOCAL GATES PASS / INTEGRATED PHR-T01~T15 PASS (SYNTHETIC LOCAL)`  
 주의: 이 문서 작성은 PHR 기능 시험 성공을 의미하지 않는다.
+
+2026-09-11 갱신: 위 최신 표의 PASS는 Docker Compose와 개발용 Mock principal을 사용하는 합성 로컬 검증 판정이다. 실제 IdP·PACS·MyHealthWay·법률/병원 승인은 포함하지 않는다.
 
 ## 증적 형식
 
@@ -42,7 +44,7 @@
 | PHR-T12 | Privacy model 장애/CLINICAL 우회 | 임상조회 비침해, 비진료 fallback 0 | Phase 5 / NOT RUN |
 | PHR-T13 | MyHealthWay 미설정 | `NOT_CONFIGURED`, outbound 0건 | Phase 2 / NOT RUN |
 | PHR-T14 | 감사·로그·저장소 누출 | 원문·키·token 금지패턴 0건 | Phase 2~5 / NOT RUN |
-| PHR-T15 | 전체 합성 PHR→Viewer→공유 | 재현 가능한 종단 PASS | Phase 5 / NOT RUN |
+| PHR-T15 | 전체 합성 PHR→Viewer→공유 | 재현 가능한 종단 PASS | W09/W10 / PASS |
 
 ## Fixture 계획
 

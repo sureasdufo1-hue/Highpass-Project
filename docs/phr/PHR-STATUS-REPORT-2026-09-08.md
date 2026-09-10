@@ -185,3 +185,9 @@ git diff --check
 PHR-W08을 구현했다. 활성 동의에서 환자 본인만 일회용 opaque Viewer handoff를 발급할 수 있고, 수신 의료진은 인증 principal의 병원·의사 식별자와 서버 티켓 범위로만 교환된다. nonce 원문은 저장하지 않으며, 브라우저는 `/t` 진입 직후 `/hipass/#DOCTOR`로 주소를 정리한다. 서비스·HTTP 회귀는 148/148 PASS이다.
 
 Docker Desktop의 stale IPC socket(`sailor-ingest.sock`, Secrets Engine)을 복구 가능한 백업으로 이동하고 WSL을 재시작한 뒤 Engine 29.7.2가 정상 기동했다. Compose readiness/HTTPS health, 전체 MVP 게이트, 브라우저 Viewer 권한 추적을 모두 PASS로 확인했다. 상세 근거는 `docs/phr/PHR-W08-EXECUTION-REPORT.md`에 기록한다.
+
+## 11. 2026-09-11 W09/W10 갱신
+
+W09 종단·음성·장애·로그누출 회귀와 W10 시연 고정·증적 수집을 완료했다. `pnpm test` 148/148, `pnpm run mvp:verify` 전체 게이트, 브라우저 Viewer/QIDO/WADO trace, 최신 manifest 9/9 무결성 검증이 모두 PASS다. 상세 결과는 [PHR-W09/W10 실행 보고서](PHR-W09-W10-EXECUTION-REPORT.md)에 기록한다.
+
+남은 승인은 독립 검토자의 증적 서명(Issue #8)이며, PIPA·ISMS-P·병원 승인·실제 IdP/PACS는 여전히 상용화 전 `DEFERRED/BLOCKED`다.
