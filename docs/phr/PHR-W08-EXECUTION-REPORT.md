@@ -21,13 +21,16 @@ PHR 동의에서 수신 병원 의료진 Viewer로 이어지는 일회용 handof
 
 ## 테스트
 
-- `pnpm test`: 148/148 PASS
+- `pnpm test`: 148/148 PASS (Windows Python cold-start fixture limit adjusted to 2 seconds; 30ms timeout negative case remains unchanged)
 - PHR HTTP 계약: 환자 동의 생성 → handoff 발급 → DOC-B-01 교환 → replay 403 PASS
 - 서비스 티켓 테스트: patient binding, expiry/revocation, scope derivation PASS
-- 브라우저 CUA 종단검증: Docker Engine 중지로 실행하지 못함 (`NOT VERIFIED`)
+- `pnpm run mvp:preflight`: PASS (Docker Engine 29.7.2)
+- `pnpm run mvp:start`: Compose 6개 필수 서비스 healthy, HTTPS health 200 PASS
+- `pnpm run mvp:verify`: 전체 게이트 PASS (HTTPS E2E, mTLS, network, security, container, compliance evidence 포함)
+- `scripts/run-browser-authorization-trace.ps1`: HTTPS/Viewer/QIDO/WADO/Authorization header PASS, token URL 노출 없음
 
 ## 제한 및 후속
 
-현재 handoff는 로컬 합성 데이터 데모용이다. 실제 OIDC/MFA, 병원 IdP, QR 스캐너, 운영 PACS와의 검증은 상용화 전 백로그로 남긴다. Docker Desktop은 Windows 기능 활성화 DISM `0x80240021` 및 stale IPC socket 문제로 현재 Engine이 기동하지 않아 Compose/브라우저 검증은 환경 차단 상태다.
+현재 handoff는 로컬 합성 데이터 데모용이다. 실제 OIDC/MFA, 병원 IdP, QR 스캐너, 운영 PACS와의 검증은 상용화 전 백로그로 남긴다. Docker Desktop의 stale IPC socket(`sailor-ingest.sock`, Secrets Engine)을 복구 가능한 백업으로 이동하고 WSL을 재시작한 뒤 Engine이 정상 기동했다. 이미지·볼륨 삭제나 factory reset은 수행하지 않았다.
 
 최종 표기: `CAPSTONE MVP / TECHNICAL TEST ENVIRONMENT ONLY — NOT A PIPA LEGAL DETERMINATION, ISMS-P CERTIFICATION, HOSPITAL SECURITY APPROVAL, OR PRODUCTION READINESS CLAIM`

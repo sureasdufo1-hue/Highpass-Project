@@ -184,4 +184,4 @@ git diff --check
 
 PHR-W08을 구현했다. 활성 동의에서 환자 본인만 일회용 opaque Viewer handoff를 발급할 수 있고, 수신 의료진은 인증 principal의 병원·의사 식별자와 서버 티켓 범위로만 교환된다. nonce 원문은 저장하지 않으며, 브라우저는 `/t` 진입 직후 `/hipass/#DOCTOR`로 주소를 정리한다. 서비스·HTTP 회귀는 148/148 PASS이다.
 
-Docker Desktop은 Windows 기능 활성화 DISM `0x80240021` 및 stale IPC socket 복구 후에도 Engine이 기동하지 않아 브라우저·Compose 종단검증은 `NOT VERIFIED / ENVIRONMENT BLOCKED`로 유지한다. 상세 근거는 `docs/phr/PHR-W08-EXECUTION-REPORT.md`에 기록한다.
+Docker Desktop의 stale IPC socket(`sailor-ingest.sock`, Secrets Engine)을 복구 가능한 백업으로 이동하고 WSL을 재시작한 뒤 Engine 29.7.2가 정상 기동했다. Compose readiness/HTTPS health, 전체 MVP 게이트, 브라우저 Viewer 권한 추적을 모두 PASS로 확인했다. 상세 근거는 `docs/phr/PHR-W08-EXECUTION-REPORT.md`에 기록한다.
