@@ -6,6 +6,7 @@
 - PHR-W07 합성 수직경로 `PHR → 동의 → 의료진 단기토큰 → QIDO/WADO → 감사 → 철회`: 구현·시험 완료
 - PHR-W05 최소 환자 UI, PHR OpenAPI, 브라우저 PHR 조회·동의 생성: 구현·시험 완료
 - PHR 전용 targeted suite: 6/6 PASS, Compose 6/6 healthy, 브라우저 console warning/error 0
+- 전체 Node 회귀: 144/144 PASS, Phase 5 최종 Gate 5/5 PASS at `1754f259a5e06b6a6ca96a13f0e132d30c7b058d`
 - 남은 PHR 로컬 작업: W08/W09의 opaque 역할전환 handoff와 단일 브라우저 Viewer 종단 증적
 - 실제 MyHealthWay, IdP, 병원 PACS와 모바일 package/key release는 계속 `NOT IMPLEMENTED` 또는 `DEFERRED/BLOCKED`
 

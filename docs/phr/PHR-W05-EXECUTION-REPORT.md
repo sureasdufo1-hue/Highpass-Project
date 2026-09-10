@@ -34,6 +34,8 @@
 | UID/token URL 비노출 | PASS | 브라우저 URL은 `/hipass/#PATIENT`, UI·OpenAPI 정적 검사 |
 | 브라우저 console error | PASS | warning/error 0건 |
 | Compose readiness | PASS | 6/6 healthy |
+| 전체 Node 회귀 | PASS | 144/144 |
+| Phase 5 최종 Gate | PASS | 5/5, 기준 SHA `1754f259a5e06b6a6ca96a13f0e132d30c7b058d` |
 | 전용 PHR UI→의료진 Viewer 전체 브라우저 경로 | PARTIAL | 서비스 W07은 PASS이나 opaque handoff를 사용하는 역할 전환 UI는 후속 W08/W09 |
 | 실제 MyHealthWay/IdP/PACS | NOT VERIFIED | 외부 자원 및 운영 승인이 필요한 MVP 제외 범위 |
 
@@ -42,6 +44,7 @@
 ```powershell
 node --test test/phr-ui-contract.test.js test/phr-api.test.js test/phr-vertical-path.test.js
 docker compose -p highpass-phase2 up -d --build hipass-control-api hospital-b-viewer hipass-edge
+pnpm run mvp:finalize
 ```
 
 ## 판정

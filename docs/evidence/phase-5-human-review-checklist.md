@@ -2,12 +2,12 @@
 
 상태: `READY FOR HUMAN REVIEW / DRAFT`
 자동 사전검증일: 2026-09-09
-기준 구현 SHA: `9f3c8cc376808d1c0f452312c071b2a0522c7546`
+최신 기준 구현 SHA: `1754f259a5e06b6a6ca96a13f0e132d30c7b058d`
 
 ## 자동 사전검증
 
 ```powershell
-pnpm run compliance:evidence:verify -- evidence/generated/2026-09-09T05-35-19-746Z/manifest.json
+pnpm run compliance:evidence:verify -- evidence/generated/2026-09-09T06-15-58-357Z/manifest.json
 pnpm run security:secrets
 ```
 
