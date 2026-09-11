@@ -5,7 +5,7 @@
 ## 전날
 
 - [x] 합성 데이터만 사용하고 실제 환자정보가 없음을 확인한다.
-- [x] Node·pnpm·Docker Compose 버전과 포트 3000/3443을 점검한다.
+- [x] Node·pnpm·Docker Compose 버전과 로컬 데모 포트 3300/3443을 점검한다(3000은 별도 서비스가 사용 중인 경우).
 - [x] 개발 인증서 만료 정책과 만료 음성 fixture를 확인한다.
 - [x] PF-0 PostgreSQL migration/RLS Gate를 실행한다.
 - [x] 개발 인증서 rollback 호환성 리허설을 실행한다.

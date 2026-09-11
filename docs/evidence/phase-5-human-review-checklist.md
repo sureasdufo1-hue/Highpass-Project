@@ -1,17 +1,19 @@
 # Phase 5 증적 독립 검토 체크리스트
 
 상태: `READY FOR HUMAN REVIEW / DRAFT`
-자동 사전검증일: 2026-09-09
-최신 기준 구현 SHA: `1754f259a5e06b6a6ca96a13f0e132d30c7b058d`
+자동 사전검증일: 2026-09-12
+최신 증적 실행 디렉터리: `evidence/generated/2026-09-11T21-51-53-172Z/`
+증적이 가리키는 구현 SHA: `ee7fc6eafdef1c03c413973def1f08528b0fb599`
+원격 반영 병합 SHA: `f2ac3315634d7001d45fad20bf9fa4e1e28f2301` (동일 트리)
 
 ## 자동 사전검증
 
 ```powershell
-pnpm run compliance:evidence:verify -- evidence/generated/2026-09-09T06-15-58-357Z/manifest.json
+pnpm run compliance:evidence:verify
 pnpm run security:secrets
 ```
 
-사전검증 결과는 증적 9/9 파일 존재·SHA-256 일치·경로 confinement PASS, 비밀정보 scan 0건이다. 모든 증적은 계속 `DRAFT / UNASSIGNED`이며 자동검증은 독립 검토자의 승인이 아니다.
+사전검증 결과는 최신 manifest의 증적 9/9 파일 존재·SHA-256 일치·경로 confinement PASS, 비밀정보 scan 0건이다. 모든 증적은 계속 `DRAFT / UNASSIGNED`이며 자동검증은 독립 검토자의 승인이 아니다.
 
 ## 독립 검토자 확인
 
