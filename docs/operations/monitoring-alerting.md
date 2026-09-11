@@ -38,7 +38,9 @@ Latest result:
 
 - Backend: `independent-node-alert-receiver`
 - Alert delivery: `PASS`
-- Alerts delivered: 10
+- Alerts delivered: 3
+- Latest run: `2026-09-11T22:38:35.225Z`
+- Signals: authentication failure threshold, authorization deny rate, audit integrity anomaly
 - External human notification channel: `NOT VERIFIED`
 
 This is a test observability backend, not a production monitoring SaaS or enterprise NOC integration.
