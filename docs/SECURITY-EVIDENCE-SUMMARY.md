@@ -14,7 +14,7 @@
 | PF-0 PostgreSQL/RLS | `pnpm run privacy:db-gate` | PASS |
 | 개발 인증서 rollback | `pnpm run test:cert-rollback` | PASS |
 
-2026-09-09 검증 기준선은 `9f3c8cc376808d1c0f452312c071b2a0522c7546`이다. Phase 5 Gate 5/5와 내부 MVP 14/14 단계, Node 139/139, HTTPS·mTLS·네트워크 경계, PF-0 DB/RLS가 PASS했다. 최신 Orthanc fresh Trivy 결과는 scanner Critical 1, confirmed runtime Critical 0, High 0이며 현재 이미지에 적용되는 High 예외는 0건이다.
+2026-09-09 검증 기준선은 `9f3c8cc376808d1c0f452312c071b2a0522c7546`이다(역사적 스냅샷). 2026-09-11 현재 기준선 `343021d62971724856ff351a277c6d71642c24a5`에서 Phase 5 Gate 5/5, 내부 MVP 14/14, Node 148/148, HTTPS·mTLS·네트워크 경계, PF-0 DB/RLS, 인증서 rollback, 최신 컨테이너 스캔과 CycloneDX SBOM이 PASS했다. 최신 실행 manifest는 `evidence/generated/2026-09-11T11-05-03-661Z/manifest.json`이며 9/9 source hash 검증 PASS, 모든 항목은 `DRAFT / UNASSIGNED`다. 최신 Orthanc fresh Trivy 결과는 scanner Critical 1, confirmed runtime Critical 0, High 0이며 현재 이미지에 적용되는 High 예외는 0건이다.
 
 최신 실행의 SHA, 실행시각, 종료 코드, 해시와 상태는 생성된 `manifest.json`을 기준으로 한다. 기존 생성물은 기준 문서가 아니라 실행 당시 DRAFT 스냅샷이다.
 

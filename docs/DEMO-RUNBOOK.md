@@ -72,6 +72,14 @@ Orthanc 직접 포트는 호스트에 공개되지 않는 것이 정상이다.
 pnpm run mvp:verify
 ```
 
+PHR ImagingStudy–Orthanc live mapping 확인은 실행 중인 Compose 스택의 내부 네트워크에서 수행한다.
+
+```powershell
+pnpm run phr:verify-mapping
+```
+
+이 명령은 `PHR-T04` 정상 매핑과 `PHR-T05` 비매핑 음성 케이스를 검사한다. 호스트 직접 실행용 `phr:verify-mapping:local`은 컨테이너 DNS에 접근할 수 없어 `SOURCE_UNAVAILABLE`이 될 수 있으므로 발표 검증 결과로 사용하지 않는다.
+
 발표 패키지 동결 전 추가 로컬 Gate:
 
 ```powershell
