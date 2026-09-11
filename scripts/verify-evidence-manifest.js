@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -69,15 +69,27 @@ export function verifyEvidenceManifest(manifestPath, options = {}) {
 }
 
 function main() {
-  const manifestPath = process.argv[2];
+  const manifestPath = process.argv[2] ?? findLatestManifest();
   if (!manifestPath) {
-    console.error("Usage: node scripts/verify-evidence-manifest.js <manifest.json>");
+    console.error("No evidence manifest found. Generate one with pnpm run compliance:evidence or pass <manifest.json> explicitly.");
     process.exitCode = 2;
     return;
   }
   const result = verifyEvidenceManifest(manifestPath);
   console.log(JSON.stringify(result, null, 2));
   if (!result.ok) process.exitCode = 1;
+}
+
+function findLatestManifest() {
+  const generatedRoot = path.resolve(process.cwd(), "evidence", "generated");
+  if (!existsSync(generatedRoot)) return null;
+  const candidates = readdirSync(generatedRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(generatedRoot, entry.name, "manifest.json"))
+    .filter((candidate) => existsSync(candidate))
+    .sort()
+    .reverse();
+  return candidates[0] ? path.relative(process.cwd(), candidates[0]) : null;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

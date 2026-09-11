@@ -124,6 +124,14 @@ node scripts\mvp-verify.js
 
 패키지 실행이 가능한 환경에서는 `pnpm run mvp:verify`도 같다. 자동 생성 증적은 `evidence/generated/`에 저장되며 검토 전 `DRAFT / UNASSIGNED`다. 발표 재현은 `docs/DEMO-RUNBOOK.md`, 범위는 `docs/MVP-SCOPE.md`, 상용화 전 작업은 `docs/COMMERCIALIZATION-BACKLOG.md`를 참고한다.
 
+합성 PHR ImagingStudy–Orthanc 매핑 검증은 Docker Compose 네트워크 안에서 실행한다. 실행 중인 MVP 스택이 필요하며 기본 Compose 프로젝트명은 `highpass-phase2`다.
+
+```powershell
+pnpm run phr:verify-mapping
+```
+
+호스트에서 PACS를 직접 조회하는 원시 검증기는 테스트·디버깅 목적으로만 `pnpm run phr:verify-mapping:local`을 사용한다. 이 명령은 Compose 내부 DNS를 해석하지 못하는 호스트 환경에서 `SOURCE_UNAVAILABLE`이 될 수 있으며, 이를 PASS로 간주하지 않는다.
+
 발표 전 최종 Gate는 PF-0 DB/RLS, 개발 인증서 rollback, 최신 컨테이너 스캔, CycloneDX SBOM과 전체 MVP를 고정된 순서로 실행한다.
 
 ```powershell
@@ -231,10 +239,10 @@ Target:
 CAPSTONE MVP / TECHNICAL TEST ENVIRONMENT ONLY
 
 Repository SHA:
-9f3c8cc376808d1c0f452312c071b2a0522c7546
+343021d62971724856ff351a277c6d71642c24a5
 
 Local MVP E2E:
-PASS — Phase 5 final Gate 5/5, nested MVP 14/14, Node tests 139/139
+PASS — Phase 5 final Gate 5/5, nested MVP 14/14, Node tests 148/148
 
 PF-0 PostgreSQL/RLS:
 PASS — final-server readiness, migrations, FORCE RLS positive/negative gate

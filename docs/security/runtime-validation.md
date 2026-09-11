@@ -1,5 +1,24 @@
 # Runtime Security Validation
 
+## 2026-09-11 Current local validation
+
+The 2026-09-09 table below is retained as a historical snapshot. The current local Docker Engine is 29.7.2 and the latest technical gate was rerun at repository SHA `343021d62971724856ff351a277c6d71642c24a5`.
+
+| Control | Current result |
+|---|---|
+| Docker Engine 29.7.2 | PASS |
+| Six-service Compose readiness | PASS |
+| HTTPS health on local demo port 3443 | PASS, HTTP 200 |
+| Node regression | PASS, 148/148 |
+| HTTPS consent-to-Viewer E2E | PASS |
+| mTLS positive and negative cases | PASS |
+| Network boundary / direct Orthanc denial | PASS |
+| PF-0 PostgreSQL/RLS | PASS |
+| Phase 5 final gate | PASS, 5/5 |
+| Actual IdP / KMS / hospital PACS | NOT VERIFIED / BLOCKED |
+
+The latest generated evidence manifest is `evidence/generated/2026-09-11T11-05-03-661Z/manifest.json` (9/9 hash and confinement checks PASS; review status `DRAFT / UNASSIGNED`).
+
 ## 2026-09-09 Superseding Local Validation
 
 The Docker failure record below is retained as historical diagnosis. It is no longer the current local state.
