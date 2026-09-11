@@ -2,9 +2,9 @@
 
 상태: `REVIEW REQUIRED / DRAFT`
 자동 사전검증일: 2026-09-12
-최신 증적 실행 디렉터리: `evidence/generated/2026-09-11T23-27-45-536Z/`
-증적이 가리키는 구현 SHA: `222a7b6d05a38d4700d65e93af5cce5ae25337ca`
-원격 반영 병합 SHA: `222a7b6d05a38d4700d65e93af5cce5ae25337ca` (runtime implementation baseline)
+최신 증적 실행 디렉터리: `evidence/generated/2026-09-11T23-39-33-168Z/`
+증적이 가리키는 구현 SHA: `3b2cb57f82a13d360ced54645051f0c5a44309d5`
+원격 반영 병합 SHA: `3b2cb57f82a13d360ced54645051f0c5a44309d5` (runtime implementation baseline)
 
 ## 자동 사전검증
 
