@@ -37,7 +37,7 @@ test("receiver accepts out-of-order ciphertext chunks and verifies receipt", () 
 
 test("missing, tampered, and conflicting chunks fail closed", () => {
   const packageData = fixture();
-  const receiver = new MobilePackageReceiver();
+  const receiver = new MobilePackageReceiver({ clock: () => new Date("2026-09-12T00:01:00.000Z") });
   receiver.startUpload({ uploadId: "upl_abcdefghijklmnop", packageId: packageData.envelope.packageId, envelope: packageData.envelope, expectedPackageHash: packageData.manifest.packageHash, handoffId: "hof_abcdefghijklmnop", receiverInstitutionRef: "inst_hospital_b" });
   assert.throws(() => receiver.receiveChunk("upl_abcdefghijklmnop", { ...packageData.chunks[0], hash: sha256Base64Url(Buffer.from("tampered")) }), (error) => error.code === "CHUNK_HASH_MISMATCH");
   receiver.receiveChunk("upl_abcdefghijklmnop", packageData.chunks[0]);
@@ -49,7 +49,7 @@ test("missing, tampered, and conflicting chunks fail closed", () => {
 
 test("reassembly hash mismatch produces failed upload and no verified receipt", () => {
   const packageData = fixture();
-  const receiver = new MobilePackageReceiver();
+  const receiver = new MobilePackageReceiver({ clock: () => new Date("2026-09-12T00:01:00.000Z") });
   receiver.startUpload({ uploadId: "upl_abcdefghijklmnop", packageId: packageData.envelope.packageId, envelope: packageData.envelope, expectedPackageHash: "A".repeat(43), handoffId: "hof_abcdefghijklmnop", receiverInstitutionRef: "inst_hospital_b" });
   for (const chunk of packageData.chunks) receiver.receiveChunk("upl_abcdefghijklmnop", chunk);
   assert.throws(() => receiver.completeUpload("upl_abcdefghijklmnop"), (error) => error.code === "PACKAGE_HASH_MISMATCH");
