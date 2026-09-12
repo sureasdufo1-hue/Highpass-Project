@@ -32,7 +32,7 @@ test("vault stores ciphertext-only package and returns cloned encrypted data", (
 
 test("vault blocks backup/share and duplicate storage", () => {
   const fixture = packageFixture();
-  const vault = new MobileVault();
+  const vault = new MobileVault({ clock: () => new Date("2026-09-12T00:01:00.000Z") });
   vault.storePackage({ packageId: fixture.envelope.packageId, envelope: fixture.envelope, chunks: fixture.chunks });
   assert.throws(() => vault.storePackage({ packageId: fixture.envelope.packageId, envelope: fixture.envelope, chunks: fixture.chunks }), (error) => error.code === "VAULT_PACKAGE_EXISTS");
   assert.throws(() => vault.requestBackup(), (error) => error instanceof MobileVaultError && error.code === "VAULT_EXPORT_BLOCKED");
@@ -52,7 +52,7 @@ test("vault expires package and erases ciphertext at TTL", () => {
 
 test("revoke and delete return auditable receipt and make package unavailable", () => {
   const fixture = packageFixture();
-  const vault = new MobileVault();
+  const vault = new MobileVault({ clock: () => new Date("2026-09-12T00:01:00.000Z") });
   vault.storePackage({ packageId: fixture.envelope.packageId, envelope: fixture.envelope, chunks: fixture.chunks });
   assert.equal(vault.revokePackage(fixture.envelope.packageId).status, MobileVaultStatus.REVOKED);
   assert.throws(() => vault.getPackage(fixture.envelope.packageId), (error) => error.code === "VAULT_PACKAGE_UNAVAILABLE");
