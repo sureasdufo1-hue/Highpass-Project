@@ -2,9 +2,9 @@
 
 상태: `REVIEW REQUIRED / DRAFT`
 자동 사전검증일: 2026-09-12
-최신 증적 실행 디렉터리: `evidence/generated/2026-09-11T23-56-41-037Z/`
-증적이 가리키는 구현 SHA: `89023295211f494bb6a3f9274b8ddf6a746d8b52`
-원격 반영 병합 SHA: `89023295211f494bb6a3f9274b8ddf6a746d8b52` (runtime implementation baseline)
+최신 증적 실행 디렉터리: `evidence/generated/2026-09-12T00-05-36-754Z/`
+증적이 가리키는 구현 SHA: `9d623d5a7b2e2eea8f3fa6b655cffee554889dd4`
+원격 반영 병합 SHA: `9d623d5a7b2e2eea8f3fa6b655cffee554889dd4` (runtime implementation baseline)
 
 ## 자동 사전검증
 
@@ -13,7 +13,7 @@ pnpm run compliance:evidence:verify
 pnpm run security:secrets
 ```
 
-사전검증 결과는 최신 manifest의 증적 9/9 파일 존재·SHA-256 일치·경로 confinement PASS, 비밀정보 scan 0건이다. manifest 내부의 생성 당시 `reviewStatus=DRAFT`, `reviewer=UNASSIGNED` 값은 원본 증적으로 보존하며, 독립 검토 판정은 아래 승인 기록에 별도로 남긴다.
+사전검증 결과는 최신 manifest의 증적 9/9 파일 존재·SHA-256 일치·경로 confinement PASS, 비밀정보 scan 0건이다. 다만 WBS-10 후 재수집에서 mTLS fixture 생성이 Alpine 패키지 레지스트리 timeout으로 실패하여 mTLS 증적은 현재 `NOT VERIFIED`로 취급한다. manifest 내부의 생성 당시 `reviewStatus=DRAFT`, `reviewer=UNASSIGNED` 값은 원본 증적으로 보존하며, 독립 검토 판정은 아래 승인 기록에 별도로 남긴다.
 
 ## 독립 검토자 확인
 
