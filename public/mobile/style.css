@@ -1,0 +1,1148 @@
+/* ========================================================================== */
+/* HiPass MediQ - Official Mobile UI/UX Design System                         */
+/* Reference: MediQ_260920.apk (Material 3 High-Trust Korean Healthcare UX)   */
+/* ========================================================================== */
+
+:root {
+  /* MediQ Color Tokens */
+  --bg-app: #f8fafc;           /* Clean medical off-white */
+  --bg-card: #ffffff;          /* Pure white card surface (WhiteRecordCard) */
+  --bg-card-sub: #f1f5f9;      /* Soft slate sub-surface */
+  --text-main: #0f172a;        /* Deep slate charcoal (high contrast) */
+  --text-muted: #64748b;       /* Neutral slate */
+  --text-dim: #94a3b8;         /* Subtle placeholder text */
+
+  /* MediQ Brand Cyan-Blue */
+  --primary: #0284c7;          /* MediQ Vibrant Medical Blue */
+  --primary-hover: #0369a1;    /* Deep Sky Blue */
+  --primary-light: #e0f2fe;    /* Soft Cyan Tint */
+  --accent: #0284c7;
+  
+  /* Status Colors */
+  --success: #16a34a;          --success-bg: #dcfce7;
+  --warning: #d97706;          --warning-bg: #fef3c7;
+  --danger: #dc2626;           --danger-bg: #fee2e2;
+  
+  /* Borders & Radius */
+  --border: #e2e8f0;
+  --border-subtle: #cbd5e1;
+  --radius-card: 18px;
+  --radius-btn: 12px;
+  --radius-pill: 24px;
+  --shadow-sm: 0 2px 6px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 14px rgba(15, 23, 42, 0.06);
+  --shadow-lg: 0 10px 25px rgba(15, 23, 42, 0.08);
+  --safe-bottom: env(safe-area-inset-bottom, 16px);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: #0f172a;    /* Desktop backdrop */
+  color: var(--text-main);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 0;
+}
+
+/* Mobile Handheld Shell */
+.mobile-shell {
+  width: 100%;
+  max-width: 440px;
+  min-height: 100vh;
+  background: var(--bg-app);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.4);
+  overflow-x: hidden;
+}
+
+@media (min-width: 480px) {
+  .mobile-shell {
+    min-height: 890px;
+    height: 890px;
+    border-radius: 44px;
+    border: 10px solid #e2e8f0;
+    margin: 20px auto;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Header                                                                     */
+/* -------------------------------------------------------------------------- */
+.mobile-header {
+  padding: 16px 20px 14px 20px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  box-shadow: var(--shadow-sm);
+}
+
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 800;
+  font-size: 18px;
+  color: #0f172a;
+  letter-spacing: -0.4px;
+}
+.brand span:first-child {
+  color: #0284c7;
+}
+
+.brand-badge {
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
+
+.header-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.patient-info {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.patient-info strong {
+  color: var(--text-main);
+  font-weight: 700;
+}
+
+.security-enclave-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--success-bg);
+  color: var(--success);
+  border: 1px solid #bbf7d0;
+}
+
+.saas-switch-btn {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary);
+  text-decoration: none;
+  background: var(--bg-card-sub);
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Main Content Tab Panes                                                     */
+/* -------------------------------------------------------------------------- */
+.mobile-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 16px calc(76px + var(--safe-bottom)) 16px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tab-pane {
+  display: none;
+  animation: fadeIn 0.2s ease-out;
+}
+.tab-pane.active {
+  display: block;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Section Titles */
+.section-head {
+  margin-bottom: 14px;
+}
+.section-title {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  letter-spacing: -0.3px;
+}
+.section-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  line-height: 1.45;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Cards (WhiteRecordCard & CardSurface from MediQ)                           */
+/* -------------------------------------------------------------------------- */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.card:active {
+  transform: scale(0.99);
+}
+
+/* Badges & Modality Tags */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--bg-card-sub);
+  color: var(--text-muted);
+}
+.badge-modality {
+  background: var(--primary-light);
+  color: var(--primary);
+  border: 1px solid #bae6fd;
+}
+.badge-good {
+  background: var(--success-bg);
+  color: var(--success);
+  border: 1px solid #bbf7d0;
+}
+.badge-warn {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border: 1px solid #fde68a;
+}
+.badge-bad {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid #fecaca;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 11px 16px;
+  border-radius: var(--radius-btn);
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn:active {
+  transform: scale(0.98);
+}
+.btn-primary {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.25);
+}
+.btn-secondary {
+  background: var(--bg-card-sub);
+  color: var(--text-main);
+  border: 1px solid var(--border);
+}
+.btn-outline {
+  background: #ffffff;
+  color: var(--primary);
+  border: 1px solid #bae6fd;
+}
+.btn-danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid #fecaca;
+}
+.btn-sm {
+  font-size: 11px;
+  padding: 6px 12px;
+  border-radius: 8px;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Tab 1: MediQ HomeScreen Components                                         */
+/* -------------------------------------------------------------------------- */
+.mediq-hero-card {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  border-radius: 20px;
+  padding: 22px 18px;
+  margin-bottom: 16px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(2, 132, 199, 0.28);
+}
+.mediq-hero-card::after {
+  content: "MediQ";
+  position: absolute;
+  right: -8px;
+  bottom: -15px;
+  font-size: 60px;
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+.mediq-hero-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  margin-bottom: 10px;
+}
+.mediq-hero-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1.35;
+  margin: 0 0 6px 0;
+  letter-spacing: -0.5px;
+}
+.mediq-hero-desc {
+  font-size: 12px;
+  color: #e0f2fe;
+  line-height: 1.5;
+  margin: 0 0 16px 0;
+}
+.mediq-hero-btn {
+  width: 100%;
+  font-size: 14px;
+  padding: 12px;
+  border-radius: var(--radius-btn);
+  background: #ffffff;
+  color: #0284c7;
+  font-weight: 800;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+/* Kind Chips Bar (MediQ KindChip) */
+.kind-chips-bar {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  margin-bottom: 14px;
+  scrollbar-width: none;
+}
+.kind-chips-bar::-webkit-scrollbar {
+  display: none;
+}
+.kind-chip {
+  flex-shrink: 0;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+}
+.kind-chip.active {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+  box-shadow: 0 3px 10px rgba(2, 132, 199, 0.28);
+}
+
+/* Home Share Widget */
+.home-share-widget {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 16px;
+  margin-bottom: 14px;
+  box-shadow: var(--shadow-sm);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Tab 2: Imaging Studies & Modality Filter                                   */
+/* -------------------------------------------------------------------------- */
+.modality-filter-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.filter-pill {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+.filter-pill.active {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+}
+
+.study-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.study-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.study-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+.study-uid {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+.study-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Tab 3: Records Subnav (Segmented Control)                                  */
+/* -------------------------------------------------------------------------- */
+.records-subnav, .share-tab-switch {
+  display: flex;
+  background: var(--bg-card-sub);
+  border-radius: 12px;
+  padding: 3px;
+  gap: 3px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+}
+.subnav-btn, .subtab-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 9px 0;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.subnav-btn.active, .subtab-btn.active {
+  background: #ffffff;
+  color: var(--primary);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Tab 4: 4-Step Share Flow (MediQ ShareScreens)                              */
+/* -------------------------------------------------------------------------- */
+.wizard-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  padding: 0 4px;
+}
+.step-dot {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+  transition: color 0.2s ease;
+}
+.step-dot.active {
+  color: var(--primary);
+}
+.step-line {
+  flex: 1;
+  height: 2px;
+  background: var(--border);
+  margin: 0 6px;
+}
+.wizard-step-pane {
+  display: none;
+}
+.wizard-step-pane.active {
+  display: block;
+}
+.wizard-box-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin-bottom: 4px;
+}
+.wizard-box-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  line-height: 1.45;
+}
+
+.share-items-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.share-check-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 14px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s ease;
+}
+.share-check-card:hover {
+  border-color: var(--primary);
+}
+.share-check-card input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.config-field-group {
+  margin-bottom: 14px;
+}
+.config-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 6px;
+}
+.config-select {
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  outline: none;
+}
+.config-readonly-box {
+  background: var(--bg-card-sub);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--primary);
+  font-weight: 700;
+}
+.channel-choice-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--primary-light);
+  border: 1px solid #bae6fd;
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.summary-card {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: var(--shadow-sm);
+}
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
+.summary-row span {
+  color: var(--text-muted);
+}
+.summary-row strong {
+  color: var(--text-main);
+}
+
+/* -------------------------------------------------------------------------- */
+/* QR Container                                                               */
+/* -------------------------------------------------------------------------- */
+.qr-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 20px 16px;
+  box-shadow: var(--shadow-md);
+}
+
+.qr-box-wrap {
+  width: 220px;
+  height: 220px;
+  background: #ffffff;
+  border: 2px dashed #bae6fd;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 16px 0 12px 0;
+  padding: 10px;
+}
+.qr-box-wrap svg {
+  width: 100%;
+  height: 100%;
+}
+
+.qr-countdown {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--primary);
+  margin-bottom: 14px;
+}
+
+.qr-spec-list {
+  width: 100%;
+  background: var(--bg-card-sub);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.qr-spec-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.qr-spec-row span {
+  color: var(--text-muted);
+}
+.qr-spec-row strong {
+  color: var(--text-main);
+}
+
+/* Transfer Timeline */
+.transfer-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+.timeline-item {
+  display: flex;
+  gap: 12px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: var(--shadow-sm);
+}
+.timeline-icon-wrap {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--primary-light);
+  color: var(--primary);
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Tab 5: Encrypted Vault (Ciphertext-only)                                   */
+/* -------------------------------------------------------------------------- */
+.vault-stat-banner {
+  background: var(--primary-light);
+  border: 1px solid #bae6fd;
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Multi-Slice SyntheticScanCine Modal                                        */
+/* -------------------------------------------------------------------------- */
+.cine-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+}
+.cine-modal[hidden] {
+  display: none;
+}
+.cine-modal-content {
+  width: 100%;
+  max-width: 390px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
+}
+.cine-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.cine-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin: 0 0 4px 0;
+}
+.cine-close-btn {
+  background: var(--bg-card-sub);
+  border: none;
+  color: var(--text-main);
+  font-size: 14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cine-mode-bar {
+  display: flex;
+  background: var(--bg-card-sub);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 4px;
+}
+.cine-mode-chip {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 7px 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.cine-mode-chip.active {
+  background: var(--primary);
+  color: white;
+}
+
+.cine-display-wrap {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+.cine-canvas-box {
+  width: 280px;
+  height: 280px;
+  background: #000000;           /* Pure black background for radiographic DICOM contrast */
+  border-radius: 14px;
+  border: 1px solid #334155;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cine-canvas-box canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.cine-hud {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  display: flex;
+  justify-content: space-between;
+  font-family: monospace;
+  font-size: 10px;
+  color: #38bdf8;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}
+.cine-controls-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.scrubber-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cine-range {
+  flex: 1;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.playback-btn-row {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+.cine-finding-box {
+  background: var(--primary-light);
+  border-left: 3px solid var(--primary);
+  border-radius: 0 10px 10px 0;
+  padding: 8px 12px;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Bottom Tab Navigation                                                      */
+/* -------------------------------------------------------------------------- */
+.mobile-nav {
+  position: fixed;
+  bottom: 0;
+  width: 100%;
+  max-width: 440px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: space-around;
+  padding: 10px 8px calc(10px + var(--safe-bottom)) 8px;
+  z-index: 100;
+  box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.05);
+}
+
+@media (min-width: 480px) {
+  .mobile-nav {
+    border-radius: 0 0 34px 34px;
+  }
+}
+
+.nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 700;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 12px;
+  transition: all 0.15s ease;
+}
+.nav-item .icon {
+  font-size: 20px;
+}
+.nav-item.active {
+  color: var(--primary);
+}
+.nav-item.active .icon {
+  transform: translateY(-2px);
+}
+
+/* -------------------------------------------------------------------------- */
+/* 1-Second Quick Auth & App Lock Overlay                                      */
+/* -------------------------------------------------------------------------- */
+.auth-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 200;
+  background: rgba(248, 250, 252, 0.97);
+  backdrop-filter: blur(18px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+  transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.auth-overlay.unlocked {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(1.05);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 350px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 26px;
+  padding: 26px 20px;
+  box-shadow: var(--shadow-lg);
+}
+
+.auth-icon-wrap {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: var(--primary-light);
+  border: 2px solid #bae6fd;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  font-size: 28px;
+  animation: pulseRing 2.4s infinite;
+}
+
+@keyframes pulseRing {
+  0% { transform: scale(0.96); box-shadow: 0 0 0 0 rgba(2, 132, 199, 0.4); }
+  70% { transform: scale(1); box-shadow: 0 0 0 16px rgba(2, 132, 199, 0); }
+  100% { transform: scale(0.96); box-shadow: 0 0 0 0 rgba(2, 132, 199, 0); }
+}
+
+.auth-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text-main);
+  letter-spacing: -0.4px;
+}
+
+.auth-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.auth-patient-badge {
+  background: var(--bg-card-sub);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 16px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: center;
+}
+
+.auth-btn-primary {
+  width: 100%;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: white;
+  border: none;
+  border-radius: 14px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(2, 132, 199, 0.3);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.auth-btn-primary:active {
+  transform: scale(0.98);
+}
+.auth-btn-icon {
+  font-size: 28px;
+}
+.auth-btn-text {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.auth-btn-text strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffffff;
+}
+.auth-btn-text small {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.auth-grid-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  width: 100%;
+}
+.auth-opt-btn {
+  background: var(--bg-card-sub);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 6px;
+  color: var(--text-main);
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.auth-opt-btn:active {
+  background: #e2e8f0;
+}
+
+.auth-verifying-box {
+  width: 100%;
+  background: var(--primary-light);
+  border: 1px solid #bae6fd;
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.scan-beam-container {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #bae6fd;
+}
+.scan-beam {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--primary);
+  box-shadow: 0 0 10px var(--primary);
+  animation: beamMove 0.8s ease-in-out infinite alternate;
+}
+@keyframes beamMove {
+  0% { top: 0; opacity: 0.3; }
+  50% { opacity: 1; }
+  100% { top: 100%; opacity: 0.3; }
+}
+
+.auth-verifying-text {
+  font-size: 13px;
+  color: var(--primary);
+  font-weight: 800;
+}
+.auth-progress-bar {
+  width: 100%;
+  height: 4px;
+  background: #cbd5e1;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.auth-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--primary);
+  border-radius: 2px;
+  transition: width 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.auth-demo-switcher {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.auth-select {
+  background: var(--bg-card-sub);
+  color: var(--text-main);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+/* Toast */
+.mobile-toast {
+  position: fixed;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  max-width: 90%;
+  background: rgba(15, 23, 42, 0.95);
+  color: #fff;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  backdrop-filter: blur(8px);
+  padding: 10px 18px;
+  border-radius: 30px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: var(--shadow-lg);
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 999;
+}
+.mobile-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}

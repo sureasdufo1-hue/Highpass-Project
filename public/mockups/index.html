@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HiPass Platform — UI 설계서 및 목업 포털</title>
+  <style>
+    :root {
+      --bg-canvas: #F5F7FA;
+      --bg-surface: #FFFFFF;
+      --text-primary: #17202A;
+      --text-secondary: #4B5B6B;
+      --color-primary: #0B5C8E;
+      --color-primary-hover: #08476F;
+      --border-default: #C7D1DC;
+      --badge-bg: #E8F1F8;
+      --badge-text: #0B5C8E;
+      --success-bg: #EBF7EE;
+      --success-text: #1D6F42;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg-canvas);
+      color: var(--text-primary);
+      line-height: 1.5;
+      padding: 2rem 1rem;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    header {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-default);
+      border-radius: 12px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+    }
+    .top-badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--badge-text);
+      background: var(--badge-bg);
+      padding: 0.25rem 0.6rem;
+      border-radius: 9999px;
+      margin-bottom: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    h1 {
+      font-size: 1.85rem;
+      font-weight: 800;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+    p.lead {
+      color: var(--text-secondary);
+      font-size: 1.05rem;
+      max-width: 800px;
+    }
+    .nav-links {
+      margin-top: 1.25rem;
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.65rem 1.2rem;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: var(--color-primary);
+      color: #fff;
+    }
+    .btn-primary:hover {
+      background: var(--color-primary-hover);
+    }
+    .btn-outline {
+      background: #fff;
+      color: var(--text-primary);
+      border: 1px solid var(--border-default);
+    }
+    .btn-outline:hover {
+      background: var(--bg-canvas);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-default);
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+      display: flex;
+      flex-direction: column;
+    }
+    .card h2 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .card p {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      margin-bottom: 1.25rem;
+      flex-grow: 1;
+    }
+    .feature-list {
+      list-style: none;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin-bottom: 1.25rem;
+    }
+    .feature-list li {
+      padding: 0.3rem 0;
+      border-bottom: 1px dashed #e2e8f0;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .feature-list li::before {
+      content: "✔";
+      color: #1D6F42;
+      font-weight: bold;
+    }
+    .card-footer {
+      margin-top: auto;
+    }
+    .spec-table-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-default);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-top: 1.5rem;
+    }
+    .spec-table-card h2 {
+      font-size: 1.3rem;
+      margin-bottom: 1rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    th, td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border-default);
+    }
+    th {
+      background: #F8FAFC;
+      font-weight: 600;
+    }
+    .status-badge {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    .badge-integrated {
+      background: #EBF7EE;
+      color: #1D6F42;
+    }
+    .badge-spec {
+      background: #E8F1F8;
+      color: #0B5C8E;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <span class="top-badge">HiPass Platform UI / UX 통합 허브</span>
+      <h1>의료영상 동의 공유 화면설계서 및 인터랙티브 목업</h1>
+      <p class="lead">
+        메디큐(MediQ) 프로젝트의 최신 화면설계서, 와이어프레임 팩, UI 디자인 시스템 및 인터랙티브 프로토타입을
+        하이패스 플랫폼에 온전히 이관 및 통합하였습니다. 아래에서 인터랙티브 목업 체험 및 세부 명세서를 열람할 수 있습니다.
+      </p>
+      <div class="nav-links">
+        <a class="btn btn-primary" href="/mockups/saas-console.html" target="_blank">병원 SaaS 콘솔 목업 열기 &rarr;</a>
+        <a class="btn btn-primary" href="/mockups/patient-portal.html" target="_blank">환자 경험 포털 목업 열기 &rarr;</a>
+        <a class="btn btn-outline" href="/">HiPass 플랫폼 메인 데모로 이동</a>
+      </div>
+    </header>
+
+    <div class="grid">
+      <!-- Card 1: SaaS Mockup -->
+      <article class="card">
+        <h2>
+          <span>병원 SaaS 콘솔 목업</span>
+          <span class="status-badge badge-integrated">8개 화면 통합</span>
+        </h2>
+        <p>
+          병원 의료진 및 관리자를 위한 임상 워크스테이션 콘솔입니다. Exchange 타임라인 추적, 승인 영상 조회,
+          Cloud DICOM Viewer 비교, PACS Import 파이프라인(Preflight/무결성 검증), 감사 추적(Provenance) 및 QR Handoff를 제공합니다.
+        </p>
+        <ul class="feature-list">
+          <li>Hospital Dashboard (활성 Exchange, 동의 대기, 전송 현황)</li>
+          <li>Exchange Timeline (동의 &rarr; 토큰 &rarr; 영상 &rarr; 감사 이력)</li>
+          <li>Cloud DICOM Viewer (윈도잉, Side-by-side, 워터마크)</li>
+          <li>PACS Import Preflight & SHA-256 무결성 검증</li>
+          <li>QR Medical Image Handoff 스캐너 & Claim 연계</li>
+        </ul>
+        <div class="card-footer">
+          <a class="btn btn-primary" style="width: 100%; justify-content: center;" href="/mockups/saas-console.html" target="_blank">SaaS 콘솔 목업 실행</a>
+        </div>
+      </article>
+
+      <!-- Card 2: Patient Experience Mockup -->
+      <article class="card">
+        <h2>
+          <span>환자 경험 포털 목업</span>
+          <span class="status-badge badge-integrated">9개 기능 통합</span>
+        </h2>
+        <p>
+          환자가 자신의 의료영상을 능동적으로 관리하고 동의를 제어할 수 있는 포털입니다. 행동센터, 건강 타임라인, 쉬운 모드(Plain-Language Cards),
+          병원 방문 모드 패킷, 의료영상 열람 영수증 및 안심 알림을 제공합니다.
+        </p>
+        <ul class="feature-list">
+          <li>행동센터 (Action Center, 원클릭 동의 및 알림)</li>
+          <li>쉬운 모드 (Plain-Language Imaging Cards - CT/MRI 요약)</li>
+          <li>병원 방문 모드 (진료 당일 바코드 및 공유 패킷)</li>
+          <li>의료영상 열람 영수증 (누가, 언제, 왜 열람했는지 투명 공개)</li>
+          <li>보관 및 만료 관리 (자동 삭제 정책 및 임시 보관 잔여일)</li>
+        </ul>
+        <div class="card-footer">
+          <a class="btn btn-primary" style="width: 100%; justify-content: center;" href="/mockups/patient-portal.html" target="_blank">환자 포털 목업 실행</a>
+        </div>
+      </article>
+
+      <!-- Card 3: Design Specs -->
+      <article class="card">
+        <h2>
+          <span>UI/UX 화면설계서</span>
+          <span class="status-badge badge-spec">정규 명세</span>
+        </h2>
+        <p>
+          병원 및 환자 화면의 79개 화면 ID, 입력 검증, Fail Closed 상태 머신, 권한 통제 및 접근성 기준을 체계화한 공식 명세 문서군입니다.
+        </p>
+        <ul class="feature-list">
+          <li>SAAS-SCREEN-DESIGN-SPEC.md (79개 화면 계약)</li>
+          <li>SAAS-UI-DESIGN-SYSTEM.md (디자인 토큰, 의미색, 컴포넌트)</li>
+          <li>SAAS-UI-WIREFRAME-PACK.md (47개 와이어프레임)</li>
+          <li>P0-WEB-UI-UX-SPEC.md (WEB-01 ~ WEB-14 화면 스펙)</li>
+          <li>환자 경험 9종 상세 스펙 (docs/patient-experience/)</li>
+        </ul>
+        <div class="card-footer">
+          <a class="btn btn-outline" style="width: 100%; justify-content: center;" href="#specs">명세 목록 확인</a>
+        </div>
+      </article>
+    </div>
+
+    <section class="spec-table-card" id="specs">
+      <h2>통합된 화면설계서 및 명세서 일람</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>문서명</th>
+            <th>문서 번호 / 경로</th>
+            <th>적용 범위</th>
+            <th>상태</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>SaaS 웹 애플리케이션 화면설계서</strong></td>
+            <td><code>docs/design/SAAS-SCREEN-DESIGN-SPEC.md</code></td>
+            <td>Hospital Portal, Patient Web, QR Web, SaaS Admin (79개 화면)</td>
+            <td><span class="status-badge badge-integrated">이관 완료</span></td>
+          </tr>
+          <tr>
+            <td><strong>SaaS UI 디자인 시스템</strong></td>
+            <td><code>docs/design/SAAS-UI-DESIGN-SYSTEM.md</code></td>
+            <td>Clinical Light, Viewer Dark, Design Tokens, Components</td>
+            <td><span class="status-badge badge-integrated">이관 완료</span></td>
+          </tr>
+          <tr>
+            <td><strong>SaaS UI 와이어프레임 팩</strong></td>
+            <td><code>docs/design/SAAS-UI-WIREFRAME-PACK.md</code></td>
+            <td>WF-R-001 ~ WF-R-042, 임상 워크플로우 HCW-SCR-001 ~ 005</td>
+            <td><span class="status-badge badge-integrated">이관 완료</span></td>
+          </tr>
+          <tr>
+            <td><strong>P0 Web UI/UX 명세서</strong></td>
+            <td><code>docs/design/P0-WEB-UI-UX-SPEC.md</code></td>
+            <td>WEB-01 ~ WEB-14 화면 입력/행동/보안 통제 및 상태 매트릭스</td>
+            <td><span class="status-badge badge-integrated">이관 완료</span></td>
+          </tr>
+          <tr>
+            <td><strong>모바일 화면설계서 & UI/UX 명세</strong></td>
+            <td><code>docs/design/MOBILE-SCREEN-DESIGN-SPEC.md</code></td>
+            <td>환자 모바일 앱 동의 생성, QR 스캔, 오프라인 Vault</td>
+            <td><span class="status-badge badge-integrated">이관 완료</span></td>
+          </tr>
+          <tr>
+            <td><strong>환자 경험 기능 명세 (9종)</strong></td>
+            <td><code>docs/patient-experience/01~09-*-SPEC.md</code></td>
+            <td>행동센터, 영수증, 안심알림, 방문모드, 쉬운카드, 만료관리 등</td>
+            <td><span class="status-badge badge-integrated">이관 완료</span></td>
+          </tr>
+          <tr>
+            <td><strong>병원 임상 워크플로우 명세</strong></td>
+            <td><code>docs/hospital-workflow/HOSPITAL-CLINICAL-WORKFLOW-P1-SPEC.md</code></td>
+            <td>과거 영상 비교, Side-by-side, 진료 인계 패킷</td>
+            <td><span class="status-badge badge-integrated">이관 완료</span></td>
+          </tr>
+          <tr>
+            <td><strong>QR 연계 UI/UX 명세</strong></td>
+            <td><code>docs/design/QR-UI-UX-SPEC.md</code></td>
+            <td>QR 스캐너, Claim 요청, 승인 대기, 단기 키 바인딩</td>
+            <td><span class="status-badge badge-integrated">이관 완료</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+</body>
+</html>

@@ -1,0 +1,62 @@
+{
+  "name": "HiPass MediQ (하이패스 메디큐)",
+  "short_name": "HiPass MediQ",
+  "description": "환자 주도형 의료영상·마이데이터 모바일 플랫폼",
+  "start_url": "/mobile/",
+  "scope": "/mobile/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f8fafc",
+  "theme_color": "#0284c7",
+  "categories": ["medical", "health", "productivity"],
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "/mobile/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/mobile/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/mobile/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/mobile/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "1초 QR 공유",
+      "short_name": "QR 공유",
+      "description": "병원 진료실 제시용 1회용 QR 코드 발급",
+      "url": "/mobile/#share",
+      "icons": [{ "src": "/mobile/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "의료영상 열람",
+      "short_name": "영상 열람",
+      "description": "CT/MRI 멀티슬라이스 Cine 연속 재생",
+      "url": "/mobile/#imaging",
+      "icons": [{ "src": "/mobile/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "마이데이터 진료기록",
+      "short_name": "진료기록",
+      "description": "처방·검진·예방접종 기록 열람",
+      "url": "/mobile/#records",
+      "icons": [{ "src": "/mobile/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

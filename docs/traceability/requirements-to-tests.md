@@ -1,6 +1,10 @@
 # 요구사항-시험 추적성 매트릭스
 
-상태: 2026-09-07 현재 작업트리 기준. 기존 FR 개별 원문은 없어 기능군으로 추적합니다.
+상태: v2.1 legacy evidence summary. 마지막 기준일 2026-09-07이며 기존 FR 개별 원문은 없어 기능군으로 추적합니다.
+
+## Highpass v3 target traceability
+
+향후 목표 요구사항의 상세 추적성은 [Highpass v3 End-to-End Traceability Matrix](highpass-v3-traceability-matrix.md)를 기준으로 한다. 아래 표는 v2.1/기존 FR의 로컬 구현 증적을 보존하는 legacy summary이며 v3 신규 요구사항의 완료를 뜻하지 않는다.
 
 | 요구사항 범위 | 현재 구현/시험 | 판정 | 남은 검증 |
 |---|---|---|---|

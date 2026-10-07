@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="100%" stop-color="#0369a1" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#0f172a" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <rect x="24" y="24" width="464" height="464" rx="100" fill="url(#bgGrad)" filter="url(#shadow)"/>
+  <!-- Decorative Ring -->
+  <circle cx="256" cy="256" r="170" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="8" stroke-dasharray="16 12"/>
+  <!-- Medical Cross -->
+  <rect x="220" y="116" width="72" height="280" rx="20" fill="#ffffff" />
+  <rect x="116" y="220" width="280" height="72" rx="20" fill="#ffffff" />
+  <!-- Center Heartbeat / Shield Dot -->
+  <circle cx="256" cy="256" r="18" fill="#0284c7"/>
+  <!-- MediQ Pulse Badge -->
+  <circle cx="370" cy="142" r="24" fill="#38bdf8"/>
+  <circle cx="370" cy="142" r="14" fill="#ffffff"/>
+</svg>

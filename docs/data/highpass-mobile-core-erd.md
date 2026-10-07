@@ -1,6 +1,8 @@
 # Highpass Mobile-Core PostgreSQL ERD
 
 > 설계용 ERD. [001_highpass_mobile_core.sql](../../db/migrations/001_highpass_mobile_core.sql)은 자동 적용하지 않는다.
+>
+> 이 문서는 기존 Mobile-Core 구현 호환 모델이다. `ExchangeSession`, tenant-owned `PatientMapping`, `TransferGrant`, `PreflightResult`, `Provenance`를 분리한 v3 목표 모델은 [Highpass v3 Logical ERD](highpass-v3-erd.md)를 따른다. 본 문서와 migration은 v3 정렬 단계에서 수정·적용하지 않는다.
 
 ## 기준
 

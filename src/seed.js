@@ -33,6 +33,9 @@ export function createSeedData() {
         gatewayUrl: "http://localhost:8042/dicom-web",
         status: HospitalStatus.ACTIVE,
         publicKey: "demo-public-key-a",
+        trustedEgressCidrs: ["127.0.0.1/32", "::1/128", "203.250.10.0/24", "10.10.0.0/16"],
+        allowIpQuarantine: false,
+        emergencyBreakGlassEnabled: true,
       },
       {
         hospitalId: "HOSP-B",
@@ -40,6 +43,9 @@ export function createSeedData() {
         gatewayUrl: "http://localhost:3300/dicomweb",
         status: HospitalStatus.ACTIVE,
         publicKey: "demo-public-key-b",
+        trustedEgressCidrs: ["127.0.0.1/32", "::1/128", "203.250.20.0/24", "10.20.0.0/16"],
+        allowIpQuarantine: false,
+        emergencyBreakGlassEnabled: true,
       },
       {
         hospitalId: "HOSP-C",
@@ -47,6 +53,9 @@ export function createSeedData() {
         gatewayUrl: "http://localhost:3300/dicomweb",
         status: HospitalStatus.ACTIVE,
         publicKey: "demo-public-key-c",
+        trustedEgressCidrs: ["127.0.0.1/32", "::1/128", "203.250.30.0/24", "10.30.0.0/16"],
+        allowIpQuarantine: false,
+        emergencyBreakGlassEnabled: true,
       },
     ],
     gateways: [
@@ -221,6 +230,98 @@ export function createSeedData() {
           },
         ],
       },
+      {
+        studyId: "STUDY-CD-CR-001",
+        patientId: "P-1001",
+        sourceHospitalId: "HOSP-A",
+        studyInstanceUid: "1.2.410.200003.1037.1.0.1357867.20070207.152300.80981.1",
+        modality: "CR",
+        bodyPart: "CHEST",
+        studyDate: "2007-02-07",
+        description: "Chest PA X-ray (흉부 단순촬영)",
+        metadataOnly: true,
+        series: [
+          {
+            seriesInstanceUid: "1.3.51.5146.12528.20070207.1070304",
+            modality: "CR",
+            description: "Chest PA 1 (흉부 정면 X-ray)",
+            instanceCount: 1,
+            bytes: 13_129_286,
+            previewImageUrl: "/assets/clinical/cr_chest.jpg",
+          },
+        ],
+      },
+      {
+        studyId: "STUDY-CD-CT-001",
+        patientId: "P-1001",
+        sourceHospitalId: "HOSP-A",
+        studyInstanceUid: "1.2.410.200003.1037.1.0.1357867.20070207.132600.80505.1",
+        modality: "CT",
+        bodyPart: "ABDOMEN",
+        studyDate: "2007-02-07",
+        description: "Abdomen Routine CT (복부 3상 단층)",
+        metadataOnly: true,
+        series: [
+          {
+            seriesInstanceUid: "1.3.12.2.1107.5.1.4.50511.30000007020708010365600000031",
+            modality: "CT",
+            description: "Topogram 1.0 (스카우트 조영)",
+            instanceCount: 4,
+            bytes: 2_179_120,
+            previewImageUrl: "/assets/clinical/ct_abdomen.jpg",
+          },
+          {
+            seriesInstanceUid: "1.3.12.2.1107.5.1.4.50511.30000007020707372101500001681",
+            modality: "CT",
+            description: "Abd_pre 5.0 (복부 단층 연속스캔)",
+            instanceCount: 26,
+            bytes: 14_164_320,
+            previewImageUrl: "/assets/clinical/ct_abdomen.jpg",
+          },
+        ],
+      },
+      {
+        studyId: "STUDY-CD-ES-001",
+        patientId: "P-1001",
+        sourceHospitalId: "HOSP-A",
+        studyInstanceUid: "1.2.410.200003.77.4.5.20070207.143302",
+        modality: "ES",
+        bodyPart: "ERCP",
+        studyDate: "2007-02-07",
+        description: "ERCP Endoscopy (역행성 담췌관 내시경)",
+        metadataOnly: true,
+        series: [
+          {
+            seriesInstanceUid: "1.2.410.200003.77.4.5.20070207.143302.1",
+            modality: "ES",
+            description: "ERCP Scope (담도 내시경 진단)",
+            instanceCount: 10,
+            bytes: 8_830_000,
+            previewImageUrl: "/assets/clinical/es_ercp.jpg",
+          },
+        ],
+      },
+      {
+        studyId: "STUDY-CD-US-001",
+        patientId: "P-1001",
+        sourceHospitalId: "HOSP-A",
+        studyInstanceUid: "1.2.410.200003.1037.1.0.1357867.20071129.85500.725157.1",
+        modality: "US",
+        bodyPart: "ABDOMEN",
+        studyDate: "2007-11-29",
+        description: "Abdomen Ultrasound (복부 정밀 초음파)",
+        metadataOnly: true,
+        series: [
+          {
+            seriesInstanceUid: "1.3.12.2.1107.5.5.2.111491.2.0.4574782022592261",
+            modality: "US",
+            description: "Abdomen Survey US (복부 초음파 연속프레임)",
+            instanceCount: 11,
+            bytes: 16_130_000,
+            previewImageUrl: "/assets/clinical/us_abdomen.jpg",
+          },
+        ],
+      },
     ],
     consents: [
       {
@@ -247,14 +348,6 @@ export function createSeedData() {
         allowed: true,
         createdAt: "2026-06-01T09:10:00.000Z",
       },
-      {
-        scopeId: "SCOPE-DEMO-002",
-        consentId: "CONSENT-DEMO-ACTIVE",
-        studyInstanceUid: "1.2.410.100.1.20260518.002",
-        seriesInstanceUid: null,
-        allowed: true,
-        createdAt: "2026-06-01T09:10:00.000Z",
-      },
     ],
     dicomAccessTokenLogs: [],
     transferRequests: [],
@@ -263,6 +356,7 @@ export function createSeedData() {
     transferUsageLogs: [],
     researchExportRequests: [],
     pseudonymMappings: [],
+    quarantineRecords: [],
   };
 }
 
@@ -282,8 +376,6 @@ export function applyDemoDataMigrations(data) {
   changed = mergeById(data.gateways, seed.gateways, "gatewayId") || changed;
   changed = mergeById(data.doctors, seed.doctors, "doctorId") || changed;
   changed = mergeStudies(data.imagingStudies, seed.imagingStudies) || changed;
-  changed = mergeById(data.consents, seed.consents, "consentId") || changed;
-  changed = mergeById(data.consentScopes, seed.consentScopes, "scopeId") || changed;
 
   for (const token of data.dicomAccessTokenLogs) {
     if (!token.tokenHash && token.token) {

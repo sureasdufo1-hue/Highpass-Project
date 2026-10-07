@@ -7,6 +7,7 @@
   "packageManager": "pnpm@11.7.0",
   "scripts": {
     "start": "node src/server.js",
+    "start:local": "node scripts/start-local.js",
     "start:json": "node src/server.js",
     "start:postgres": "node scripts/start-postgres.js",
     "test": "node --test",

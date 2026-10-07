@@ -55,7 +55,15 @@ export function getBearerToken(request) {
 }
 
 export async function serveStatic(response, pathname) {
-  const filePath = pathname === "/" ? "public/index.html" : path.join("public", pathname);
+  let normalizedPath = pathname;
+  if (normalizedPath === "/" || normalizedPath === "/hipass" || normalizedPath === "/hipass/") {
+    normalizedPath = "/index.html";
+  } else if (normalizedPath === "/mobile" || normalizedPath === "/mobile/") {
+    normalizedPath = "/mobile/index.html";
+  } else if (normalizedPath.endsWith("/")) {
+    normalizedPath += "index.html";
+  }
+  const filePath = path.join("public", normalizedPath);
   const safePath = path.normalize(filePath);
   if (!safePath.startsWith("public")) {
     sendError(response, 403, "Forbidden");
@@ -85,6 +93,8 @@ function contentTypeFor(filePath) {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
     ".webp": "image/webp",
+    ".json": "application/json; charset=utf-8",
+    ".webmanifest": "application/manifest+json",
   };
   return types[extension] ?? "application/octet-stream";
 }

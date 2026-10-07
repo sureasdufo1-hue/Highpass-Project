@@ -417,3 +417,83 @@ test("Viewer handoff derives scope from the ticket, returns context, and rejects
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("executePacsImport requires active patient consent and records SHA-256 integrity and audit", async () => {
+  const { dir, service, store } = await createService();
+  try {
+    const consent = await service.createConsent({
+      patientId: "P-1001",
+      sourceHospitalId: "HOSP-A",
+      targetHospitalId: "HOSP-B",
+      purpose: "TREATMENT",
+      permission: "DOWNLOAD_ALLOWED",
+      validUntil: "2026-06-26T10:00:00.000Z",
+      scopes: [{ studyInstanceUid: STUDY_001 }],
+    });
+
+    const result = await service.executePacsImport({
+      consentId: consent.consentId,
+      doctorId: "DOC-B-01",
+      targetHospitalId: "HOSP-B",
+      studyInstanceUid: STUDY_001,
+    });
+
+    assert.equal(result.status, "COMPLETED");
+    assert.equal(result.studyInstanceUid, STUDY_001);
+    assert.equal(result.sourceHospitalId, "HOSP-A");
+    assert.equal(result.targetHospitalId, "HOSP-B");
+    assert.equal(result.destinationVerification, true);
+    assert.match(result.sha256, /^[a-f0-9]{64}$/);
+    assert.ok(result.auditSessionId);
+
+    const auditLog = store.get("auditLogs").find((log) => log.auditSessionId === result.auditSessionId);
+    assert.ok(auditLog);
+    assert.equal(auditLog.action, "IMAGE_TRANSFER");
+    assert.equal(auditLog.result, "SUCCESS");
+
+    // Fail closed: VIEW_ONLY consent blocks PACS Import (SEC-DL-01)
+    const viewOnlyConsent = await service.createConsent({
+      patientId: "P-1001",
+      sourceHospitalId: "HOSP-A",
+      targetHospitalId: "HOSP-B",
+      purpose: "TREATMENT",
+      permission: "VIEW_ONLY",
+      validUntil: "2026-06-26T10:00:00.000Z",
+      scopes: [{ studyInstanceUid: STUDY_001 }],
+    });
+    await assert.rejects(
+      async () => service.executePacsImport({
+        consentId: viewOnlyConsent.consentId,
+        doctorId: "DOC-B-01",
+        targetHospitalId: "HOSP-B",
+        studyInstanceUid: STUDY_001,
+      }),
+      (err) => err instanceof ServiceValidationError && err.code === "PERMISSION_DENIED_VIEW_ONLY"
+    );
+
+    // Fail closed when consent is revoked
+    await service.revokeConsent(consent.consentId, "P-1001");
+    await assert.rejects(
+      async () => service.executePacsImport({
+        consentId: consent.consentId,
+        doctorId: "DOC-B-01",
+        targetHospitalId: "HOSP-B",
+        studyInstanceUid: STUDY_001,
+      }),
+      (err) => err instanceof ServiceValidationError && err.code === "CONSENT_REQUIRED"
+    );
+
+    // Fail closed for unknown study
+    await assert.rejects(
+      async () => service.executePacsImport({
+        consentId: consent.consentId,
+        doctorId: "DOC-B-01",
+        targetHospitalId: "HOSP-B",
+        studyInstanceUid: "unknown-study-uid",
+      }),
+      (err) => err instanceof ServiceValidationError && err.code === "STUDY_NOT_FOUND"
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

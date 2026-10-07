@@ -1,7 +1,11 @@
 # Highpass 보안 기준 문서
 
-상태: **MVP 기술시험 기준 / 운영 승인 아님**  
-기준일: 2026-09-07
+상태: **MVP 기술시험 기준 / 운영 승인 아님**
+기준일: 2026-09-12
+
+## Highpass v3 target security requirements
+
+[Highpass v3 Security Requirements](security/highpass-v3-security-requirements.md)를 목표 보안 요구사항 기준으로 사용한다. 아래 내용은 현행 v2.1 로컬 MVP의 통제 요약이며 v3 PatientMapping·ExchangeSession·TransferGrant·Cloud Exchange·Provenance·Tenant 전 범위의 구현 완료를 뜻하지 않는다.
 
 ## 보안 경계
 

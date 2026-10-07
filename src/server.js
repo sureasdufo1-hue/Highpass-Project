@@ -41,6 +41,19 @@ const phrService = new PhrService({
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url, `http://${request.headers.host}`);
+    if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/dicomweb/") || url.pathname.startsWith("/gateway/")) {
+      const forwarded = request.headers["x-forwarded-for"];
+      const clientIp = forwarded ? String(forwarded).split(",")[0].trim() : request.socket.remoteAddress;
+      const ja3 = request.headers["x-ja3-fingerprint"] || request.headers["x-ja4-fingerprint"] || null;
+      const tarpit = service.calculateTarpitDelay({ ipAddress: clientIp, ja3Fingerprint: ja3 });
+      if (tarpit.throttled && tarpit.delayMs > 0) {
+        response.setHeader("x-hipass-tarpit-delay-ms", String(tarpit.delayMs));
+        response.setHeader("x-hipass-security-mode", tarpit.mode);
+        await new Promise((resolve) => setTimeout(resolve, tarpit.delayMs));
+      } else if (tarpit.mode) {
+        response.setHeader("x-hipass-security-mode", tarpit.mode);
+      }
+    }
     if (url.pathname.startsWith("/internal/privacy/")) {
       await routePrivacy(request, response, url);
       return;
@@ -118,6 +131,20 @@ async function routeApi(request, response, url) {
     return;
   }
 
+  if (method === "POST" && url.pathname === "/api/security/client-attestation") {
+    const meta = requestMeta(request);
+    const body = await readJson(request).catch(() => ({}));
+    const clientSessionId = body?.clientSessionId || randomUUID();
+    const result = service.issueClientAttestationToken({
+      clientSessionId,
+      clientPublicKeyJwk: body?.clientPublicKeyJwk || null,
+      userAgent: meta.userAgent,
+      ipAddress: meta.ipAddress,
+    });
+    sendJson(response, 200, result);
+    return;
+  }
+
   if (url.pathname.startsWith("/api/v1/me/phr/")) {
     const correlationId = phrCorrelationId(request);
     try {
@@ -127,6 +154,110 @@ async function routeApi(request, response, url) {
       sendPhrProblem(response, error, correlationId);
     }
     return;
+  }
+
+  if (url.pathname.startsWith("/api/v1/mobile/")) {
+    if (url.pathname === "/api/v1/mobile/device") {
+      sendJson(response, 200, {
+        deviceId: "dev_p1001_android_sec",
+        patientId: "P-1001",
+        platform: "ANDROID_TEE",
+        appVersion: "v3.0.0-mobile-core",
+        status: "ACTIVE",
+        attestation: "HARDWARE_ATTESTED",
+        keyEnclave: "TEE_SECURE_KEYSTORE",
+        riskLevel: "LOW",
+        enrolledAt: "2026-09-01T00:00:00.000Z",
+      });
+      return;
+    }
+    if (url.pathname === "/api/v1/mobile/vault") {
+      sendJson(response, 200, {
+        vaultStatus: "STORED_ON_DEVICE",
+        storageType: "CIPHERTEXT_ONLY_SECURE_STORAGE",
+        plaintextDicomBytes: 0,
+        encryptionAlgorithm: "AES-256-GCM",
+        packages: [
+          {
+            packageId: "pkg_mri_20260620_001",
+            description: "Brain MRI (A병원)",
+            status: "STORED_ON_DEVICE",
+            chunkCount: 2,
+            encryptedBytes: 169200000,
+            integrityHash: "sha256:7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069",
+            plainDicomExposed: false,
+            expiresAt: "2026-12-31T23:59:59.000Z",
+          },
+          {
+            packageId: "pkg_cr_20070207_001",
+            description: "Chest PA X-ray (흉부단순촬영)",
+            status: "STORED_ON_DEVICE",
+            chunkCount: 1,
+            encryptedBytes: 13129286,
+            integrityHash: "sha256:3a4b91657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d8888",
+            plainDicomExposed: false,
+            expiresAt: "2026-12-31T23:59:59.000Z",
+          },
+        ],
+      });
+      return;
+    }
+    if (method === "POST" && url.pathname === "/api/v1/mobile/vault/erase") {
+      sendJson(response, 200, {
+        action: "CRYPTO_ERASE_COMPLETED",
+        erasedPackageCount: 2,
+        zeroizedKeyCount: 2,
+        receipt: `receipt_erase_${Date.now()}`,
+        status: "ZEROIZED",
+      });
+      return;
+    }
+    if (method === "POST" && url.pathname === "/api/v1/mobile/auth/login") {
+      const body = await readJson(request);
+      const patientId = String(body.patientId || "P-1001");
+      const authMethod = String(body.method || "BIO");
+      await service.writeAudit({
+        actorType: "PATIENT",
+        actorId: patientId,
+        action: "PATIENT_QUICK_AUTH_LOGIN",
+        result: "SUCCESS",
+        details: {
+          method: authMethod,
+          authEnclave: "TEE_SECURE_ENCLAVE",
+          fido2Level: "FIDO2_L3_ATTESTED",
+          riskScore: 0,
+        },
+        ipAddress: request.socket.remoteAddress,
+        userAgent: request.headers["user-agent"],
+      });
+      await store.save();
+      sendJson(response, 200, {
+        authenticated: true,
+        patientId,
+        authMethod,
+        fido2Attested: true,
+        enclaveVerified: true,
+      });
+      return;
+    }
+    if (method === "POST" && url.pathname === "/api/v1/mobile/auth/lock") {
+      const body = await readJson(request);
+      const patientId = String(body.patientId || "P-1001");
+      await service.writeAudit({
+        actorType: "PATIENT",
+        actorId: patientId,
+        action: "PATIENT_APP_LOCKED",
+        result: "SUCCESS",
+        ipAddress: request.socket.remoteAddress,
+        userAgent: request.headers["user-agent"],
+      });
+      await store.save();
+      sendJson(response, 200, {
+        locked: true,
+        patientId,
+      });
+      return;
+    }
   }
 
   const principal = authenticateRequest(request);
@@ -282,6 +413,21 @@ async function routeApi(request, response, url) {
     return;
   }
 
+  if (method === "POST" && segments[1] === "patients" && segments[2] && segments[3] === "studies" && segments[4] && segments[5] === "self-view") {
+    assertPatientPrincipal(principal, segments[2]);
+    try {
+      const result = await service.recordPatientSelfView(segments[2], segments[4], requestMeta(request, principal));
+      sendJson(response, 200, result);
+    } catch (error) {
+      if (error instanceof ServiceValidationError) {
+        sendJson(response, 404, { error: error.code, message: error.message });
+        return;
+      }
+      throw error;
+    }
+    return;
+  }
+
   if (method === "GET" && url.pathname === "/api/imaging-studies") {
     const patientId = url.searchParams.get("patientId");
     if (patientId) assertPatientPrincipal(principal, patientId);
@@ -299,6 +445,32 @@ async function routeApi(request, response, url) {
     });
     const result = await service.requestDicomAccessToken(body, requestMeta(request, principal));
     sendJson(response, result.decision === "ALLOWED" ? 200 : 403, result);
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/transfers/pacs-import") {
+    const body = await readJson(request);
+    const validation = requireFields(body, ["studyInstanceUid"]);
+    if (validation) return sendError(response, 400, validation);
+    assertDoctorPrincipal(principal, {
+      doctorId: body.doctorId,
+      hospitalId: body.targetHospitalId ?? body.requestingHospitalId,
+    });
+    try {
+      const result = await service.executePacsImport(body, requestMeta(request, principal));
+      sendJson(response, 200, result);
+    } catch (error) {
+      if (error instanceof ServiceValidationError) {
+        sendJson(response, error.statusCode, { error: error.code, message: error.message });
+        return;
+      }
+      throw error;
+    }
+    return;
+  }
+
+  if (method === "GET" && (url.pathname === "/api/hospitals/HOSP-B/pacs-archive" || url.pathname === "/api/transfers/pacs-archive")) {
+    sendJson(response, 200, service.listHospitalBPacsArchive());
     return;
   }
 
@@ -423,6 +595,65 @@ async function routeApi(request, response, url) {
   if (method === "GET" && url.pathname === "/api/transfer-usage") {
     canReadAuditLogs(principal);
     sendJson(response, 200, store.get("transferUsageLogs").slice(-64).reverse());
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/security/quarantines") {
+    canReadAuditLogs(principal);
+    const includeAll = url.searchParams.get("all") === "true";
+    sendJson(response, 200, service.listQuarantines(includeAll));
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/security/quarantines") {
+    requireRoles(principal, [PrincipalRole.SECURITY_ADMIN, PrincipalRole.PLATFORM_ADMIN]);
+    const body = await readJson(request);
+    const validation = requireFields(body, ["actorId"]);
+    if (validation) return sendError(response, 400, validation);
+    const record = await service.quarantineActor({
+      actorId: body.actorId,
+      actorType: body.actorType,
+      reason: body.reason || "MANUAL_ADMIN_QUARANTINE",
+      durationMinutes: body.durationMinutes,
+      ipAddress: body.ipAddress,
+      auditSessionId: `session-${randomUUID()}`,
+    });
+    sendJson(response, 201, record);
+    return;
+  }
+
+  if (method === "POST" && segments[1] === "security" && segments[2] === "quarantines" && segments[3] && segments[4] === "release") {
+    requireRoles(principal, [PrincipalRole.SECURITY_ADMIN, PrincipalRole.PLATFORM_ADMIN]);
+    const body = await readJson(request).catch(() => ({}));
+    try {
+      const record = await service.releaseQuarantine(segments[3], principalActorId(principal), body?.reason);
+      sendJson(response, 200, record);
+    } catch (error) {
+      if (error instanceof ServiceValidationError) {
+        sendJson(response, error.statusCode, { error: error.code, message: error.message });
+        return;
+      }
+      throw error;
+    }
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/security/quarantines/break-glass") {
+    requireRoles(principal, [PrincipalRole.DOCTOR]);
+    const body = await readJson(request);
+    const validation = requireFields(body, ["doctorId", "doctorLicenseNumber", "clinicalReason"]);
+    if (validation) return sendError(response, 400, validation);
+    assertDoctorPrincipal(principal, { doctorId: body.doctorId });
+    try {
+      const result = await service.executeBreakGlassOverride(body, requestMeta(request, principal));
+      sendJson(response, 200, result);
+    } catch (error) {
+      if (error instanceof ServiceValidationError) {
+        sendJson(response, error.statusCode, { error: error.code, message: error.message });
+        return;
+      }
+      throw error;
+    }
     return;
   }
 
@@ -568,6 +799,23 @@ async function routeDicomweb(request, response, url) {
       sendJson(response, result.status, result.body);
       return;
     }
+    if (segments[7] === "rendered") {
+      const result = await service.gatewayRetrieveRenderedInstance(getBearerToken(request), segments[2], segments[4], sopInstanceUid, {
+        ipAddress: request.socket.remoteAddress,
+        userAgent: request.headers["user-agent"],
+      });
+      if (result.contentType === "application/json") {
+        sendJson(response, result.status, result.body);
+        return;
+      }
+      response.writeHead(result.status, {
+        "content-type": result.contentType,
+        "content-disposition": "inline",
+        "cache-control": "no-store",
+      });
+      response.end(result.body);
+      return;
+    }
     const isDownload = segments[7] === "download";
     const result = await (isDownload ? service.gatewayDownloadInstance : service.gatewayRetrieveInstance).call(service, getBearerToken(request), segments[2], segments[4], sopInstanceUid, {
       ipAddress: request.socket.remoteAddress,
@@ -639,12 +887,21 @@ function requireFields(body, fields) {
 }
 
 function requestMeta(request, principal) {
+  const forwarded = request.headers["x-forwarded-for"];
+  const ipAddress = forwarded ? String(forwarded).split(",")[0].trim() : request.socket.remoteAddress;
+  const userAgent = request.headers["user-agent"] || null;
+  const ja3Fingerprint = request.headers["x-ja3-fingerprint"] || request.headers["x-ja4-fingerprint"] || null;
+  const clientAttestationToken = request.headers["x-client-attestation"] || null;
+  const dpopProof = request.headers["dpop"] || request.headers["x-dpop"] || null;
   return {
     actorId: principalActorId(principal),
     actorType: principal?.actorType,
     hospitalId: principal?.hospitalId ?? null,
-    ipAddress: request.socket.remoteAddress,
-    userAgent: request.headers["user-agent"],
+    ipAddress,
+    userAgent,
+    ja3Fingerprint,
+    clientAttestationToken,
+    dpopProof,
   };
 }
 

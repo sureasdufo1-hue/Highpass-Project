@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>HiPass MediQ - 환자용 의료영상·마이데이터 모바일</title>
+  <link rel="manifest" href="/mobile/manifest.json">
+  <meta name="theme-color" content="#0284c7">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="HiPass MediQ">
+  <link rel="icon" type="image/svg+xml" href="/mobile/icon.svg">
+  <link rel="icon" type="image/png" sizes="192x192" href="/mobile/icon-192.png">
+  <link rel="apple-touch-icon" href="/mobile/icon-192.png">
+  <link rel="stylesheet" href="/mobile/style.css">
+  <script src="/qrcode.js"></script>
+  <script src="/mobile/app.js" defer></script>
+</head>
+<body>
+  <div class="mobile-shell">
+    <!-- Header -->
+    <header class="mobile-header">
+      <div class="header-top">
+        <div class="brand">
+          <span>HiPass</span>
+          <span class="brand-badge">MediQ</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span class="security-enclave-pill">🛡️ TEE Enclave</span>
+          <button id="btn-lock-app" class="badge" type="button" title="앱 잠금 (로그아웃)" style="background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;cursor:pointer;padding:4px 8px;border-radius:6px;font-size:11px;">🔒 잠금</button>
+          <a href="/" class="saas-switch-btn" title="병원 SaaS 화면으로 전환">🏥 SaaS</a>
+        </div>
+      </div>
+      <div class="header-meta">
+        <div class="patient-info">
+          환자: <strong id="header-patient-name">김가상 (P-1001)</strong> · <span id="header-auth-badge" class="badge badge-good" style="font-size:10px;">🟢 FIDO2 본인확인</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- 1-Second Quick Auth & App Lock Overlay -->
+    <div id="auth-overlay" class="auth-overlay">
+      <div class="auth-card">
+        <div class="auth-icon-wrap">
+          <div class="auth-shield-ring"></div>
+          <span class="auth-main-icon" id="auth-main-icon">🔒</span>
+        </div>
+
+        <h2 class="auth-title">HiPass 안심 본인인증</h2>
+        <p class="auth-desc">의료영상 및 공유 이력을 안전하게 열람하기 위해<br><strong>1초 간편인증</strong>으로 본인을 확인해 주세요.</p>
+
+        <div class="auth-patient-badge">
+          <span style="font-size:11px;color:#64748b;">등록된 사용자</span>
+          <strong id="auth-patient-name" style="color:#0f172a;font-size:15px;">김가상 (P-1001)</strong>
+          <span style="font-size:10px;color:#0284c7;font-weight:700;">🛡️ TEE 단말 무결성 검증 (Risk: LOW)</span>
+        </div>
+
+        <!-- 1초 생체인증 버튼 (지문 / Face ID) -->
+        <button id="btn-auth-bio" class="auth-btn auth-btn-primary" type="button">
+          <span class="auth-btn-icon">👆</span>
+          <div class="auth-btn-text">
+            <strong>지문 / Face ID 1초 로그인</strong>
+            <small>FIDO2 Passkey 기반 원터치 생체인증</small>
+          </div>
+        </button>
+
+        <!-- 기타 간편인증 수단 -->
+        <div class="auth-grid-options">
+          <button id="btn-auth-pass" class="auth-opt-btn" type="button" title="PASS 모바일 신분증">
+            <span style="font-size:18px;">📱</span>
+            <span>PASS 인증</span>
+          </button>
+          <button id="btn-auth-kakao" class="auth-opt-btn" type="button" title="카카오 간편인증">
+            <span style="font-size:18px;">💬</span>
+            <span>카카오 인증</span>
+          </button>
+          <button id="btn-auth-pin" class="auth-opt-btn" type="button" title="간편 PIN 6자리">
+            <span style="font-size:18px;">🔢</span>
+            <span>간편 PIN</span>
+          </button>
+        </div>
+
+        <!-- 1초 인증 진행 중 프로그레스 애니메이션 -->
+        <div id="auth-verifying-box" class="auth-verifying-box" hidden>
+          <div class="scan-beam-container">
+            <div class="scan-beam"></div>
+            <span class="scan-fingerprint">👆</span>
+          </div>
+          <div id="auth-verifying-text" class="auth-verifying-text">
+            생체인증 확인 중... (1초)
+          </div>
+          <div class="auth-progress-bar">
+            <div id="auth-progress-fill" class="auth-progress-fill"></div>
+          </div>
+        </div>
+
+        <div class="auth-demo-switcher">
+          <span style="font-size:11px;color:#64748b;">가상 환자 계정 (데모):</span>
+          <select id="auth-patient-select" class="auth-select">
+            <option value="P-1001" selected>P-1001 (김가상)</option>
+            <option value="P-1002">P-1002 (이가상)</option>
+            <option value="P-1003">P-1003 (박가상)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content Tab Panes -->
+    <main class="mobile-content">
+
+      <!-- ================================================================= -->
+      <!-- Tab 1: Home (MediQ HomeScreen)                                     -->
+      <!-- ================================================================= -->
+      <section id="tab-home" class="tab-pane active">
+        <!-- MediQ Welcome Hero Banner -->
+        <div class="mediq-hero-card">
+          <div class="mediq-hero-tag">나의 모든 의료기록을 담다</div>
+          <h2 class="mediq-hero-title">병원을 옮겨도<br>진료기록은 이어져요</h2>
+          <p class="mediq-hero-desc">CD 발급 없이, 1회용 안심 QR로<br>다른 병원 진료실에 원본 의료영상을 즉시 공유하세요.</p>
+          <button id="btn-home-quick-share" class="btn btn-primary mediq-hero-btn" type="button">
+            🚀 1회용 QR 공유 시작하기
+          </button>
+        </div>
+
+        <!-- Horizontal Kind Chips (MediQ KindChip) -->
+        <div class="kind-chips-bar" role="tablist">
+          <button class="kind-chip active" data-chip-filter="ALL" type="button">전체</button>
+          <button class="kind-chip" data-chip-filter="IMAGING" type="button">🩻 영상검사</button>
+          <button class="kind-chip" data-chip-filter="CLINICAL" type="button">📋 진료·처방</button>
+          <button class="kind-chip" data-chip-filter="CHECKUP" type="button">🩺 건강검진</button>
+          <button class="kind-chip" data-chip-filter="VACCINE" type="button">💉 예방접종</button>
+        </div>
+
+        <!-- Active Share Status Card (MediQ ShareSession Status) -->
+        <div id="home-share-widget" class="home-share-widget card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span style="font-size:16px;">📱</span>
+              <strong style="font-size:13px;color:#0f172a;">의료영상 공유 현황</strong>
+            </div>
+            <span id="home-share-badge" class="badge">대기 중</span>
+          </div>
+          <div id="home-share-desc" style="font-size:12px;color:#64748b;line-height:1.4;">
+            현재 활성화된 1회용 QR 공유가 없습니다.
+          </div>
+          <div style="margin-top:10px;display:flex;gap:8px;">
+            <button id="btn-goto-share-tab" class="btn btn-sm btn-outline" type="button" style="flex:1;">
+              공유 생성 / 관리 바로가기
+            </button>
+          </div>
+        </div>
+
+        <!-- Recent Records Section (MediQ WhiteRecordCard) -->
+        <div class="section-head" style="margin-top:16px;">
+          <div class="section-title">
+            <span>최근 보관 기록</span>
+            <button id="btn-refresh-home" class="badge" type="button" style="cursor:pointer;border:none;">새로고침</button>
+          </div>
+          <p class="section-sub">A병원 PACS 및 의료 마이데이터에서 연계된 최신 기록입니다.</p>
+        </div>
+
+        <div id="home-recent-list" class="recent-list-wrap">
+          <!-- Dynamic cards injected via app.js -->
+        </div>
+
+        <!-- MyData Institution Link Footer Info -->
+        <div class="card" style="margin-top:16px;background:#f0f9ff;border:1px dashed #bae6fd;">
+          <div style="font-size:12px;font-weight:700;color:#0284c7;margin-bottom:4px;">🏥 보건복지부 마이데이터 안심 연계</div>
+          <p style="font-size:11px;color:#64748b;line-height:1.5;margin:0;">
+            국민건강보험공단 · 건강보험심사평가원 · 질병관리청 및 참여 의료기관의 전송요구권(의료법 제21조의2)에 따라 암호화 보관됩니다.
+          </p>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- Tab 2: Imaging Studies & Multi-Slice Viewer (MediQ ImagingScreens) -->
+      <!-- ================================================================= -->
+      <section id="tab-studies" class="tab-pane">
+        <div class="section-head">
+          <div class="section-title">
+            <span>내 영상검사 보관함</span>
+            <button id="btn-refresh-studies" class="badge" type="button" style="cursor:pointer;border:none;">새로고침</button>
+          </div>
+          <p class="section-sub">A병원 PACS에서 발급받은 CT/MRI/X-ray 원본 영상 목록입니다. 단면 탐색 및 연속 재생(Cine)을 지원합니다.</p>
+        </div>
+
+        <!-- Modality Filter Chips -->
+        <div class="modality-filter-row">
+          <button class="filter-pill active" data-modality-filter="ALL" type="button">전체</button>
+          <button class="filter-pill" data-modality-filter="CT" type="button">CT</button>
+          <button class="filter-pill" data-modality-filter="MR" type="button">MRI</button>
+          <button class="filter-pill" data-modality-filter="CR" type="button">X-ray</button>
+        </div>
+
+        <div id="study-list-container">
+          <div class="card" style="text-align:center;color:#64748b;">의료영상 목록을 불러오는 중...</div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- Tab 3: Records, Checkups & Vaccines (MediQ RecordsScreens)         -->
+      <!-- ================================================================= -->
+      <section id="tab-records" class="tab-pane">
+        <div class="section-head">
+          <div class="section-title">
+            <span>진료 및 건강기록</span>
+          </div>
+          <p class="section-sub">진료 이력, 처방 약제, 국가 건강검진, 예방접종 정보를 한눈에 관리합니다.</p>
+        </div>
+
+        <!-- Records Category Segmented Buttons -->
+        <div class="records-subnav">
+          <button class="subnav-btn active" data-records-sub="clinical" type="button">📋 진료·처방</button>
+          <button class="subnav-btn" data-records-sub="checkup" type="button">🩺 건강검진</button>
+          <button class="subnav-btn" data-records-sub="vaccine" type="button">💉 예방접종</button>
+        </div>
+
+        <div id="records-content-container">
+          <!-- Dynamically populated sub-pane -->
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- Tab 4: 4-Step Share Flow & Manage (MediQ ShareScreens)             -->
+      <!-- ================================================================= -->
+      <section id="tab-share" class="tab-pane">
+        <div class="section-head">
+          <div class="section-title">
+            <span>의료기록 공유 및 QR</span>
+          </div>
+          <p class="section-sub">기록을 선택하고 수신 병원을 지정하여 1회용 QR 코드를 발급받으세요.</p>
+        </div>
+
+        <!-- Share Subnav: New Share vs Share History -->
+        <div class="share-tab-switch">
+          <button id="btn-share-sub-wizard" class="subtab-btn active" type="button">새 1회용 공유 생성</button>
+          <button id="btn-share-sub-manage" class="subtab-btn" type="button">공유 관리 · 이동 로그</button>
+        </div>
+
+        <!-- Sub-View A: 4-Step Share Wizard (MediQ ShareSelect ~ ShareResult) -->
+        <div id="share-wizard-wrap">
+          <!-- Wizard Step Indicator -->
+          <div class="wizard-stepper">
+            <div class="step-dot active" data-step="1">1. 기록 선택</div>
+            <div class="step-line"></div>
+            <div class="step-dot" data-step="2">2. 병원 설정</div>
+            <div class="step-line"></div>
+            <div class="step-dot" data-step="3">3. 동의 확인</div>
+            <div class="step-line"></div>
+            <div class="step-dot" data-step="4">4. QR 완료</div>
+          </div>
+
+          <!-- Wizard Step 1: Record Selection (ShareSelectScreen) -->
+          <div id="wizard-step-1" class="wizard-step-pane active">
+            <div class="wizard-box-title">공유할 기록을 선택해 주세요</div>
+            <p class="wizard-box-desc">선택한 기록만 B병원 진료실에 한시적으로 열람 권한이 부여됩니다.</p>
+            <div id="share-select-items" class="share-items-checklist">
+              <!-- Checkboxes dynamically populated -->
+            </div>
+            <button id="btn-wizard-to-2" class="btn btn-primary" type="button" style="margin-top:14px;">
+              다음: 수신 병원 설정 (1/4)
+            </button>
+          </div>
+
+          <!-- Wizard Step 2: Target Hospital Config (ShareConfigScreen) -->
+          <div id="wizard-step-2" class="wizard-step-pane">
+            <div class="wizard-box-title">수신 의료기관 및 의사 지정</div>
+            <p class="wizard-box-desc">영상을 전송할 대상 병원과 담당 진료과를 선택해 주세요.</p>
+            
+            <div class="config-field-group">
+              <label class="config-label">수신 병원</label>
+              <select id="select-target-hospital" class="config-select">
+                <option value="HOSP-B" selected>가상 병원 B (상급종합병원)</option>
+                <option value="HOSP-C">가상 병원 C (전문 클리닉)</option>
+                <option value="HOSP-SNU">서울대학교병원 (데모 연계)</option>
+                <option value="HOSP-SEV">세브란스병원 (데모 연계)</option>
+              </select>
+            </div>
+
+            <div class="config-field-group">
+              <label class="config-label">담당 의사 (병원 선택 시 자동 매칭)</label>
+              <div class="config-readonly-box" id="label-target-doctor">
+                신경과 DOC-B-01 (이신경 전문의)
+              </div>
+            </div>
+
+            <div class="config-field-group">
+              <label class="config-label">공유 유효 기간</label>
+              <select id="select-validity-duration" class="config-select">
+                <option value="24h" selected>발급 후 24시간 (기본 당일 진료)</option>
+                <option value="7d">발급 후 7일 (정밀 판독 및 재진)</option>
+                <option value="1h">발급 후 1시간 (응급 1회성 열람)</option>
+              </select>
+            </div>
+
+            <div class="config-field-group">
+              <label class="config-label">공유 방식</label>
+              <div class="channel-choice-card selected">
+                <span style="font-size:20px;">📱</span>
+                <div>
+                  <strong style="color:#0f172a;">대면 진료 시 1회용 QR 제시</strong>
+                  <small style="color:#64748b;display:block;">진료실 모니터 바코드/웹캠 스캔 시 1초 인식</small>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex;gap:8px;margin-top:14px;">
+              <button id="btn-wizard-back-to-1" class="btn btn-secondary" type="button" style="flex:1;">이전</button>
+              <button id="btn-wizard-to-3" class="btn btn-primary" type="button" style="flex:2;">다음: 동의 확인 (2/4)</button>
+            </div>
+          </div>
+
+          <!-- Wizard Step 3: Consent & Privacy (ShareConfirmScreen) -->
+          <div id="wizard-step-3" class="wizard-step-pane">
+            <div class="wizard-box-title">동의하고 공유하기</div>
+            <p class="wizard-box-desc">아래의 내용으로 의료기록을 공유할까요?</p>
+
+            <div class="summary-card">
+              <div class="summary-row">
+                <span>제공 기관</span>
+                <strong>가상 병원 A (HOSP-A)</strong>
+              </div>
+              <div class="summary-row">
+                <span>수신 기관</span>
+                <strong id="confirm-hosp-label">가상 병원 B (HOSP-B)</strong>
+              </div>
+              <div class="summary-row">
+                <span>공유 목적</span>
+                <strong>진료 의뢰 및 협진 (TREATMENT)</strong>
+              </div>
+              <div class="summary-row">
+                <span>열람 권한</span>
+                <strong class="badge badge-good">조회 전용 (VIEW_ONLY)</strong>
+              </div>
+              <div class="summary-row">
+                <span>선택된 항목</span>
+                <strong id="confirm-items-count">1건의 기록</strong>
+              </div>
+            </div>
+
+            <div class="switch-row card" style="margin-top:12px;display:flex;justify-content:space-between;align-items:center;">
+              <div>
+                <strong style="font-size:13px;color:#0f172a;">민감정보 가리기</strong>
+                <p style="font-size:11px;color:#64748b;margin:2px 0 0 0;">주민등록번호 및 상세 주소 마스킹</p>
+              </div>
+              <input type="checkbox" id="check-mask-sensitive" checked style="width:18px;height:18px;accent-color:#0284c7;">
+            </div>
+
+            <div class="card" style="margin-top:10px;background:#f8fafc;border:1px solid #e2e8f0;font-size:11px;color:#64748b;line-height:1.5;">
+              <strong style="color:#0f172a;">보건의료정보 전송요구 및 개인정보 제3자 제공 동의</strong><br>
+              본인은 의료법 제21조의2 및 개인정보보호법 제17조에 따라 선택한 의료영상의 진료 목적 한시적 전송을 요구하며 제3자 열람에 동의합니다.
+            </div>
+
+            <div style="display:flex;gap:8px;margin-top:14px;">
+              <button id="btn-wizard-back-to-2" class="btn btn-secondary" type="button" style="flex:1;">이전</button>
+              <button id="btn-wizard-confirm-submit" class="btn btn-primary" type="button" style="flex:2;">동의하고 1회용 QR 발급</button>
+            </div>
+          </div>
+
+          <!-- Wizard Step 4: One-Time QR Result (ShareResultScreen) -->
+          <div id="wizard-step-4" class="wizard-step-pane">
+            <div class="qr-container">
+              <span id="qr-status-pill" class="badge badge-good">🟢 스캔 대기 중 (1회용)</span>
+
+              <div class="qr-box-wrap" id="qr-box-wrap">
+                <!-- SVG QR generated here -->
+              </div>
+
+              <div id="qr-countdown-text" class="qr-countdown">⏱️ 유효시간: 24:00:00</div>
+
+              <div class="qr-spec-list">
+                <div class="qr-spec-row">
+                  <span>공유 대상</span>
+                  <strong id="qr-study-label">선택 기록</strong>
+                </div>
+                <div class="qr-spec-row">
+                  <span>수신 병원</span>
+                  <strong id="qr-target-label">가상 병원 B (신경과)</strong>
+                </div>
+                <div class="qr-spec-row">
+                  <span>발급 번호</span>
+                  <strong id="qr-ref-label">-</strong>
+                </div>
+              </div>
+
+              <div class="qr-security-notice card" style="margin-top:12px;background:#f0f9ff;border:1px solid #bae6fd;">
+                <p style="font-size:11px;color:#0369a1;line-height:1.5;margin:0;">
+                  🔒 <strong>권한 참조용 일회용 티켓입니다.</strong><br>
+                  의료영상·장기 토큰·복호화 키가 들어 있지 않으며, B병원 스캔 시 서버가 최신 동의와 접근통제 정책을 다시 검증합니다.
+                </p>
+              </div>
+
+              <button id="btn-revoke-qr" class="btn btn-danger" type="button" style="margin-top:14px;">
+                🛑 공유 즉시 철회 / QR 폐기
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sub-View B: Share Management & Transfer Logs (ShareManageScreen / TransferLogScreen) -->
+        <div id="share-manage-wrap" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <strong style="font-size:14px;color:#0f172a;">진행 중인 공유 내역</strong>
+            <button id="btn-revoke-all-shares" class="btn btn-sm btn-danger" type="button">
+              모든 기록 차단하기
+            </button>
+          </div>
+
+          <div id="share-active-list">
+            <!-- Active consents rendered here -->
+          </div>
+
+          <div class="section-head" style="margin-top:20px;">
+            <div class="section-title">
+              <span>의료기록 병원 이동 로그</span>
+            </div>
+            <p class="section-sub">차단하거나 만료된 공유도 지우지 않고 위변조 방지 이력으로 남깁니다.</p>
+          </div>
+
+          <div id="share-timeline-logs" class="transfer-timeline">
+            <!-- Historical transfer timeline items -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- Tab 5: Vault & Device Security (MediQ Vault & Security)            -->
+      <!-- ================================================================= -->
+      <section id="tab-vault" class="tab-pane">
+        <div class="section-head">
+          <div class="section-title">
+            <span>단말 암호화 보관함 (Vault)</span>
+          </div>
+          <p class="section-sub">모바일 전용 격리 저장소(Secure Enclave)에 보관된 암호화 캡슐 현황입니다.</p>
+        </div>
+
+        <div class="vault-stat-banner">
+          <div style="font-weight:700;font-size:14px;color:#0284c7;margin-bottom:8px;">🔒 Security by Design 보관 정책</div>
+          <div style="font-size:12px;color:#334155;line-height:1.6;">
+            • 일반 갤러리/다운로드 폴더 파일 노출: <strong style="color:#16a34a;">0건 (완전 차단)</strong><br>
+            • 로컬 평문 DICOM 잔류: <strong style="color:#16a34a;">0 Byte (Zeroization)</strong><br>
+            • 단말 저장 암호화: <strong style="color:#0f172a;">AES-256-GCM (Ciphertext-only)</strong>
+          </div>
+        </div>
+
+        <div id="vault-packages-list">
+          <div class="card" style="text-align:center;color:#64748b;">암호화 패키지 상태 확인 중...</div>
+        </div>
+
+        <button id="btn-crypto-erase" class="btn btn-danger" type="button" style="margin-top:16px;">
+          🗑️ 보관함 전체 영구 파기 (Crypto-Erase)
+        </button>
+
+        <!-- Device Security Section -->
+        <div class="section-head" style="margin-top:24px;">
+          <div class="section-title">
+            <span>단말 보안 무결성 (Attestation)</span>
+          </div>
+          <p class="section-sub">등록된 스마트폰 기기의 보안 상태 및 위변조 방지 현황입니다.</p>
+        </div>
+
+        <article class="card">
+          <div style="display:flex;flex-direction:column;gap:10px;font-size:13px;">
+            <div style="display:flex;justify-content:space-between;">
+              <span style="color:#64748b;">기기 식별자</span>
+              <strong id="dev-id-val" style="font-family:monospace;color:#0f172a;">dev_p1001_android_sec</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;">
+              <span style="color:#64748b;">플랫폼 / OS</span>
+              <strong id="dev-platform-val" style="color:#0f172a;">ANDROID_TEE (v3.0.0)</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;">
+              <span style="color:#64748b;">키 격리 영역</span>
+              <strong id="dev-enclave-val" style="color:#16a34a;">TEE_SECURE_KEYSTORE</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;">
+              <span style="color:#64748b;">하드웨어 증명</span>
+              <strong id="dev-attest-val" style="color:#0284c7;">HARDWARE_ATTESTED</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;">
+              <span style="color:#64748b;">보안 위험도</span>
+              <strong id="dev-risk-val" class="badge badge-good">LOW (안전)</strong>
+            </div>
+          </div>
+        </article>
+      </section>
+
+    </main>
+
+    <!-- =================================================================== -->
+    <!-- In-App Multi-Slice Cine Viewer Modal (SyntheticScanCine)            -->
+    <!-- =================================================================== -->
+    <div id="modal-cine-viewer" class="cine-modal" hidden>
+      <div class="cine-modal-content">
+        <div class="cine-modal-header">
+          <div>
+            <h3 id="cine-title" class="cine-title">Brain MRI Multi-Slice</h3>
+            <span id="cine-modality-badge" class="badge badge-modality">MR</span>
+            <span id="cine-slice-badge" class="badge badge-modality">Slice 1 / 50</span>
+          </div>
+          <button id="btn-close-cine" class="cine-close-btn" type="button" title="닫기">✕</button>
+        </div>
+
+        <!-- Mode Chips: 단면 사진 vs 동영상으로 보기 (Cine) -->
+        <div class="cine-mode-bar">
+          <button id="btn-mode-manual" class="cine-mode-chip active" type="button">단면 사진</button>
+          <button id="btn-mode-cine" class="cine-mode-chip" type="button">동영상으로 보기 (Cine)</button>
+        </div>
+
+        <!-- Scan Display Screen -->
+        <div class="cine-display-wrap">
+          <div id="cine-canvas-box" class="cine-canvas-box">
+            <canvas id="cine-canvas" width="280" height="280"></canvas>
+            <div id="cine-hud" class="cine-hud">
+              <span id="hud-study-date">2026-06-20</span>
+              <span id="hud-instance-no">Inst: 1</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scrubber & Controls -->
+        <div class="cine-controls-panel">
+          <div class="scrubber-row">
+            <span style="font-size:11px;color:#64748b;">1</span>
+            <input type="range" id="cine-slider" min="1" max="50" value="1" class="cine-range">
+            <span id="cine-max-label" style="font-size:11px;color:#64748b;">50</span>
+          </div>
+
+          <div class="playback-btn-row">
+            <button id="btn-cine-prev" class="btn btn-sm btn-secondary" type="button">◀ 이전</button>
+            <button id="btn-cine-play" class="btn btn-sm btn-primary" type="button">▶ 재생 (Cine)</button>
+            <button id="btn-cine-next" class="btn btn-sm btn-secondary" type="button">다음 ▶</button>
+          </div>
+        </div>
+
+        <!-- Medical Finding Summary (MediQ 판독 소견) -->
+        <div class="cine-finding-box">
+          <div style="font-size:11px;font-weight:700;color:#0284c7;margin-bottom:2px;">의료진 판독 소견 (참고용)</div>
+          <div id="cine-finding-text" style="font-size:12px;color:#334155;line-height:1.4;">
+            우측 폐 결절 소견. 이전 검사 대비 크기 변화 관찰 요망 (추간판 탈출 의심 소견 포함).
+          </div>
+        </div>
+
+        <div style="margin-top:12px;display:flex;gap:8px;">
+          <button id="btn-cine-share-this" class="btn btn-primary" type="button" style="width:100%;">
+            📱 이 영상으로 1회용 QR 공유하기
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Tab Navigation (5 MediQ Tabs) -->
+    <nav class="mobile-nav" aria-label="모바일 탭 네비게이션">
+      <button class="nav-item active" type="button" data-tab="home">
+        <span class="icon">🏠</span>
+        <span>홈</span>
+      </button>
+      <button class="nav-item" type="button" data-tab="studies">
+        <span class="icon">🩻</span>
+        <span>영상검사</span>
+      </button>
+      <button class="nav-item" type="button" data-tab="records">
+        <span class="icon">📋</span>
+        <span>진료기록</span>
+      </button>
+      <button class="nav-item" type="button" data-tab="share">
+        <span class="icon">📱</span>
+        <span>공유·QR</span>
+      </button>
+      <button class="nav-item" type="button" data-tab="vault">
+        <span class="icon">🛡️</span>
+        <span>보관·보안</span>
+      </button>
+    </nav>
+  </div>
+</body>
+</html>

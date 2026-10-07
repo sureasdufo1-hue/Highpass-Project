@@ -1,0 +1,79 @@
+# HiPass Platform - Production Envoy Gateway Configuration with TLS Inspector
+# Reference Architecture: Envoy tls_inspector Listener Filter & JA3 Fingerprinting
+
+static_resources:
+  listeners:
+  - name: https_listener
+    address:
+      socket_address:
+        address: 0.0.0.0
+        port_value: 443
+    listener_filters:
+    # Envoy Built-in TLS Inspector extracts ClientHello attributes before handshake
+    - name: "envoy.filters.listener.tls_inspector"
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector
+    filter_chains:
+    - transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+          common_tls_context:
+            tls_certificates:
+            - certificate_chain:
+                filename: "/etc/envoy/certs/server.crt"
+              private_key:
+                filename: "/etc/envoy/certs/server.key"
+            tls_params:
+              tls_minimum_protocol_version: TLSv1_2
+              tls_maximum_protocol_version: TLSv1_3
+      filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: ingress_https
+          route_config:
+            name: local_route
+            virtual_hosts:
+            - name: hipass_service
+              domains: ["*"]
+              routes:
+              - match:
+                  prefix: "/"
+                route:
+                  cluster: hipass_control_plane
+                  timeout: 30s
+                request_headers_to_add:
+                # Forward Downstream TLS properties as HTTP headers to Control Plane
+                - header:
+                    key: "x-forwarded-proto"
+                    value: "https"
+                - header:
+                    key: "x-ja3-fingerprint"
+                    value: "%DOWNSTREAM_PEER_FINGERPRINT_256%"
+                - header:
+                    key: "x-tls-cipher"
+                    value: "%DOWNSTREAM_TLS_CIPHER%"
+                - header:
+                    key: "x-tls-version"
+                    value: "%DOWNSTREAM_TLS_VERSION%"
+          http_filters:
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+  - name: hipass_control_plane
+    connect_timeout: 0.5s
+    type: STRICT_DNS
+    dns_lookup_family: V4_ONLY
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: hipass_control_plane
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: control-plane
+                port_value: 3000

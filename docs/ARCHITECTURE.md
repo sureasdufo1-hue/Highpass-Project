@@ -1,5 +1,7 @@
 # Capstone MVP Architecture
 
+> 이 문서는 현재 실행 가능한 Capstone MVP 구조를 설명한다. Highpass v3 목표 객체·데이터·API 계약은 [v3 Architecture Alignment](architecture/HIGHPASS-V3-ARCHITECTURE-ALIGNMENT.md), [v3 Logical ERD](data/highpass-v3-erd.md), [v3 API Alignment](api/HIGHPASS-V3-API-ALIGNMENT.md)을 참조한다. v3 문서는 아직 구현·운영 승인을 의미하지 않는다.
+
 ```text
 Hospital B Browser --HTTPS--> Edge Proxy --> Portal / OHIF Viewer
                                    |

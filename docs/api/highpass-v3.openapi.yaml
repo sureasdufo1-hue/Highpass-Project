@@ -1,0 +1,1037 @@
+openapi: 3.1.0
+info:
+  title: Highpass v3 Control Plane API
+  version: 3.0.0-draft-alignment
+  summary: Target contract for patient-controlled medical imaging exchange
+  description: |
+    DOCUMENT-ONLY TARGET CONTRACT. These endpoints are not claimed as implemented.
+    Existing Mobile-Core and DICOMweb contracts remain the implementation baseline
+    until the additive migration and acceptance gates are approved.
+    CAPSTONE MVP / TECHNICAL TEST ENVIRONMENT ONLY.
+servers:
+  - url: https://localhost:8443/api/v3
+    description: Local technical test environment
+tags:
+  - name: PatientMapping
+  - name: ExchangeSession
+  - name: Authorization
+  - name: TransferGrant
+  - name: ImagingPackage
+  - name: Route
+  - name: Preflight
+  - name: Access
+  - name: Provenance
+  - name: Audit
+paths:
+  /patient-mappings/reconcile:
+    post:
+      operationId: reconcilePatientMapping
+      tags: [PatientMapping]
+      summary: Reconcile a tenant-local patient reference
+      security:
+        - oauth2: [mapping:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/AuditSessionId'
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReconcilePatientMappingRequest'
+      responses:
+        '201':
+          description: Mapping created or the idempotent result returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientMapping'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        default:
+          $ref: '#/components/responses/Problem'
+  /patient-mappings/{mappingId}:
+    get:
+      operationId: getPatientMapping
+      tags: [PatientMapping]
+      security:
+        - oauth2: [mapping:read]
+      parameters:
+        - $ref: '#/components/parameters/MappingId'
+        - $ref: '#/components/parameters/TraceId'
+      responses:
+        '200':
+          description: Mapping metadata without local patient identifiers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientMapping'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+  /exchange-sessions:
+    post:
+      operationId: createExchangeSession
+      tags: [ExchangeSession]
+      security:
+        - oauth2: [exchange:create]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/AuditSessionId'
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateExchangeSessionRequest'
+      responses:
+        '201':
+          description: Exchange session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExchangeSession'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        default:
+          $ref: '#/components/responses/Problem'
+  /exchange-sessions/{sessionId}:
+    get:
+      operationId: getExchangeSession
+      tags: [ExchangeSession]
+      security:
+        - oauth2: [exchange:read]
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/TraceId'
+      responses:
+        '200':
+          description: Exchange session visible to an authorized participant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExchangeSession'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+  /exchange-sessions/{sessionId}/cancel:
+    post:
+      operationId: cancelExchangeSession
+      tags: [ExchangeSession]
+      security:
+        - oauth2: [exchange:cancel]
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/AuditSessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelSessionRequest'
+      responses:
+        '200':
+          description: Session cancelled and active grants marked for revocation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExchangeSession'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        default:
+          $ref: '#/components/responses/Problem'
+  /exchange-sessions/{sessionId}/consent-artifacts:
+    post:
+      operationId: attachConsentArtifact
+      tags: [Authorization]
+      security:
+        - oauth2: [consent:write]
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/AuditSessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateConsentArtifactRequest'
+      responses:
+        '201':
+          description: Consent evidence attached
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentArtifact'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        default:
+          $ref: '#/components/responses/Problem'
+  /exchange-sessions/{sessionId}/authorization-decisions:
+    post:
+      operationId: evaluateAuthorization
+      tags: [Authorization]
+      security:
+        - oauth2: [authorization:evaluate]
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/AuditSessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvaluateAuthorizationRequest'
+      responses:
+        '201':
+          description: Immutable authorization decision, including DENY
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorizationDecision'
+        default:
+          $ref: '#/components/responses/Problem'
+  /exchange-sessions/{sessionId}/transfer-grants:
+    post:
+      operationId: issueTransferGrant
+      tags: [TransferGrant]
+      summary: Issue a short-lived, recipient and resource scoped grant after ALLOW
+      security:
+        - oauth2: [grant:issue]
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/AuditSessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueTransferGrantRequest'
+      responses:
+        '201':
+          description: Grant and one-time bearer material; bearer material is never returned by GET
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuedTransferGrant'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Problem'
+  /transfer-grants/{grantId}:
+    get:
+      operationId: getTransferGrant
+      tags: [TransferGrant]
+      security:
+        - oauth2: [grant:read]
+      parameters:
+        - $ref: '#/components/parameters/GrantId'
+      responses:
+        '200':
+          description: Grant metadata only; no token or key material
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferGrant'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+  /exchange-sessions/{sessionId}/imaging-packages:
+    post:
+      operationId: createImagingPackage
+      tags: [ImagingPackage]
+      security:
+        - oauth2: [package:create]
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/AuditSessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateImagingPackageRequest'
+      responses:
+        '201':
+          description: Route-neutral imaging package manifest created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImagingPackage'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        default:
+          $ref: '#/components/responses/Problem'
+  /imaging-packages/{packageId}:
+    get:
+      operationId: getImagingPackage
+      tags: [ImagingPackage]
+      security:
+        - oauth2: [package:read]
+      parameters:
+        - $ref: '#/components/parameters/PackageId'
+      responses:
+        '200':
+          description: Manifest metadata, not DICOM binary payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImagingPackage'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+  /exchange-sessions/{sessionId}/route-decisions:
+    post:
+      operationId: decideExchangeRoute
+      tags: [Route]
+      security:
+        - oauth2: [route:decide]
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/AuditSessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRouteDecisionRequest'
+      responses:
+        '201':
+          description: Route decision with capability snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteDecision'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        default:
+          $ref: '#/components/responses/Problem'
+  /exchange-sessions/{sessionId}/preflight-results:
+    post:
+      operationId: executePreflight
+      tags: [Preflight]
+      description: Executes checks only. It must not move DICOM payloads or invoke PACS import.
+      security:
+        - oauth2: [preflight:execute]
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/AuditSessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecutePreflightRequest'
+      responses:
+        '201':
+          description: Immutable preflight evidence
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreflightResult'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Problem'
+  /preflight-results/{preflightId}:
+    get:
+      operationId: getPreflightResult
+      tags: [Preflight]
+      security:
+        - oauth2: [preflight:read]
+      parameters:
+        - $ref: '#/components/parameters/PreflightId'
+      responses:
+        '200':
+          description: Preflight evidence
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreflightResult'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+  /exchange-sessions/{sessionId}/viewer-sessions:
+    post:
+      operationId: createViewerSession
+      tags: [Access]
+      security:
+        - oauth2: [dicom:view]
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/AuditSessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAccessRequest'
+      responses:
+        '201':
+          description: Short-lived viewer session; no bearer token in URL
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ViewerSession'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Problem'
+  /exchange-sessions/{sessionId}/downloads:
+    post:
+      operationId: startDownload
+      tags: [Access]
+      security:
+        - oauth2: [dicom:download]
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/AuditSessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAccessRequest'
+      responses:
+        '202':
+          description: Authorized download job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedJob'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Problem'
+  /exchange-sessions/{sessionId}/pacs-imports:
+    post:
+      operationId: createPacsImport
+      tags: [Access]
+      description: Requires a VERIFIED patient mapping, PASS preflight, valid IMPORT grant, and mTLS connector.
+      security:
+        - mutualTLS: []
+          oauth2: [dicom:import]
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/AuditSessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePacsImportRequest'
+      responses:
+        '202':
+          description: Import accepted after all preconditions passed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PacsImport'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Problem'
+  /pacs-imports/{importId}:
+    get:
+      operationId: getPacsImport
+      tags: [Access]
+      security:
+        - oauth2: [dicom:import]
+      parameters:
+        - $ref: '#/components/parameters/ImportId'
+      responses:
+        '200':
+          description: PACS import status without connector secrets
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PacsImport'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+  /provenance/{provenanceId}:
+    get:
+      operationId: getProvenance
+      tags: [Provenance]
+      security:
+        - oauth2: [provenance:read]
+      parameters:
+        - $ref: '#/components/parameters/ProvenanceId'
+      responses:
+        '200':
+          description: Chain-of-custody metadata without clinical payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Provenance'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+  /exchange-sessions/{sessionId}/audit-events:
+    get:
+      operationId: listExchangeAuditEvents
+      tags: [Audit]
+      security:
+        - oauth2: [audit:read]
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Redacted, cursor-paginated audit events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEventPage'
+        default:
+          $ref: '#/components/responses/Problem'
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://idp.example.invalid/oauth2/authorize
+          tokenUrl: https://idp.example.invalid/oauth2/token
+          scopes:
+            mapping:write: Reconcile patient mappings
+            mapping:read: Read mapping status
+            exchange:create: Create exchange sessions
+            exchange:read: Read exchange sessions
+            exchange:cancel: Cancel exchange sessions
+            consent:write: Attach consent evidence
+            authorization:evaluate: Evaluate access policy
+            grant:issue: Issue transfer grants
+            grant:read: Read transfer grant metadata
+            package:create: Create imaging package manifests
+            package:read: Read imaging package metadata
+            route:decide: Create route decisions
+            preflight:execute: Execute preflight checks
+            preflight:read: Read preflight results
+            dicom:view: Open approved viewer sessions
+            dicom:download: Start approved downloads
+            dicom:import: Import an approved package into PACS
+            provenance:read: Read provenance evidence
+            audit:read: Read redacted audit events
+    mutualTLS:
+      type: mutualTLS
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {type: string, minLength: 16, maxLength: 128, pattern: '^[A-Za-z0-9._:-]+$'}
+    AuditSessionId:
+      name: X-Audit-Session-Id
+      in: header
+      required: true
+      schema: {$ref: '#/components/schemas/Uuid'}
+    TraceId:
+      name: X-Trace-Id
+      in: header
+      required: false
+      schema: {type: string, minLength: 16, maxLength: 64, pattern: '^[A-Za-z0-9_-]+$'}
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema: {type: string, pattern: '^"[1-9][0-9]*"$'}
+    MappingId: {name: mappingId, in: path, required: true, schema: {$ref: '#/components/schemas/Uuid'}}
+    SessionId: {name: sessionId, in: path, required: true, schema: {$ref: '#/components/schemas/Uuid'}}
+    GrantId: {name: grantId, in: path, required: true, schema: {$ref: '#/components/schemas/Uuid'}}
+    PackageId: {name: packageId, in: path, required: true, schema: {$ref: '#/components/schemas/Uuid'}}
+    PreflightId: {name: preflightId, in: path, required: true, schema: {$ref: '#/components/schemas/Uuid'}}
+    ImportId: {name: importId, in: path, required: true, schema: {$ref: '#/components/schemas/Uuid'}}
+    ProvenanceId: {name: provenanceId, in: path, required: true, schema: {$ref: '#/components/schemas/Uuid'}}
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema: {type: string, maxLength: 512}
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+  responses:
+    Problem:
+      description: Safe error response
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Forbidden:
+      description: Authenticated but not authorized; denial is audited
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    NotFound:
+      description: Resource not found or intentionally undisclosed
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Conflict:
+      description: Idempotency conflict or invalid state transition
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    PreconditionFailed:
+      description: If-Match version does not match
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Unprocessable:
+      description: Semantically invalid request or unmet domain precondition
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    ServiceUnavailable:
+      description: Explicit dependency, connector, network, or readiness failure
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+  schemas:
+    Uuid: {type: string, format: uuid}
+    Timestamp: {type: string, format: date-time}
+    DicomUid: {type: string, minLength: 1, maxLength: 64, pattern: '^[0-9]+(\.[0-9]+)*$'}
+    MappingState: {type: string, enum: [NO_MATCH, MULTIPLE_MATCH, IDENTITY_CONFLICT, UNVERIFIED, VERIFIED]}
+    ExchangeState: {type: string, enum: [REQUESTED, IDENTITY_PENDING, CONSENT_PENDING, CONSENTED, AUTHORIZED, PREFLIGHT, READY, ACTIVE, VIEWING, DOWNLOADING, TRANSFERRING, MOBILE_EXPORTING, COMPLETED, REJECTED, EXPIRED, REVOKED, FAILED, CANCELLED]}
+    ConsentState: {type: string, enum: [PENDING, ACTIVE, REJECTED, WITHDRAWN, EXPIRED]}
+    InitiationType: {type: string, enum: [PATIENT_INITIATED, PROVIDER_INITIATED]}
+    AccessAction: {type: string, enum: ['study:view', 'study:download', 'study:pacs-transfer', 'study:mobile-export']}
+    RouteType: {type: string, enum: [PACS_DIRECT, CLOUD_VIEW, CLOUD_DOWNLOAD, CLOUD_RELAY, MOBILE_VAULT]}
+    PreflightOverall: {type: string, enum: [PASS, WARNING, FAIL]}
+    GrantStatus: {type: string, enum: [ISSUED, ACTIVE, CONSUMED, EXPIRED, REVOKED]}
+    IntegrityStatus: {type: string, enum: [PENDING, PASS, FAIL, NOT_VERIFIED]}
+    DecisionOutcome: {type: string, enum: [ALLOW, DENY]}
+    ResourceScope:
+      type: object
+      additionalProperties: false
+      required: [studyInstanceUid]
+      properties:
+        studyInstanceUid: {$ref: '#/components/schemas/DicomUid'}
+        seriesInstanceUids:
+          type: array
+          maxItems: 500
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/DicomUid'}
+    ReconcilePatientMappingRequest:
+      type: object
+      additionalProperties: false
+      required: [patientRefId, tenantId, hospitalId, protectedLocalRef, localRefDigest]
+      properties:
+        patientRefId: {$ref: '#/components/schemas/Uuid'}
+        tenantId: {$ref: '#/components/schemas/Uuid'}
+        hospitalId: {$ref: '#/components/schemas/Uuid'}
+        protectedLocalRef: {type: string, minLength: 24, maxLength: 4096, description: Application-layer protected value; never returned or logged}
+        localRefDigest: {type: string, minLength: 43, maxLength: 86, pattern: '^[A-Za-z0-9_-]+$', description: Keyed lookup digest; never returned or logged}
+    PatientMapping:
+      type: object
+      additionalProperties: false
+      required: [mappingId, patientRefId, tenantId, hospitalId, state, version, createdAt, updatedAt]
+      properties:
+        mappingId: {$ref: '#/components/schemas/Uuid'}
+        patientRefId: {$ref: '#/components/schemas/Uuid'}
+        tenantId: {$ref: '#/components/schemas/Uuid'}
+        hospitalId: {$ref: '#/components/schemas/Uuid'}
+        state: {$ref: '#/components/schemas/MappingState'}
+        verifiedAt: {$ref: '#/components/schemas/Timestamp'}
+        version: {type: integer, minimum: 1}
+        createdAt: {$ref: '#/components/schemas/Timestamp'}
+        updatedAt: {$ref: '#/components/schemas/Timestamp'}
+    CreateExchangeSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [patientRefId, ownerTenantId, sourceHospitalId, targetHospitalId, requesterId, purpose, initiationType, validUntil, resources]
+      properties:
+        patientRefId: {$ref: '#/components/schemas/Uuid'}
+        ownerTenantId: {$ref: '#/components/schemas/Uuid'}
+        sourceHospitalId: {$ref: '#/components/schemas/Uuid'}
+        targetHospitalId: {$ref: '#/components/schemas/Uuid'}
+        requesterId: {$ref: '#/components/schemas/Uuid'}
+        purpose: {type: string, minLength: 2, maxLength: 64, pattern: '^[A-Z][A-Z0-9_]*$'}
+        initiationType: {$ref: '#/components/schemas/InitiationType'}
+        validUntil: {$ref: '#/components/schemas/Timestamp'}
+        resources:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: {$ref: '#/components/schemas/ResourceScope'}
+    ExchangeSession:
+      type: object
+      additionalProperties: false
+      required: [sessionId, patientRefId, ownerTenantId, sourceHospitalId, targetHospitalId, requesterId, purpose, initiationType, state, validFrom, validUntil, resources, version, createdAt, updatedAt]
+      properties:
+        sessionId: {$ref: '#/components/schemas/Uuid'}
+        patientRefId: {$ref: '#/components/schemas/Uuid'}
+        ownerTenantId: {$ref: '#/components/schemas/Uuid'}
+        sourceHospitalId: {$ref: '#/components/schemas/Uuid'}
+        targetHospitalId: {$ref: '#/components/schemas/Uuid'}
+        requesterId: {$ref: '#/components/schemas/Uuid'}
+        purpose: {type: string, maxLength: 64}
+        initiationType: {$ref: '#/components/schemas/InitiationType'}
+        state: {$ref: '#/components/schemas/ExchangeState'}
+        validFrom: {$ref: '#/components/schemas/Timestamp'}
+        validUntil: {$ref: '#/components/schemas/Timestamp'}
+        resources: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/ResourceScope'}}
+        version: {type: integer, minimum: 1}
+        createdAt: {$ref: '#/components/schemas/Timestamp'}
+        updatedAt: {$ref: '#/components/schemas/Timestamp'}
+    CancelSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [reasonCode]
+      properties:
+        reasonCode: {type: string, enum: [PATIENT_WITHDRAWN, REQUESTER_CANCELLED, POLICY_REVOKED, ADMINISTRATIVE_CANCEL]}
+        comment: {type: string, maxLength: 200}
+    CreateConsentArtifactRequest:
+      type: object
+      additionalProperties: false
+      required: [patientRefId, sourceHospitalId, targetHospitalId, purpose, allowedActions, state, validFrom, validUntil, resources, policyVersion, evidenceDigest]
+      properties:
+        patientRefId: {$ref: '#/components/schemas/Uuid'}
+        sourceHospitalId: {$ref: '#/components/schemas/Uuid'}
+        targetHospitalId: {$ref: '#/components/schemas/Uuid'}
+        purpose: {type: string, minLength: 2, maxLength: 64}
+        allowedActions:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/AccessAction'}
+        state: {$ref: '#/components/schemas/ConsentState'}
+        validFrom: {$ref: '#/components/schemas/Timestamp'}
+        validUntil: {$ref: '#/components/schemas/Timestamp'}
+        resources: {type: array, minItems: 1, maxItems: 100, items: {$ref: '#/components/schemas/ResourceScope'}}
+        policyVersion: {type: string, minLength: 1, maxLength: 64}
+        evidenceDigest: {type: string, minLength: 43, maxLength: 128, pattern: '^[A-Za-z0-9_:-]+$'}
+    ConsentArtifact:
+      allOf:
+        - type: object
+          additionalProperties: false
+          required: [consentArtifactId, sessionId, state, validFrom, validUntil, version, createdAt]
+          properties:
+            consentArtifactId: {$ref: '#/components/schemas/Uuid'}
+            sessionId: {$ref: '#/components/schemas/Uuid'}
+            state: {$ref: '#/components/schemas/ConsentState'}
+            validFrom: {$ref: '#/components/schemas/Timestamp'}
+            validUntil: {$ref: '#/components/schemas/Timestamp'}
+            version: {type: integer, minimum: 1}
+            createdAt: {$ref: '#/components/schemas/Timestamp'}
+    EvaluateAuthorizationRequest:
+      type: object
+      additionalProperties: false
+      required: [consentArtifactId, actorId, actorTenantId, actorHospitalId, action, purpose, resource]
+      properties:
+        consentArtifactId: {$ref: '#/components/schemas/Uuid'}
+        actorId: {$ref: '#/components/schemas/Uuid'}
+        actorTenantId: {$ref: '#/components/schemas/Uuid'}
+        actorHospitalId: {$ref: '#/components/schemas/Uuid'}
+        action: {$ref: '#/components/schemas/AccessAction'}
+        purpose: {type: string, minLength: 2, maxLength: 64}
+        resource: {$ref: '#/components/schemas/ResourceScope'}
+    AuthorizationDecision:
+      type: object
+      additionalProperties: false
+      required: [decisionId, sessionId, actorId, actorTenantId, action, resource, contextDigest, outcome, reasonCodes, policyVersion, decidedAt]
+      properties:
+        decisionId: {$ref: '#/components/schemas/Uuid'}
+        sessionId: {$ref: '#/components/schemas/Uuid'}
+        actorId: {$ref: '#/components/schemas/Uuid'}
+        actorTenantId: {$ref: '#/components/schemas/Uuid'}
+        action: {$ref: '#/components/schemas/AccessAction'}
+        resource: {$ref: '#/components/schemas/ResourceScope'}
+        contextDigest: {type: string, minLength: 43, maxLength: 128}
+        outcome: {$ref: '#/components/schemas/DecisionOutcome'}
+        reasonCodes:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: {type: string, minLength: 3, maxLength: 64, pattern: '^[A-Z][A-Z0-9_]*$'}
+        policyVersion: {type: string, minLength: 1, maxLength: 64}
+        decidedAt: {$ref: '#/components/schemas/Timestamp'}
+    IssueTransferGrantRequest:
+      type: object
+      additionalProperties: false
+      required: [authorizationDecisionId, recipientId, recipientTenantId, recipientHospitalId, actions, resources, audience, ttlSeconds]
+      properties:
+        authorizationDecisionId: {$ref: '#/components/schemas/Uuid'}
+        recipientId: {$ref: '#/components/schemas/Uuid'}
+        recipientTenantId: {$ref: '#/components/schemas/Uuid'}
+        recipientHospitalId: {$ref: '#/components/schemas/Uuid'}
+        actions:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/AccessAction'}
+        resources: {type: array, minItems: 1, maxItems: 100, items: {$ref: '#/components/schemas/ResourceScope'}}
+        audience: {type: string, minLength: 3, maxLength: 128}
+        ttlSeconds: {type: integer, minimum: 30, maximum: 600}
+    TransferGrant:
+      type: object
+      additionalProperties: false
+      required: [grantId, sessionId, recipientId, recipientTenantId, recipientHospitalId, actions, resourceSnapshotDigest, issuer, audience, issuedAt, expiresAt, status]
+      properties:
+        grantId: {$ref: '#/components/schemas/Uuid'}
+        sessionId: {$ref: '#/components/schemas/Uuid'}
+        recipientId: {$ref: '#/components/schemas/Uuid'}
+        recipientTenantId: {$ref: '#/components/schemas/Uuid'}
+        recipientHospitalId: {$ref: '#/components/schemas/Uuid'}
+        actions: {type: array, minItems: 1, maxItems: 3, items: {$ref: '#/components/schemas/AccessAction'}}
+        resourceSnapshotDigest: {type: string, minLength: 43, maxLength: 128}
+        issuer: {type: string, minLength: 3, maxLength: 128}
+        audience: {type: string, minLength: 3, maxLength: 128}
+        issuedAt: {$ref: '#/components/schemas/Timestamp'}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+        status: {$ref: '#/components/schemas/GrantStatus'}
+    IssuedTransferGrant:
+      type: object
+      additionalProperties: false
+      required: [grant, accessToken]
+      properties:
+        grant: {$ref: '#/components/schemas/TransferGrant'}
+        accessToken:
+          type: string
+          minLength: 32
+          maxLength: 8192
+          description: Returned once over TLS; do not log, persist in browser storage, or place in a URL
+          x-sensitive: true
+    CreateImagingPackageRequest:
+      type: object
+      additionalProperties: false
+      required: [authorizationDecisionId, resources, manifestVersion]
+      properties:
+        authorizationDecisionId: {$ref: '#/components/schemas/Uuid'}
+        resources: {type: array, minItems: 1, maxItems: 100, items: {$ref: '#/components/schemas/ResourceScope'}}
+        manifestVersion: {type: string, const: '3.0'}
+    ImagingPackage:
+      type: object
+      additionalProperties: false
+      required: [packageId, sessionId, manifestVersion, resources, integrityStatus, objectCount, createdAt]
+      properties:
+        packageId: {$ref: '#/components/schemas/Uuid'}
+        sessionId: {$ref: '#/components/schemas/Uuid'}
+        manifestVersion: {type: string, const: '3.0'}
+        resources: {type: array, minItems: 1, maxItems: 100, items: {$ref: '#/components/schemas/ResourceScope'}}
+        integrityStatus: {$ref: '#/components/schemas/IntegrityStatus'}
+        manifestDigest: {type: string, minLength: 43, maxLength: 128, pattern: '^[A-Za-z0-9_:-]+$'}
+        objectCount: {type: integer, minimum: 0, maximum: 100000}
+        createdAt: {$ref: '#/components/schemas/Timestamp'}
+    CreateRouteDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [packageId, requestedAction, availableRoutes]
+      properties:
+        packageId: {$ref: '#/components/schemas/Uuid'}
+        requestedAction: {$ref: '#/components/schemas/AccessAction'}
+        availableRoutes:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/RouteType'}
+    RouteDecision:
+      type: object
+      additionalProperties: false
+      required: [routeDecisionId, sessionId, packageId, routeType, ruleVersion, policyVersion, capabilityVersion, contextDigest, decidedAt]
+      properties:
+        routeDecisionId: {$ref: '#/components/schemas/Uuid'}
+        sessionId: {$ref: '#/components/schemas/Uuid'}
+        packageId: {$ref: '#/components/schemas/Uuid'}
+        routeType: {$ref: '#/components/schemas/RouteType'}
+        ruleVersion: {type: string, minLength: 1, maxLength: 64}
+        policyVersion: {type: string, minLength: 1, maxLength: 64}
+        capabilityVersion: {type: string, minLength: 1, maxLength: 64}
+        contextDigest: {type: string, minLength: 43, maxLength: 128}
+        decidedAt: {$ref: '#/components/schemas/Timestamp'}
+    ExecutePreflightRequest:
+      type: object
+      additionalProperties: false
+      required: [packageId, routeDecisionId, grantId, requestedAction]
+      properties:
+        packageId: {$ref: '#/components/schemas/Uuid'}
+        routeDecisionId: {$ref: '#/components/schemas/Uuid'}
+        grantId: {$ref: '#/components/schemas/Uuid'}
+        requestedAction: {$ref: '#/components/schemas/AccessAction'}
+    PreflightCheck:
+      type: object
+      additionalProperties: false
+      required: [checkCode, result, checkedAt]
+      properties:
+        checkCode: {type: string, enum: [CONSENT_ACTIVE, AUTHORIZATION_ALLOW, GRANT_VALID, PATIENT_MAPPING_VERIFIED, PACKAGE_INTEGRITY, DESTINATION_CAPABILITY, MTLS_READY, SCOPE_MATCH]}
+        result: {$ref: '#/components/schemas/PreflightOverall'}
+        safeReasonCode: {type: string, minLength: 3, maxLength: 64, pattern: '^[A-Z][A-Z0-9_]*$'}
+        checkedAt: {$ref: '#/components/schemas/Timestamp'}
+    PreflightResult:
+      type: object
+      additionalProperties: false
+      required: [preflightId, sessionId, packageId, routeDecisionId, grantId, requestedAction, overallResult, checks, capabilityVersion, startedAt, completedAt, expiresAt]
+      properties:
+        preflightId: {$ref: '#/components/schemas/Uuid'}
+        sessionId: {$ref: '#/components/schemas/Uuid'}
+        packageId: {$ref: '#/components/schemas/Uuid'}
+        routeDecisionId: {$ref: '#/components/schemas/Uuid'}
+        grantId: {$ref: '#/components/schemas/Uuid'}
+        requestedAction: {$ref: '#/components/schemas/AccessAction'}
+        overallResult: {$ref: '#/components/schemas/PreflightOverall'}
+        checks: {type: array, minItems: 1, maxItems: 32, items: {$ref: '#/components/schemas/PreflightCheck'}}
+        reasonCode: {type: string, minLength: 3, maxLength: 64, pattern: '^[A-Z][A-Z0-9_]*$'}
+        capabilityVersion: {type: string, minLength: 1, maxLength: 64}
+        startedAt: {$ref: '#/components/schemas/Timestamp'}
+        completedAt: {$ref: '#/components/schemas/Timestamp'}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+    CreateAccessRequest:
+      type: object
+      additionalProperties: false
+      required: [grantId, packageId, resource]
+      properties:
+        grantId: {$ref: '#/components/schemas/Uuid'}
+        packageId: {$ref: '#/components/schemas/Uuid'}
+        resource: {$ref: '#/components/schemas/ResourceScope'}
+    ViewerSession:
+      type: object
+      additionalProperties: false
+      required: [viewerSessionId, sessionId, expiresAt, launchPath]
+      properties:
+        viewerSessionId: {$ref: '#/components/schemas/Uuid'}
+        sessionId: {$ref: '#/components/schemas/Uuid'}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+        launchPath: {type: string, pattern: '^/viewer/session/[0-9a-fA-F-]{36}$', description: Same-origin path containing no bearer token or PHI}
+    AcceptedJob:
+      type: object
+      additionalProperties: false
+      required: [jobId, sessionId, state, acceptedAt]
+      properties:
+        jobId: {$ref: '#/components/schemas/Uuid'}
+        sessionId: {$ref: '#/components/schemas/Uuid'}
+        state: {type: string, const: ACCEPTED}
+        acceptedAt: {$ref: '#/components/schemas/Timestamp'}
+    CreatePacsImportRequest:
+      type: object
+      additionalProperties: false
+      required: [grantId, packageId, patientMappingId, preflightId, routeDecisionId]
+      properties:
+        grantId: {$ref: '#/components/schemas/Uuid'}
+        packageId: {$ref: '#/components/schemas/Uuid'}
+        patientMappingId: {$ref: '#/components/schemas/Uuid'}
+        preflightId: {$ref: '#/components/schemas/Uuid'}
+        routeDecisionId: {$ref: '#/components/schemas/Uuid'}
+    PacsImport:
+      type: object
+      additionalProperties: false
+      required: [importId, sessionId, packageId, patientMappingId, preflightId, state, acceptedAt]
+      properties:
+        importId: {$ref: '#/components/schemas/Uuid'}
+        sessionId: {$ref: '#/components/schemas/Uuid'}
+        packageId: {$ref: '#/components/schemas/Uuid'}
+        patientMappingId: {$ref: '#/components/schemas/Uuid'}
+        preflightId: {$ref: '#/components/schemas/Uuid'}
+        state: {type: string, enum: [ACCEPTED, IN_PROGRESS, COMPLETED, FAILED, CANCELLED]}
+        safeFailureCode: {type: string, minLength: 3, maxLength: 64}
+        acceptedAt: {$ref: '#/components/schemas/Timestamp'}
+        completedAt: {$ref: '#/components/schemas/Timestamp'}
+    Provenance:
+      type: object
+      additionalProperties: false
+      required: [provenanceId, sessionId, packageId, transferMode, sourceHospitalId, destinationHospitalId, sourceEvidence, transformations, transfers, integrityStatus, recordedAt]
+      properties:
+        provenanceId: {$ref: '#/components/schemas/Uuid'}
+        sessionId: {$ref: '#/components/schemas/Uuid'}
+        packageId: {$ref: '#/components/schemas/Uuid'}
+        transferMode: {type: string, enum: [BIT_PRESERVING, TRANSCODED]}
+        sourceHospitalId: {$ref: '#/components/schemas/Uuid'}
+        destinationHospitalId: {$ref: '#/components/schemas/Uuid'}
+        sourceEvidence: {$ref: '#/components/schemas/EvidenceRef'}
+        transformations: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/EvidenceRef'}}
+        transfers: {type: array, maxItems: 1000, items: {$ref: '#/components/schemas/EvidenceRef'}}
+        destinationReceipt: {$ref: '#/components/schemas/EvidenceRef'}
+        integrityStatus: {$ref: '#/components/schemas/IntegrityStatus'}
+        recordedAt: {$ref: '#/components/schemas/Timestamp'}
+    EvidenceRef:
+      type: object
+      additionalProperties: false
+      required: [eventType, occurredAt, digest]
+      properties:
+        eventType: {type: string, minLength: 3, maxLength: 64, pattern: '^[A-Z][A-Z0-9_]*$'}
+        occurredAt: {$ref: '#/components/schemas/Timestamp'}
+        digest: {type: string, minLength: 43, maxLength: 128}
+        actorRef: {$ref: '#/components/schemas/Uuid'}
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required: [auditId, auditSessionId, sessionId, actorId, actorType, tenantId, action, result, reasonCode, traceId, timestamp]
+      properties:
+        auditId: {$ref: '#/components/schemas/Uuid'}
+        auditSessionId: {$ref: '#/components/schemas/Uuid'}
+        sessionId: {$ref: '#/components/schemas/Uuid'}
+        actorId: {$ref: '#/components/schemas/Uuid'}
+        actorType: {type: string, enum: [PATIENT, CLINICIAN, HOSPITAL_ADMIN, SECURITY_ADMIN, PLATFORM_ADMIN, SERVICE]}
+        tenantId: {$ref: '#/components/schemas/Uuid'}
+        hospitalId: {$ref: '#/components/schemas/Uuid'}
+        action: {type: string, minLength: 3, maxLength: 64}
+        result: {type: string, enum: [ALLOWED, DENIED, SUCCEEDED, FAILED]}
+        reasonCode: {type: string, minLength: 3, maxLength: 64}
+        traceId: {type: string, minLength: 16, maxLength: 64}
+        relatedObjectId: {$ref: '#/components/schemas/Uuid'}
+        timestamp: {$ref: '#/components/schemas/Timestamp'}
+    AuditEventPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/AuditEvent'}}
+        nextCursor: {type: string, maxLength: 512}
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, traceId, retryable]
+      properties:
+        type: {type: string, format: uri-reference}
+        title: {type: string, maxLength: 120}
+        status: {type: integer, minimum: 400, maximum: 599}
+        code: {type: string, minLength: 3, maxLength: 64, pattern: '^[A-Z][A-Z0-9_]*$'}
+        detail: {type: string, maxLength: 300, description: Safe generalized detail without PHI, tokens, paths, credentials, or stack traces}
+        traceId: {type: string, minLength: 16, maxLength: 64}
+        retryable: {type: boolean}
