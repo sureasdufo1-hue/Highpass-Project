@@ -1,0 +1,126 @@
+{
+  "recordId": "MEDIQ-INHERIT-20261008",
+  "recordedDate": "2026-10-08",
+  "timezone": "Asia/Seoul",
+  "sourceRoot": "C:/Users/user/Documents/ChatGPT/메디큐 프로젝트",
+  "sourceHead": "db4b750cc228a092a352ed22bb1d9ac8ac7d5ca8",
+  "sourceState": "DIRTY_UNCOMMITTED_NOT_IDENTIFIED_BY_HEAD_ALONE",
+  "destinationRoot": "C:/Users/user/Documents/New project",
+  "destinationHead": "59dff9d8fd5ed9d1e600e161ec2b3e4d57356cbc",
+  "mode": "CURATED_DOCUMENT_RECORD_IMPORT_NOT_GIT_OR_RUNTIME_MERGE",
+  "hashAlgorithm": "SHA-256_RAW_FILE_BYTES",
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "34eb9b155f22cf1893c6161c626e6bdb8177cdea795092b42e78623d384132c7",
+      "bytes": 14618
+    },
+    {
+      "path": "docs/IMPLEMENTATION-PLAN.md",
+      "sha256": "7ebc8efd2528a3ace1f72ffcc6f4f8ea066046806f3d3ffe715ef2584e3eac07",
+      "bytes": 142728
+    },
+    {
+      "path": "docs/implementation/MEDIQ-WEB-P0-001/TEST-EVIDENCE.md",
+      "sha256": "0bdf452bc6d0bb2b46889abe93580c79a14f13d93aef84208cb4e88f18273c6f",
+      "bytes": 41457
+    },
+    {
+      "path": "docs/implementation/MEDIQ-PACS-001/TEST-EVIDENCE.md",
+      "sha256": "3114ddc0d4600f8aa2ac4581006f006db6ed02e78e9b783a9e07145ce03b5851",
+      "bytes": 914088
+    },
+    {
+      "path": "services/api/src/dicom/infrastructure/orthanc-dicomweb.adapter.ts",
+      "sha256": "830d9af5768286b83f395e62f03723c1b19601b5c1266d0b36d67cfacf32c328",
+      "bytes": 52439
+    },
+    {
+      "path": "services/api/src/pacs/application/pacs-import-transfer-dispatch.coordinator.ts",
+      "sha256": "33bfddddf0166457b654232e516f824557c74c21200bf3ef1c0dbfa6212c7a99",
+      "bytes": 21153
+    },
+    {
+      "path": "services/api/src/pacs/persistence/pacs-transfer-terminalization.repository.ts",
+      "sha256": "8c2e338005bcf515642b2d55b7f6a3a20f202612ea36443937ce90257538a0cc",
+      "bytes": 18780
+    },
+    {
+      "path": "services/api/src/imaging-storage/application/ephemeral-encrypted-temporary-imaging-store.ts",
+      "sha256": "c0c70a1a533887cfe2264a53529fe49178f52fc01ed27efd114b9903f57f4201",
+      "bytes": 47021
+    },
+    {
+      "path": "services/api/src/integrity/application/authorized-source-capture.service.ts",
+      "sha256": "ca5a4583d5039112b5f98bc601164835d296a009f6839652f0f3c6b5a0e1c172",
+      "bytes": 108817
+    },
+    {
+      "path": "services/api/src/viewer/application/viewer-retrieval.service.ts",
+      "sha256": "783003b70e12b73f8e400e1c7acce269eeda8b00c26d8aefa4984d04615807d7",
+      "bytes": 10874
+    },
+    {
+      "path": "scripts/verify-p0-golden-path.mjs",
+      "sha256": "66399e47ba106ebb4cf146bacc2343580b4758fae827a283985d356fe35f0ab2",
+      "bytes": 36652
+    },
+    {
+      "path": "scripts/verify-native-web-demo.mjs",
+      "sha256": "8c337670dbcdfe333e6cc80ea056ab4c5e4e3b154de24a7b507595bf9a928170",
+      "bytes": 9424
+    },
+    {
+      "path": "tests/api/pacs-import-transfer-dispatch.coordinator.test.mjs",
+      "sha256": "19cbad1f3f1ca093eba6767e4e6ef6ed4cf7bbf637fa3edc811e973155c1fdd7",
+      "bytes": 30674
+    },
+    {
+      "path": "tests/api/viewer-retrieval.test.mjs",
+      "sha256": "156a2c6daddc676cb31e2d1903f028bcd15cfda1f7788b35fc5050ff2d951ab2",
+      "bytes": 14870
+    },
+    {
+      "path": "tests/web/imaging-api.test.mjs",
+      "sha256": "20a476d3eb81a867e08a00716b9cd2e8b1a5939fa1c11f9936e80d4b88ec4d59",
+      "bytes": 12127
+    }
+  ],
+  "extracts": [
+    {
+      "path": "README.md",
+      "firstLine": 1,
+      "lastLine": 18,
+      "lineRangePhase": "BEFORE_CLOSURE_BANNERS",
+      "originalSourceSha256": "e47833d07be798d0bcac8a602bafe6fc2226c7323585536cf59f64be209fa3b2"
+    },
+    {
+      "path": "docs/IMPLEMENTATION-PLAN.md",
+      "firstLine": 1,
+      "lastLine": 12,
+      "lineRangePhase": "BEFORE_CLOSURE_BANNERS",
+      "originalSourceSha256": "2f9f4c1942fc2e1b305f522e81578d3002a1b813e76a15dc4e73d360a6622fe7"
+    },
+    {
+      "path": "docs/implementation/MEDIQ-WEB-P0-001/TEST-EVIDENCE.md",
+      "firstLine": 1,
+      "lastLine": 11,
+      "lineRangePhase": "BEFORE_CLOSURE_BANNERS",
+      "originalSourceSha256": "0bdf452bc6d0bb2b46889abe93580c79a14f13d93aef84208cb4e88f18273c6f"
+    },
+    {
+      "path": "docs/implementation/MEDIQ-PACS-001/TEST-EVIDENCE.md",
+      "firstLine": 1,
+      "lastLine": 17,
+      "lineRangePhase": "BEFORE_CLOSURE_BANNERS",
+      "originalSourceSha256": "3114ddc0d4600f8aa2ac4581006f006db6ed02e78e9b783a9e07145ce03b5851"
+    }
+  ],
+  "limitations": [
+    "Hashes identify selected files only; not an entire working-tree snapshot.",
+    "Historical test records are not rerun or inherited PASS.",
+    "Code candidates retained in source repository, not copied to executable destination.",
+    "Excerpt line ranges refer to pre-closure documents; plan heading is now explicitly historical."
+  ],
+  "fileSnapshotPhase": "AFTER_CLOSURE_BANNERS"
+}

@@ -1,5 +1,10 @@
 # HiPass Platform
 
+## MediQ 기록 계승 — 2026-10-08
+
+일정·전체 P0 목표 미달로 종료한 MediQ의 회고·선별 검증 기록·코드 재사용 후보를 [계승 자료집](docs/inherited/mediq/README.md)에 등록했습니다.
+기록 병합만 수행했으며 기존 실행 코드·DB·기술 스택을 덮어쓰거나 하이패스의 P0를 완료로 판정하지 않았습니다.
+
 > **CAPSTONE MVP · 합성 데이터 · 비운영 기술 테스트 환경**
 >
 > NOT A PIPA LEGAL DETERMINATION, ISMS-P CERTIFICATION, HOSPITAL SECURITY APPROVAL, OR PRODUCTION READINESS CLAIM.
