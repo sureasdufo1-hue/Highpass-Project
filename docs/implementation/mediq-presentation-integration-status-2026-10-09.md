@@ -2,6 +2,64 @@
 
 관측일: 2026-10-09 (Asia/Seoul). 신규 증적: DRAFT / UNASSIGNED.
 
+### 최신 관측: 웹·모바일 통합 후보 검사 PASS / 실제 배포 준비 미완료 — 2026-10-10 (Asia/Seoul)
+
+HEAD `55d49a454ee956849ce70abefbbff33af9f03cfd` + 현재 dirty source. `Dockerfile.patient-capstone`로 기존 `fedbae566527…` base에서 `--pull=false --network=none` 빌드/exit0. 의존성·lockfile 변경 없이 기존 runtime을 사용했고 base ID 전후 일치를 확인했다. 후보 `highpass-platform-mvp:capstone-patient-web-mobile-20261010`, 정확한 Docker image ID **`sha256:a287821b32b8a834429c7c2c645059394fe5ecdeed341bf2f77a8ae9d1c4ef56`**. BuildKit config digest `6b7f29…`와 image ID를 혼동하지 않는다. base ARG 기본값 없음 경고는 남지만 빌드는 명시적 base로 성공했다. 별도 소스/hash attestation을 이미지의 nonroot Node·network-none/read-only/cap-drop ALL로 실행해 tracked src/public/db/config/scripts **441개 일치/불일치0/exit0**, `artifacts/workstation/patient-web-mobile-image-source-20261010.json`. clinical payload 제외. 이후 추가한 host-only `patient-deployment-preflight.py`와 docs는 이 이미지에 포함되었다고 주장하지 않는다.
+
+| 검사 | 최신 결과 | 증적 |
+|---|---|---|
+| Container Scan/Gate | HIGH0/CRITICAL0, scan 및 gate exit0/PASS; 정확한 image ID 일치 | `artifacts/security/container-scan/patient-web-mobile-20261010.json` |
+| 실제 격리 Compose 시작 | 7 PASS/165.542초/exit0, cleanup=true | `artifacts/workstation/hp-patient-startup-46bf8dd856e6.json` |
+| Security Gate | unit-tests/secret-scan/dependency-audit 모두 PASS/exit0; 단계별120초 상한 | `artifacts/workstation/patient-web-mobile-security-gate-20261010.json` |
+| 선택 설정·준비 회귀 | 9/9 PASS/185.7244ms/exit0 | 이번 터미널 출력 |
+| A/B 현재 런타임·Entra 신원 | 4 PASS/exit0; A2c7b366…/B940806… healthy 보존, 별도 A/B 인증 HTTP200 | `artifacts/workstation/patient-key-inventory-20261009T155013Z/result.json` |
+| 클라우드 환자 배포 준비 | NOT VERIFIED/exit2, 기능 미활성·준비 객체/파일 부재 | `artifacts/workstation/patient-deployment-preflight-20261009T155238Z/result.json` |
+
+Compose는 실제 readonly secret mount·DB preparation preflight/apply·재적용 거부·전용 LOGIN/Control entrypoint ready·잘못된 본문과 B 주체의 A wrap 거부·중복 secret 시작 거부·기존 격리 Control health를 확인했다. 자체 project/volume만 회수했고 남은 자체 container가 없음을 확인했다. 최초 `hp-patient-startup-f8e7fe571e48`은 postgres-and-bootstrap 단계 FAIL/134.946초/exit1, cleanup=true였고 원인은 NOT VERIFIED이다. Docker 검사 동시 실행을 멈춘 뒤 동일 시험의 순차 실행이 통과했지만 이것만으로 리소스 경합이나 daemon 결함을 확정하지 않는다. 과거 FAIL은 소급 변경하지 않는다.
+
+Security Gate의 Node 단계 exit0/58.649초, secret 단계 exit0/1.068초, audit 단계 exit0/1.615초다. gate는 테스트 stdout/count를 보존하지 않으므로849개를 이번 gate의 직접 관측 수라고 주장하지 않는다(직전 전체 Node849/849는 아래 기록). 실제 실행 pnpm11.7.0/lockfile9.0 일치 PASS, global manifest11.22.0 차이 경고 유지; signature/TLS 검증 우회나 lockfile 재생성 없음. 새 Python 문법·secret findings0·diff PASS.
+
+새 read-only `scripts/patient-deployment-preflight.py`는 고정 cloud host key와 기존 Control/ingress a548790…/PostgreSQL8d0e686…·healthy·Compose context를 확인했다. VM 안에서 whitelist flag boolean만 반환하고 전체 env/secret 값은 출력하지 않는다. root-owned regular-file lstat만 확인하며 값은 읽지 않는다. SQL은 `BEGIN READ ONLY`/5초 statement 제한으로 역할/관계 존재 metadata만 조회했다. **patient grants/release/single-writer flags=false, authority table4개·전용 role 없음, patient secret3개가 보호된 regular file로 확인되지 않음**이다. 기존 배포를 변경하지 않았다. 소유 ref 내용·실제 mount·권한 세부·public E2E readiness는 NOT VERIFIED. 스크립트 자체는 모든 metadata가 있어도 전체 배포 준비 PASS를 내리지 않는다.
+
+Azure Validate 스킬은 승인된 `.azure/deployment-plan.md`를 선행 요구하지만 이 프로젝트는 기존 VM/Compose 방식이며 해당 파일/azure.yaml 기반 azd 체계가 없다. azure-prepare의 azd 전용 적용 범위와 맞지 않아 새 IaC/승인 체계를 도입하지 않고 기존 도구로 위 검사만 수행했다. **스킬 workflow의 Validated 상태는 선언하지 않는다.** Azure 비용·리소스·역할·구독 설정 변경 없음.
+
+신규 증적 **DRAFT / UNASSIGNED**. 이번 image/Compose 검사는 앞선 host 브라우저 CT/MR 결과와 서로 다른 실행 환경이며 image 내부 public browser 종단 검증으로 합산하지 않는다. 전체 MVP/v3 미완료, 독립 검토 승인 승계 없음. 관련 FR-006~013/014~041. 이번 작업은 미커밋/미배포이며 기존 코드·DB·PACS·volume 보존.
+
+**다음 작업 한 개: 실제 cloud 환자 준비의 rollback-only preflight와 명시적 합성 계정/소유 ref 등록을 동일 흐름의 배포 준비 작업으로 연결한다.** 준비가 끝나도 최신 증적 사람 검토 전 활성화하지 않으며, 실제 공개 환경 정상/음성·rollback 및 전체 환자 동의→수신 의료진 공유 흐름은 남아 있다. SSH relay 종료 reset 경고의 원인 분류도 미완료다.
+
+### 최신 관측: 모바일 전체 PWA CT·MR 본인 열람·Grant 거부 검증 — 2026-10-10 (Asia/Seoul)
+
+HEAD `55d49a454ee956849ce70abefbbff33af9f03cfd` + 현재 미커밋 변경. `--phantom CT|MR --browser --full-app --mobile` 모드를 기존 격리 verifier에 추가했다. 실제 `/mobile/`·375px Chrome viewport → PHANTOM 서명 Mock IdP 로그인 → 서버 확인 PIN 화면 체험(실제 PIN/생체/TEE 아님) → 서버 검사 목록·영상 탭·정확한 Study 선택 → 공통 Viewer의 Grant/DPoP·A mTLS QIDO → A 실제 Azure wrap/AES-GCM/B unwrap → 실제256×256 두 SOP decode → 격리 SQL Grant 철회 후 거부·PACS read2 유지 → 영상 제거/focus 복귀·localStorage/sessionStorage0을 검증했다. 실제 full Control API 및 최소권한 SQL을 사용했으며 raw DEK·개인키를 브라우저나 증적에 반환하지 않았다. 브라우저 스킬의 fresh DOM/실제 pointer 입력 원칙을 유지했다.
+
+| 실행 | 결과 | 증적 |
+|---|---|---|
+| 모바일 CT | wrapper7/SQL harness4/Chrome6 PASS, exit0; SQL29.360초/browser14.400초 | `artifacts/workstation/patient-vault-20261009T153745Z-2b032e691355/result.json`; browser `patient-real-browser-49321341b6a4/result.json`·`viewer.png` |
+| 모바일 MR | wrapper7/SQL harness4/Chrome6 PASS, exit0; SQL35.448초/browser19.588초 | `artifacts/workstation/patient-vault-20261009T154024Z-404ac13c0221/result.json`; browser `patient-real-browser-676f91e0e790/result.json`·`viewer.png` |
+
+각 실행은 DB 재로드 후 기존 감사 hash chain·철회된 Grant의 release2 CONSUMED·PACS read2 유지 PASS, SQL/Chrome/VM stage cleanup=true, 기존 A/B healthy·이미지 유지. CT/MR screenshot을 직접 확인했다. 두 영상은 목록의 서로 다른 SOP이지 해부학적 인접·전체12개 pixel 검증이 아니다. Grant 철회는 시험용 SQL 조작이며 환자 화면의 동의 철회/만료 완료로 주장하지 않는다. native Android/iOS·실제 PIN/생체·Secure Vault offline·카메라 QR·public 배포 ingress·전체 MVP/v3는 미검증/미완료다.
+
+실패는 보존한다: 모바일 CT `…T153622Z-5f7112f674f3`/browser`ee617f1c66a6` 및 MR `…T153855Z-b19594724930`/browser`1ffa966a7097`은 로그인 전 CDP timeout/전체 FAIL, cleanup=true. MR에서는 `PAGE_NAVIGATE` 관측 timeout을 식별했다. 명령 응답 timeout 이후 같은 tab의 정확한 URL와 실제 로그인 DOM를20초 안에 재확인하고 navigation 재발행·TLS 완화 없이 계속 관측하도록 보완했다. 최종 MR은 timeout 없이 정상 종료됐으므로 이 recovery 분기의 실제 성공은 NOT VERIFIED다. MR 종료 중 relay thread WinError10054 연결 reset 경고2개가 관측됐다. 업무 HTTP/crypto 결과와 자산 정리는 PASS였지만 경고의 정확한 원인/시점 분류는 NOT VERIFIED로 남기며 숨기지 않는다.
+
+전체 Node **849/849 PASS/59.2903219초/exit0**, `artifacts/workstation/patient-mobile-full-app-node-regression-20261010.log`는 mobile mode 추가 기준이며 이후 CDP 진단·동일 tab 관측 변경은 문법 및 최종 MR 실제 실행 범위로 확인했다. focused6/6 PASS/224.5932ms/exit0, Node/Python 문법·secret findings0·diff PASS. 잘못된 `--mobile` 단독 요청은 CLI exit2로 시작 전 거부했다. 관련 FR-006~013/014~041. 신규 증적 **DRAFT / UNASSIGNED**, ignored artifact는 Git clone에 포함되지 않는다. 배포·커밋·푸시는 이번 작업에서 수행하지 않았다.
+
+**다음 작업 한 개: 이 웹·모바일 소스를 포함하는 통합 후보 이미지의 source hash·보안 검사와 기존 공개 배포의 읽기 전용 준비 점검을 수행한다.** relay 경고 분류, 배포 DB 계정/소유 ref 준비, 최신 독립 검토가 남아 있으므로 아직 기능 활성화부터 하지 않는다. 실제 public 환경의 정상·음성·rollback 검증 및 원래 공유/동의 핵심 흐름 전체 완료도 남아 있다. 아래 관측은 이전 이력이다.
+
+### 최신 관측: 환자 웹 CT·MR 종단 정상·Grant 철회 거부 — 2026-10-10 (Asia/Seoul)
+
+기준 HEAD `55d49a454ee956849ce70abefbbff33af9f03cfd` + Viewer focus 복귀·검증기 종료 판정 변경. UI/UX Pro Max 스킬의 기본 keyboard/focus 지침을 적용했다(검색은 core 모듈 누락으로2회 실패). 주기적인 검사 목록 DOM 교체 이후에도 동일 container·동일 Study의 표시되고 활성화된 launcher만 찾아 focus를 복귀한다. 다른 Study/숨김/disabled/inert 버튼을 선택하지 않는다. 환자 권한·암호화·TLS 정책은 변경하지 않았다.
+
+`python scripts/patient-vault-integration-ops.py --phantom CT --browser --full-app` 최종 **wrapper7 PASS / full Control SQL harness4 PASS / Chrome6 PASS / exit0**, `artifacts/workstation/patient-vault-20261009T152938Z-daf4f4702c39/result.json`. SQL harness55.245초, browser39.372초(`patient-real-browser-467027e8b54f/result.json`·`viewer.png`). 실제 환자 웹의 Mock IdP PHANTOM 로그인 → 서버 검사 목록 → CT 선택 → 본인 Grant/DPoP → A 합성 PACS mTLS → 실제 Azure wrap/AES-GCM/B unwrap → 서로 다른256×256 SOP2개 decode·다음 영상 → 격리 SQL Grant REVOKED 후 신규 fetch 거부·A PACS read2 유지 → 닫기/영상 제거/focus 복귀·browser storage0을 확인했다. 재로드한 SQL의 기존 audit hash chain·해당 Grant release2개 CONSUMED 검증도 PASS. 원본 합성 PACS는 A, 시험 SQL은 독립 tmpfs, 클라우드 원본 지속 저장 없음. A/B 기존 이미지와 healthy 상태 보존, 생성 SQL·브라우저·VM stage cleanup=true. CT 캡처를 직접 확인했다.
+
+실패 이력은 유지한다. `…T152626Z-7b6b1dbd4d86`은 Chrome6 PASS 후 자식 process의 signal 종료를 exitCode만으로 관측해 final-audit timeout/전체 FAIL이었다. exitCode 또는 signalCode의 terminal 상태를 확인하도록 수정했다. `…T152823Z-e858460a7e9a`는 로그인 전 CDP timeout/전체 FAIL로, TLS/권한 DENY로 분류하지 않는다. 두 실행 모두 정확한 생성 자산 cleanup=true이며 최종 PASS로 소급 변경하지 않는다. 신규 focused test 최초5/6 FAIL은 fake DOM fixture options가 덮어써진 시험 오류였으며 수정 후6/6 PASS/182.6858ms/exit0.
+
+전체 Node **849/849 PASS / 60.4504575초 / exit0**, `artifacts/workstation/patient-focus-node-regression-20261010.log`는 focus 변경 기준 실행이다. 이후 검증기 signal 종료 판정은 문법 및 최종 CT 실제 실행으로 확인했다. Secret patterns findings0/diff PASS. 관련 FR-006~013/014~041. 신규 증적 **DRAFT / UNASSIGNED**, ignored artifact는 clone에 포함되지 않는다. 공개 배포 public ingress·모바일 전체 앱·환자 화면의 동의 철회/만료·전체12 SOP pixel·전체 MVP/v3 완료 증거가 아니다. Grant 상태 변경은 격리 SQL 시험 조작이며 UI 동의 철회 완료로 주장하지 않는다.
+
+MR도 동일 전체 웹 경로를 실행했다. 최초 `…T153112Z-304bf90317e4` / browser `0fe07ea75a12`은 로그인·검사 목록 이후 timeout/전체 FAIL: 캡처에서 MR launcher가 viewport 밖에 있었고 VM metadata/pixel 호출은 발생하지 않았다. 자동화 도구가 대상 버튼을 instant scrollIntoView 후 새 DOM/좌표를 읽어 실제 마우스 클릭하도록 수정했다. 정책 거부나 제품 Viewer 실패로 단정하지 않는다. 최종 MR `artifacts/workstation/patient-vault-20261009T153258Z-2adc9a030eca/result.json` **wrapper7 PASS / SQL harness4 PASS / Chrome6 PASS / exit0**, SQL65.662초/browser47.491초(`patient-real-browser-43ff1d0a4a46/result.json`·`viewer.png`). 서로 다른 두256×256 MR SOP 표시, SQL Grant 철회 후 read2 유지, focus 복귀/storage0, SQL hash chain/release2 CONSUMED, 모든 생성 자산 cleanup=true·원래 A/B 보존을 확인했다. MR 캡처도 직접 확인했다. 두 목록 항목은 해부학적 인접 슬라이스라는 의미가 아니다.
+
+wrapper의 scope 설명도 `--full-app`/공통 launcher 시험을 구분하도록 보완했다. 최종 MR은 새 설명 기준이며 앞선 CT 원문 wrapper의 보수적인 'not full app' 설명은 당시 기록으로 보존하고 nested browser/SQL scope에서 실제 시험 범위를 확인한다. 검증기 수정의 Node/Python 문법·focused6/6 PASS/220.7326ms/exit0·secret findings0/diff PASS; 전체 Node849 결과 이후 검증기 변경은 최종 실제 CT/MR 및 문법 검증 범위이다. 이번 소스 변경은 미커밋/미배포이다.
+
+**다음 작업 한 개: 모바일 전체 앱의 로그인·검사 선택·Viewer 정상/거부를 동일 격리 실제 PACS/Vault 흐름에 연결한다.** 공개 배포 활성화/rollback과 최종 독립 검토는 그 뒤에 남는다. 아래 FAIL 및 과거 다음 작업은 각각 당시 이력이다.
+
 ### 최신 체크포인트: 실제 환자 웹 종단 검증은 FAIL — 2026-10-10 (Asia/Seoul)
 
 커밋·푸시 요청에 따라 현재 검증 도구를 저장한다. 기준은 `c13c903c94a33a2822d4ac90b419ab93acfa048b` 이후 변경이며 공개 배포는 변경하지 않았다. `--phantom CT --browser --full-app`은 별도 tmpfs PostgreSQL·최소권한 LOGIN·실제 Control entrypoint·Mock IdP 환자 로그인·검사 선택·기존 환자 웹·공통 Viewer를 사용했다. 로컬 신뢰 HTTPS 및 VM-local 합성 PACS/Azure 경로이며 실제 배포 public ingress나 모바일 전체 앱 시험은 아니다.

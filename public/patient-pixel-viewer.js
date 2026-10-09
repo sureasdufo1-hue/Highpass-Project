@@ -59,10 +59,28 @@ export async function createPatientPixelSession({patientId,study,headers,origin=
   }catch(error){closed=true;token='';throw error;}
 }
 
+// Polling can replace the launcher while the modal is open. Resolve only the
+// same explicit action inside its original stable container, never another Study.
+export function capturePatientViewerFocus(document,focus=document.activeElement){
+  const attributes=['id','data-patient-view','data-action-view-study','data-patient-view-home'];
+  const identity=attributes.map(name=>[name,focus?.getAttribute?.(name)]).find(([,value])=>value);
+  const container=focus?.parentElement?.closest?.('[id]'),containerId=container?.id;
+  const usable=element=>element?.isConnected && !element.disabled && !element.closest?.('[inert]')
+    && element.getClientRects().length>0;
+  return ()=>{
+    if(usable(focus)){focus.focus();return;}
+    if(!identity)return;
+    const root=containerId?document.getElementById(containerId):document;
+    const replacement=Array.from(root?.querySelectorAll(`[${identity[0]}]`)??[])
+      .find(element=>element.getAttribute(identity[0])===identity[1] && usable(element));
+    replacement?.focus();
+  };
+}
+
 let activeClose;
 export async function openPatientPixelViewer({patientId,study,headers}){
   activeClose?.();
-  const focus=document.activeElement,dialog=document.createElement('dialog'),abort=new AbortController();
+  const restoreFocus=capturePatientViewerFocus(document),dialog=document.createElement('dialog'),abort=new AbortController();
   dialog.id='patient-pixel-viewer';dialog.setAttribute('aria-label','합성 의료영상 본인 열람');
   dialog.style.cssText='width:min(92vw,760px);max-height:90dvh;padding:24px;border:1px solid #cbd5e1;border-radius:16px;';
   const title=document.createElement('h2');title.textContent=(study.modality||'DICOM')+' · 합성 의료영상';
@@ -79,7 +97,7 @@ export async function openPatientPixelViewer({patientId,study,headers}){
   let session,url,timer,index=0,closed=false,busy=false;
   const clear=()=>{image.removeAttribute('src');image.hidden=true;if(url)URL.revokeObjectURL(url);url=undefined;};
   const close=()=>{if(closed)return;closed=true;abort.abort();clearTimeout(timer);session?.close();clear();dialog.close();dialog.remove();
-    if(activeClose===close)activeClose=undefined;focus?.focus();};
+    if(activeClose===close)activeClose=undefined;restoreFocus();};
   activeClose=close;closeButton.onclick=close;dialog.addEventListener('cancel',event=>{event.preventDefault();close();});
   const fail=error=>{clear();session?.close();previous.disabled=next.disabled=true;
     status.textContent=error.message==='PATIENT_VIEWER_EXPIRED'?'열람 기간이 만료되었습니다. 닫고 다시 승인받아 주세요.':

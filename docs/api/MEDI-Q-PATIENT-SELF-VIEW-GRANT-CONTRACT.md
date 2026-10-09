@@ -4,6 +4,8 @@
 
 ## 환자 Control 배포 준비 계약
 
+전체 앱 격리 검증은 같은 명령에 `--full-app`을 추가하면 실제 환자 웹 로그인/검사 선택을 사용한다. `--full-app --mobile`은 실제 모바일 PWA의 서명 로그인·개발용 PIN 화면 체험·검사 선택을375px 브라우저에서 검증한다. `--mobile`은 `--full-app` 없이는 시작 전 거부하며 `--full-app`은 `--browser --phantom CT|MR`를 요구한다. CT·MR 웹/모바일 최신 결과와 실패 이력은 현재 상태 문서를 참조한다. 공개 배포 ingress·native hardware·동의 철회 UI의 완료 증거가 아니며, Grant 철회 거부는 격리 SQL 상태 변경을 사용한다. 최신 증적 DRAFT / UNASSIGNED, 독립 검토·배포 활성화/rollback은 남아 있다.
+
 2026-10-10 검증 추가: `python scripts/patient-vault-integration-ops.py --phantom CT --browser` 및 `--phantom MR --browser`는 실제 VM-local Vault·고정 합성 PACS·격리 SQL에 공통 Viewer의 Chrome 검증을 연결한다. VM 암호는 concealed 로컬 입력에만 전달한다. `--browser` 단독 실행은 거부한다. 신뢰된 로컬 HTTPS에 자체 launcher/메모리 시험 PATIENT JWT를 제공하고 API/영상 요청은 실제 기존 handler에 전달한다. DPoP·서명 ingress·authority·release 정책을 mock PASS로 대체하지 않는다. 각 modality의 두 실제256×256 SOP와 Grant 철회 후 신규 접근 거부/PACS 읽기 불변을 확인했다. 현재 상태 문서의 신규 증적은 DRAFT / UNASSIGNED이다. 이는 실제 공개 배포 ingress·전체 환자/모바일 로그인 화면·동의 철회 API 또는12개 전체 pixel 검증이 아니다.
 
 명시적 준비 도구 `scripts/prepare-capstone-patient-database.js`는 기본 preflight이며 `--apply`에서만 변경한다. 별도 `capstone-patient-preparation.compose.yml`의 `patient-preparation` profile은 bootstrap admin/password와 새 전용 password 파일만 준비 컨테이너에 readonly mount한다. Control에 admin key를 전달하지 않는다. 신규 소스 이미지 재빌드 후 `docker compose -f infra/azure/capstone-control.compose.yml -f infra/azure/capstone-patient-preparation.compose.yml --profile patient-preparation run --rm patient-prepare`로 preflight한다. 승인된 실제 변경 시에만 같은 명령의 서비스 뒤에 `scripts/prepare-capstone-patient-database.js --apply`를 추가한다. 이번에는 이 명령을 배포 DB에서 실행하지 않았다.

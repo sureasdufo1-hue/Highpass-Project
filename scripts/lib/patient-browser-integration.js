@@ -14,7 +14,7 @@ async function connect(url){
   socket.addEventListener('message',event=>{const m=JSON.parse(event.data),p=pending.get(m.id);if(p){pending.delete(m.id);clearTimeout(p.timer);m.error?p.reject(new Error('PATIENT_BROWSER_CDP_ERROR')):p.resolve(m.result);}});
   await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{socket.close();reject(new Error('PATIENT_BROWSER_CDP_TIMEOUT'));},10000);socket.addEventListener('open',()=>{clearTimeout(timer);resolve();});socket.addEventListener('error',()=>{clearTimeout(timer);reject(new Error('PATIENT_BROWSER_CDP_ERROR'));});});
   return {close(){for(const p of pending.values()){clearTimeout(p.timer);p.reject(new Error('PATIENT_BROWSER_CLOSED'));}pending.clear();socket.close();},
-    send(method,params={}){return new Promise((resolve,reject)=>{const n=++id,timer=setTimeout(()=>{pending.delete(n);reject(new Error('PATIENT_BROWSER_CDP_TIMEOUT'));},10000);pending.set(n,{resolve,reject,timer});socket.send(JSON.stringify({id:n,method,params}));});}};
+    send(method,params={}){return new Promise((resolve,reject)=>{const n=++id,timer=setTimeout(()=>{pending.delete(n);reject(new Error('PATIENT_BROWSER_CDP_TIMEOUT_'+method.replaceAll('.','_').toUpperCase()));},10000);pending.set(n,{resolve,reject,timer});socket.send(JSON.stringify({id:n,method,params}));});}};
 }
 
 export async function createPatientBrowserProbe({forward}){
@@ -41,7 +41,7 @@ export async function createPatientBrowserProbe({forward}){
     server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
     if(profileCreated){assert.equal(path.dirname(profile),path.resolve('tmp'));await rm(profile,{recursive:true,force:true,maxRetries:10,retryDelay:100});profileCreated=false;}
   };
-  return {origin,stop,async verify({patientId,study,authentication,revoke,stats,fullApp=false,loginKey}){
+  return {origin,stop,async verify({patientId,study,authentication,revoke,stats,fullApp=false,mobile=false,loginKey}){
     const checks=[],start=Date.now();let failure=false,cleanup=false;
     fullAppMode=fullApp;setup=fullApp?undefined:{patientId,study,headers:{authorization:'Bearer '+authentication}};
     try{
@@ -53,19 +53,32 @@ export async function createPatientBrowserProbe({forward}){
       await until(async()=>{if(browser.exitCode!==null)throw new Error('PATIENT_BROWSER_EXITED');try{return(await fetch('http://127.0.0.1:'+port+'/json/version',{signal:AbortSignal.timeout(1000)})).ok;}catch{return false;}},15000);
       const tab=await(await fetch('http://127.0.0.1:'+port+'/json/new?about%3Ablank',{method:'PUT',signal:AbortSignal.timeout(3000)})).json();cdp=await connect(tab.webSocketDebuggerUrl);
       const evaluate=async expression=>{const r=await cdp.send('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(r.exceptionDetails)throw new Error('PATIENT_BROWSER_SCRIPT_ERROR');return r.result.value;};
-      await cdp.send('Page.enable');await cdp.send('Runtime.enable');await cdp.send('Page.bringToFront');await cdp.send('Emulation.setDeviceMetricsOverride',{width:840,height:860,deviceScaleFactor:1,mobile:false});
-      const navigation=await cdp.send('Page.navigate',{url:origin+(fullApp?'/hipass/':'/')});assert.equal(navigation.errorText,undefined);await until(()=>evaluate(fullApp?"!!document.querySelector('#capstone-login-key')":'window.probeReady===true'));
-      const click=async selector=>{await cdp.send('DOM.getDocument');const point=await evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);await cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...point});await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,...point});};
+      await cdp.send('Page.enable');await cdp.send('Runtime.enable');await cdp.send('Page.bringToFront');await cdp.send('Emulation.setDeviceMetricsOverride',{width:mobile?375:840,height:860,deviceScaleFactor:1,mobile});
+      const destination=origin+(fullApp?(mobile?'/mobile/':'/hipass/'):'/');let navigationObservationExpired=false;
+      try{const navigation=await cdp.send('Page.navigate',{url:destination});assert.equal(navigation.errorText,undefined);}
+      catch(error){if(error.message!=='PATIENT_BROWSER_CDP_TIMEOUT_PAGE_NAVIGATE')throw error;navigationObservationExpired=true;}
+      // A timed-out command observation does not prove the owned browser stopped.
+      // Inspect that same tab, without reissuing navigation or relaxing TLS.
+      await until(()=>evaluate(`location.href===${JSON.stringify(destination)}&&(${fullApp?"!!document.querySelector('#capstone-login-key')":'window.probeReady===true'})`));
+      if(navigationObservationExpired)checks.push('NAVIGATION_COMMAND_TIMEOUT_SAME_TAB_READY_CONFIRMED');
+      const click=async selector=>{await cdp.send('DOM.getDocument');await evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center',inline:'nearest',behavior:'instant'})`);await cdp.send('DOM.getDocument');const point=await evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);await cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...point});await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,...point});};
       const snapshot=()=>evaluate("(()=>{const d=document.querySelector('#patient-pixel-viewer'),i=d?.querySelector('img');return{open:!!d?.open,visible:!!i&&!i.hidden,width:i?.naturalWidth??0,height:i?.naturalHeight??0,status:d?.querySelector('[role=status]')?.textContent,focused:document.activeElement?.id}})()");
       const pixels=()=>evaluate("(()=>{const i=document.querySelector('#patient-pixel-viewer img'),c=document.createElement('canvas');c.width=i.naturalWidth;c.height=i.naturalHeight;const x=c.getContext('2d');x.drawImage(i,0,0);let sum=0;for(const p of x.getImageData(0,0,c.width,c.height).data)sum=(sum*31+p)>>>0;return sum})()");
       let launch='#launch';
       if(fullApp){
         await cdp.send('DOM.getDocument');await evaluate("(()=>{const s=document.querySelector('#capstone-patient-profile');s.value='PHANTOM';s.dispatchEvent(new Event('change',{bubbles:true}));})()");
         await click('#capstone-login-key');await cdp.send('Input.insertText',{text:loginKey});await click('#capstone-login button[type=submit]');
-        await until(()=>evaluate("!document.querySelector('#capstone-login')&&document.querySelector('#patient-read-state')?.dataset.state==='ready'"));
-        checks.push('ACTUAL_PATIENT_WEB_LOGIN_AND_SERVER_STUDY_LIST');
-        await click('#patient-portal-app .nav-button[data-route="images"]');
-        launch=`[data-patient-view="${study.studyInstanceUid}"]`;
+        if(mobile){
+          await until(()=>evaluate("!document.querySelector('#capstone-login')&&!!document.querySelector('#btn-auth-pin')"));
+          await click('#btn-auth-pin');
+          await until(()=>evaluate("document.querySelector('#auth-overlay')?.classList.contains('unlocked')&&!!document.querySelector('[data-action-cine]')"));
+          checks.push('ACTUAL_MOBILE_PWA_SIGNED_LOGIN_DEVELOPMENT_UNLOCK_SERVER_STUDIES');
+          await click('[data-tab="studies"]');launch=`[data-action-cine="${study.studyInstanceUid}"]`;
+        }else{
+          await until(()=>evaluate("!document.querySelector('#capstone-login')&&document.querySelector('#patient-read-state')?.dataset.state==='ready'"));
+          checks.push('ACTUAL_PATIENT_WEB_LOGIN_AND_SERVER_STUDY_LIST');
+          await click('#patient-portal-app .nav-button[data-route="images"]');launch=`[data-patient-view="${study.studyInstanceUid}"]`;
+        }
       }
       await click(launch);await until(async()=>{const s=await snapshot();if(!s.visible&&/못했습니다|열람할 수 없습니다/.test(s.status??''))throw new Error('PATIENT_BROWSER_NORMAL_DENIED');return s.visible&&s.width===256&&s.height===256;},35000);
       assert.match((await snapshot()).status,/1 \/ 12/);const first=await pixels();
@@ -80,7 +93,7 @@ export async function createPatientBrowserProbe({forward}){
       if(cdp)try{await writeFile(path.join(out,'failure.png'),Buffer.from((await cdp.send('Page.captureScreenshot',{format:'png'})).data,'base64'));}catch{}
     }
     finally{try{await stop();cleanup=true;}catch{failure=true;checks.push('OWNED_BROWSER_CLEANUP_NOT_VERIFIED');}
-      const result={status:failure?'FAIL':'PASS',review:'DRAFT / UNASSIGNED',checks,cleanup,elapsedMs:Date.now()-start,evidence:path.relative(process.cwd(),path.join(out,'result.json')).replaceAll('\\','/'),scope:fullApp?'actual patient web login/study selection/common Viewer with isolated full Control API and trusted local HTTPS; not public deployed ingress, mobile or production':'actual Chrome common Viewer, trusted local HTTPS, isolated SQL and configured A/B crypto; not full patient app/login, deployed ingress or production'};
+      const result={status:failure?'FAIL':'PASS',review:'DRAFT / UNASSIGNED',checks,cleanup,elapsedMs:Date.now()-start,evidence:path.relative(process.cwd(),path.join(out,'result.json')).replaceAll('\\','/'),scope:fullApp?(mobile?'actual mobile PWA signed login/development unlock/study selection/common Viewer at375px; not native hardware':'actual patient web login/study selection/common Viewer; not mobile')+' with isolated full Control API and trusted local HTTPS; not public deployed ingress or production':'actual Chrome common Viewer, trusted local HTTPS, isolated SQL and configured A/B crypto; not full patient app/login, deployed ingress or production'};
       await mkdir(out,{recursive:true});await writeFile(path.join(out,'result.json'),JSON.stringify(result,null,2));return result;
     }
   }};

@@ -19,6 +19,7 @@ const secret=()=>randomBytes(32).toString('hex'),name='hp-patient-full-app-'+ran
 const checks=[],start=Date.now(),password=secret(),appPassword=secret(),patientPassword=secret(),aKey=secret(),bKey=secret(),ingressSecret=secret(),loginKey=secret();
 let ownedId,admin,store,child,probe,aHttp,bHttp,controlPort,browserEvidence,grantHash,cleanup=false,phase='preflight';
 const modality=process.env.HIPASS_PATIENT_PROBE_PHANTOM,studyUid='1.2.826.0.1.3680043.10.5432.20261009.'+(modality==='CT'?'1':'2'),seriesUid=studyUid+'.1';
+const mobile=process.env.HIPASS_PATIENT_PROBE_MOBILE==='1';
 const docker=args=>new Promise((resolve,reject)=>{const process=spawn('docker',args,{env:{...globalThis.process.env,POSTGRES_PASSWORD:password},windowsHide:true,stdio:['ignore','pipe','pipe']});let text='',done=false;
   const finish=error=>{if(done)return;done=true;clearTimeout(timer);error?reject(error):resolve(text.trim());},timer=setTimeout(()=>{process.kill();finish(new Error('DOCKER_TIMEOUT'));},30000);
   process.stdout.on('data',data=>{text+=data;if(text.length>1024*1024){process.kill();finish(new Error('DOCKER_OUTPUT_LIMIT'));}});process.stderr.resume();process.on('error',finish);process.on('close',code=>finish(code===0?undefined:new Error('DOCKER_COMMAND_FAILED')));});
@@ -73,21 +74,21 @@ try{
     assert.equal(origin,'https://10.90.88.2:9443');const r=await fetch('http://127.0.0.1:'+aHttp.address().port+path,{headers:options.headers,signal:AbortSignal.timeout(35000)});return {status:r.status,contentType:r.headers.get('content-type'),body:Buffer.from(await r.arrayBuffer())};
   }}));bHttp.requestTimeout=40000;bHttp.headersTimeout=10000;await new Promise(resolve=>bHttp.listen(0,'127.0.0.1',resolve));
   phase='full-web-browser';
-  browserEvidence=await probe.verify({fullApp:true,patientId:'HP-TEST-PHANTOM-001',study:{studyInstanceUid:studyUid},loginKey,stats:()=>bridge('stats',aKey,{}),revoke:async()=>{
+  browserEvidence=await probe.verify({fullApp:true,mobile,patientId:'HP-TEST-PHANTOM-001',study:{studyInstanceUid:studyUid},loginKey,stats:()=>bridge('stats',aKey,{}),revoke:async()=>{
     assert.match(grantHash,/^[a-f0-9]{64}$/);const rows=(await admin.query("UPDATE capstone_patient_self_view_grants SET status='REVOKED' WHERE token_hash=$1 AND status='ACTIVE' RETURNING grant_id",[grantHash])).rows;assert.equal(rows.length,1);
   }});assert.equal(browserEvidence.status,'PASS');
-  checks.push('REAL_PATIENT_WEB_LOGIN_SELECTION_PACS_VAULT_AND_SQL_REVOCATION');
-  phase='final-audit';child.kill();await until(()=>child.exitCode!==null,5000);child=undefined;
+  checks.push(mobile?'REAL_MOBILE_PWA_LOGIN_SELECTION_PACS_VAULT_AND_SQL_REVOCATION':'REAL_PATIENT_WEB_LOGIN_SELECTION_PACS_VAULT_AND_SQL_REVOCATION');
+  phase='final-audit';child.kill();await until(()=>child.exitCode!==null || child.signalCode!==null,5000);child=undefined;
   store=new PostgresStore(uri('hipass_app',appPassword));await store.load();assert.equal(new HipassService(store).verifyAuditIntegrity().ok,true);
   const released=(await admin.query("SELECT count(*)::int AS n FROM capstone_patient_key_releases r JOIN capstone_patient_self_view_grants g ON r.grant_id=g.grant_id WHERE g.token_hash=$1 AND g.status='REVOKED' AND r.status='CONSUMED'",[grantHash])).rows[0].n;assert.equal(released,2);assert.equal((await bridge('stats',aKey,{})).pacsReads,2);
   checks.push('PERSISTED_HASH_CHAIN_REVOKED_GRANT_TWO_RELEASES_AND_READ_COUNT');
 }catch(error){process.exitCode=1;checks.push('FAIL_OR_NOT_VERIFIED:'+phase+':'+(/^[A-Z_]+$/.test(error.message)?error.message:error.code??error.name));}
 finally{
-  if(child){child.kill();try{await until(()=>child.exitCode!==null,5000);}catch{process.exitCode=1;}}
+  if(child){child.kill();try{await until(()=>child.exitCode!==null || child.signalCode!==null,5000);}catch{process.exitCode=1;}}
   await probe?.stop().catch(()=>{process.exitCode=1;});for(const server of [bHttp,aHttp])if(server){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
   await store?.close().catch(()=>{process.exitCode=1;});await admin?.end().catch(()=>{process.exitCode=1;});
   try{const rows=JSON.parse(await docker(['inspect',name]));assert.equal(rows.length,1);assert.equal(rows[0].Name,'/'+name);assert.equal(rows[0].Config.Labels['highpass.purpose'],'isolated-patient-full-app');assert.equal(rows[0].HostConfig.AutoRemove,true);assert.equal(rows[0].Mounts.length,0);
     await docker(['stop','--timeout','3',rows[0].Id]).catch(()=>{});await until(async()=>await docker(['ps','-aq','--filter','name=^'+name+'$'])==='',10000);cleanup=true;
   }catch{process.exitCode=1;checks.push('OWNED_DATABASE_CLEANUP_NOT_VERIFIED');}
-  console.log(JSON.stringify({status:process.exitCode?'FAIL':'PASS',review:'DRAFT / UNASSIGNED',crypto:'VM_LOCAL_ACTUAL_AZURE_KEY_VAULT',data:'ACTUAL_A_SYNTHETIC_PACS_'+modality,scope:'real patient web, full Control API, isolated synthetic SQL, trusted local HTTPS, VM-local PACS/Vault; not deployed public ingress, mobile, production or full MVP',checks,browser:browserEvidence,cleanup,elapsedMs:Date.now()-start}));
+  console.log(JSON.stringify({status:process.exitCode?'FAIL':'PASS',review:'DRAFT / UNASSIGNED',crypto:'VM_LOCAL_ACTUAL_AZURE_KEY_VAULT',data:'ACTUAL_A_SYNTHETIC_PACS_'+modality,scope:(mobile?'actual mobile PWA, development unlock; not native hardware':'real patient web; not mobile')+', full Control API, isolated synthetic SQL, trusted local HTTPS, VM-local PACS/Vault; not deployed public ingress, production or full MVP',checks,browser:browserEvidence,cleanup,elapsedMs:Date.now()-start}));
 }

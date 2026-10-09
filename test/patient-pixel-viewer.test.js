@@ -2,10 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
-import {createPatientPixelSession} from '../public/patient-pixel-viewer.js';
+import {createPatientPixelSession,capturePatientViewerFocus} from '../public/patient-pixel-viewer.js';
 const now=Date.now(),iat=Math.floor(now/1000);
 const token='header.'+Buffer.from(JSON.stringify({iat,exp:iat+300})).toString('base64url')+'.signature';
 const study={studyInstanceUid:'1.2.3',series:[{seriesInstanceUid:'1.2.3.1'}]};
+test('viewer restores a replaced launcher only in its original container and exact Study',()=>{
+  const container={id:'studies',querySelectorAll:()=>candidates};let candidates=[],focused;
+  const button=(value,options={})=>({isConnected:true,disabled:false,
+    getAttribute:name=>name==='data-patient-view'?value:null,
+    parentElement:{closest:()=>container},closest:()=>null,getClientRects:()=>[{}],focus(){focused=this;},...options});
+  const original=button('1.2.3'),document={activeElement:original,getElementById:id=>id==='studies'?container:null};
+  const restore=capturePatientViewerFocus(document);restore();assert.equal(focused,original);
+  original.isConnected=false;focused=undefined;
+  const other=button('1.2.4'),disabled=button('1.2.3',{disabled:true}),hidden=button('1.2.3',{getClientRects:()=>[]}),replacement=button('1.2.3');
+  candidates=[other,disabled,hidden];restore();assert.equal(focused,undefined);
+  candidates.push(replacement);restore();assert.equal(focused,replacement);
+  focused=undefined;document.getElementById=()=>null;restore();assert.equal(focused,undefined);
+});
 function fixture({foreign=false,status=200}={}){
   const calls=[];
   const fetcher=async(url,options)=>{

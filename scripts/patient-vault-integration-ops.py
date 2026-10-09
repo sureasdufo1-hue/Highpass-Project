@@ -51,11 +51,14 @@ def main():
     parser.add_argument("--phantom", choices=["CT", "MR"])
     parser.add_argument("--browser", action="store_true")
     parser.add_argument("--full-app", action="store_true")
+    parser.add_argument("--mobile", action="store_true")
     args = parser.parse_args()
     if args.browser and not args.phantom:
         parser.error("--browser requires --phantom CT or MR")
     if args.full_app and (not args.browser or not args.phantom):
         parser.error("--full-app requires --browser and --phantom CT or MR")
+    if args.mobile and not args.full_app:
+        parser.error("--mobile requires --full-app")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_id = secrets.token_hex(6)
     directory = ROOT / "artifacts/workstation" / ("patient-vault-" + stamp + "-" + run_id)
@@ -213,7 +216,7 @@ def main():
         threading.Thread(target=server.serve_forever, daemon=True).start()
         child = subprocess.Popen(["node", "scripts/verify-patient-full-app.js" if args.full_app else "scripts/verify-patient-self-view-postgres.js"], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             env={**os.environ, "HIPASS_PATIENT_PROBE_BRIDGE": "http://127.0.0.1:" + str(server.server_port),
-                 "HIPASS_PATIENT_PROBE_SECRET": bridge_key, "HIPASS_PATIENT_PROBE_KEY_ID": registry["keyId"], "HIPASS_PATIENT_PROBE_PHANTOM": args.phantom or "", "HIPASS_PATIENT_PROBE_BROWSER": "1" if args.browser else "0"})
+                 "HIPASS_PATIENT_PROBE_SECRET": bridge_key, "HIPASS_PATIENT_PROBE_KEY_ID": registry["keyId"], "HIPASS_PATIENT_PROBE_PHANTOM": args.phantom or "", "HIPASS_PATIENT_PROBE_BROWSER": "1" if args.browser else "0", "HIPASS_PATIENT_PROBE_MOBILE": "1" if args.mobile else "0"})
         # Nonsecret fixed synthetic profile. Original no-argument one-pixel gate stays available.
         stdout, _stderr = child.communicate(timeout=240 if args.browser else 150)
         summary = json.loads(stdout)
@@ -255,7 +258,11 @@ def main():
         if trust:
             trust.close()
         credential = None
-    result = {"review": "DRAFT / UNASSIGNED", "scope": "VM-local actual Azure patient crypto with isolated SQL; " + ("actual A synthetic PACS " + args.phantom if args.phantom else "one-pixel fixture") + ("; actual Chrome common Viewer via trusted local HTTPS" if args.browser else "; not browser") + "; not full app/login/public edge deployment",
+    browser_scope = ("; actual mobile PWA login/development unlock/selection and common Viewer via trusted local HTTPS; not native hardware/public edge deployment" if args.mobile else
+                     "; actual patient web login/selection and common Viewer via trusted local HTTPS; not mobile/public edge deployment" if args.full_app else
+                     "; actual Chrome common Viewer via trusted local HTTPS; not full app/login/public edge deployment" if args.browser else
+                     "; not browser/full app/login/public edge deployment")
+    result = {"review": "DRAFT / UNASSIGNED", "scope": "VM-local actual Azure patient crypto with isolated SQL; " + ("actual A synthetic PACS " + args.phantom if args.phantom else "one-pixel fixture") + browser_scope,
               "checks": checks, "operations": operations, "integration": summary,
               "status": "FAIL" if any(c["status"] == "FAIL" for c in checks) else "PASS" if len(checks) == 7 and all(c["status"] == "PASS" for c in checks) else "NOT VERIFIED"}
     (directory / "result.json").write_text(json.dumps(result, indent=2), encoding="utf8")
