@@ -30,6 +30,7 @@ import { createCapstoneMockIdp } from "./capstone-mock-idp.js";
 import { registerPhantomCatalog, isPhantomCatalogCommitted } from "./capstone-phantom-catalog.js";
 import { createKeyReleaseHttpHandler, keyReleasePaths } from "./key-release-http-handler.js";
 import { PostgresKeyReleaseRepository } from "./consent-bound-key-release.js";
+import {patientKeyReleasePaths} from './patient-key-release-http-handler.js';
 import { createPatientSelfViewGrantRuntime } from './patient-self-view-grant-runtime.js';
 import { createPatientSelfViewGrantHttpHandler, createPatientGrantAuthenticationAudit } from './patient-self-view-grant-http-handler.js';
 
@@ -897,6 +898,10 @@ async function routeDicomweb(request, response, url) {
 
 async function routeGateway(request, response, url) {
   const principal = authenticateRequest(request);
+  if(patientKeyReleasePaths.includes(url.pathname)){
+    if(!patientGrantRuntime?.routeKeyRelease){request.resume();sendJson(response,503,{error:'PATIENT_KEY_RELEASE_DISABLED'});return;}
+    await patientGrantRuntime.routeKeyRelease(request,response,url,principal);return;
+  }
   if(['/gateway/patient-self-view/authorize','/gateway/patient-self-view/ready'].includes(url.pathname)){
     if(!patientGrantRuntime){request.resume();sendJson(response,503,{active:false,reason:'PATIENT_GRANT_DISABLED'});return;}
     requireInternalServiceScope(principal,'gateway:patient-self-view-authorize');

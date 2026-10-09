@@ -23,6 +23,21 @@ test('patient B metadata is default-off, forwards only to A and never borrows do
   assert.equal((await enabled(route+'/1.2.3.4/rendered')).status,503);
   assert.equal((await enabled(route+'/1.2.3.4/download')).status,400);assert.equal(calls.length,1);
 });
+
+test('patient B pixel branch requires its own adapter, binds original token and clears transient bytes',async t=>{
+  const path='/patient-dicomweb/studies/1.2/series/1.2.3/instances/1.2.3.4/rendered';
+  let output,deny=false;
+  const get=await start(t,async()=>({status:200,contentType:'application/vnd.highpass.encrypted-dicom+json',body:Buffer.from('encrypted contract fixture')}),{
+    patientSelfViewEnabled:true,patientImageDecryption:{openPatient:async(result,requestPath,{token})=>{
+      assert.equal(requestPath,path);assert.equal(token,'synthetic-original-token');if(deny)throw new Error('PATIENT_GRANT_INACTIVE');
+      output=Buffer.from('synthetic browser bytes');return {contentType:'image/png',body:output};
+    }}
+  });
+  const response=await get(path,{headers:{authorization:'DPoP synthetic-original-token',dpop:'proof'}});
+  assert.equal(response.status,200);assert.equal(await response.text(),'synthetic browser bytes');assert.ok(output.every(v=>v===0));
+  deny=true;const rejected=await get(path,{headers:{authorization:'DPoP synthetic-original-token',dpop:'proof'}});
+  assert.equal(rejected.status,503);assert.ok(!(await rejected.text()).includes('synthetic browser bytes'));
+});
 test("B portal activates the existing UI login and denies secret query, internal service routes and clinical static files", async t => {
   const get = await start(t, () => { throw new Error("Unexpected upstream"); });
   const page = await get("/hipass/");

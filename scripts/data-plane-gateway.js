@@ -2,6 +2,7 @@ import https from "node:https";
 import { readFileSync } from "node:fs";
 import { createDataPlaneHandler } from "../src/data-plane-gateway.js";
 import { createPatientDataPlaneHandler } from "../src/patient-data-plane-gateway.js";
+import {createPatientImageEncryptor} from '../src/patient-encrypted-transfer.js';
 import { createCapstoneImageEncryptor } from "../src/capstone-encrypted-transfer.js";
 import { hospitalKeyConfig } from "./capstone-hospital-key-config.js";
 import { createRuntimeDiagnosticFactory } from "../src/capstone-runtime-diagnostics.js";
@@ -20,11 +21,13 @@ let patientHandler=null;
 if(process.env.CAPSTONE_PATIENT_SELF_VIEW_GATEWAY==='1'){
   const patientToken=file('PATIENT_DATA_PLANE_SERVICE_TOKEN_FILE').toString('utf8').trim();
   if(patientToken===file('DATA_PLANE_SERVICE_TOKEN_FILE').toString('utf8').trim())throw new Error('PATIENT_GATEWAY_CREDENTIAL_MUST_BE_SEPARATE');
+  const patientCrypto=process.env.CAPSTONE_PATIENT_IMAGE_ENCRYPTION_REQUIRED==='1';
+  if(patientCrypto && !crypto)throw new Error('PATIENT_KEY_CONFIG_REQUIRED');
   patientHandler=createPatientDataPlaneHandler({publicBaseUrl:required('DATA_PLANE_PUBLIC_BASE_URL'),
     controlOrigin:required('DATA_PLANE_CONTROL_ORIGIN'),orthancOrigin:required('DATA_PLANE_ORTHANC_ORIGIN'),serviceToken:patientToken,
     sourceHospitalId:required('PATIENT_DATA_PLANE_SOURCE_HOSPITAL_ID'),controlTls:{ca:file('DATA_PLANE_CONTROL_CA_FILE')},
-    orthancTls:{ca:file('DATA_PLANE_ORTHANC_CA_FILE'),cert:file('DATA_PLANE_ORTHANC_CERT_FILE'),key:file('DATA_PLANE_ORTHANC_KEY_FILE'),servername:required('DATA_PLANE_ORTHANC_SERVERNAME')}
-    // Patient Key Vault adapter is not wired yet: pixels fail closed before PACS read.
+    orthancTls:{ca:file('DATA_PLANE_ORTHANC_CA_FILE'),cert:file('DATA_PLANE_ORTHANC_CERT_FILE'),key:file('DATA_PLANE_ORTHANC_KEY_FILE'),servername:required('DATA_PLANE_ORTHANC_SERVERNAME')},
+    ...(patientCrypto?{patientImageEncryptionFactory:control=>createPatientImageEncryptor({...crypto,control})}:{})
   });
 }
 const server = https.createServer({ cert: file("DATA_PLANE_TLS_CERT_FILE"), key: file("DATA_PLANE_TLS_KEY_FILE") },(request,response)=>{

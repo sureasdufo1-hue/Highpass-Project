@@ -5,7 +5,7 @@ import { parseDataPlaneRequest } from "./data-plane-authorization.js";
 import { parsePatientDataPlaneRequest } from './patient-self-view-authorization.js';
 import { beginRuntimeDiagnostic } from "./capstone-runtime-diagnostics.js";
 
-export function createCapstoneBPortal({ root, ca, origin = "https://192.168.111.149:9443", transport = boundedHttps, encryptionRequired = false, imageDecryption, diagnosticFactory, patientSelfViewEnabled=false }) {
+export function createCapstoneBPortal({ root, ca, origin = "https://192.168.111.149:9443", transport = boundedHttps, encryptionRequired = false, imageDecryption, diagnosticFactory, patientSelfViewEnabled=false,patientImageDecryption }) {
   if (origin !== "https://192.168.111.149:9443") throw new Error("CAPSTONE_PRESENTATION_ORIGIN_MISMATCH");
   root = path.resolve(root);
   if (encryptionRequired && typeof imageDecryption?.open !== "function") throw new Error("IMAGE_DECRYPTION_REQUIRED");
@@ -31,7 +31,7 @@ export function createCapstoneBPortal({ root, ca, origin = "https://192.168.111.
       if(patientRoute){
         if(patientSelfViewEnabled!==true){request.resume();return fail(503,'PATIENT_GATEWAY_DISABLED');}
         let parsed;try{parsed=parsePatientDataPlaneRequest({method:request.method,path:raw},origin);}catch{request.resume();return fail(400,'PATIENT_ROUTE_INVALID');}
-        if(['instance','frame'].includes(parsed.kind) && !pathname.endsWith('/metadata')){request.resume();return fail(503,'PATIENT_KEY_RELEASE_NOT_READY');}
+        if(['instance','frame'].includes(parsed.kind) && !pathname.endsWith('/metadata') && typeof patientImageDecryption?.openPatient!=='function'){request.resume();return fail(503,'PATIENT_KEY_RELEASE_NOT_READY');}
       }
       if (patientRoute || pathname.startsWith("/api/") || pathname.startsWith("/dicomweb/")) {
         if (!["GET", "POST", "PUT", "PATCH", "DELETE"].includes(request.method)) { request.resume(); return fail(405, "METHOD_NOT_ALLOWED"); }
@@ -48,6 +48,18 @@ export function createCapstoneBPortal({ root, ca, origin = "https://192.168.111.
         const upstream = patientRoute || pathname.startsWith("/dicomweb/") ? "https://10.90.88.2:9443" : "https://10.90.88.1";
         diagnostic.stage(pathname.startsWith("/dicomweb/") ? "UPSTREAM_IMAGE" : "UPSTREAM_METADATA");
         const result = await transport(upstream, raw, { tls: { ca }, method: request.method, headers, body: chunks.length ? Buffer.concat(chunks) : undefined, timeoutMs: 10000, maxBytes: 33554432 });
+        if(patientRoute && result.status===200){
+          const route=parsePatientDataPlaneRequest({method:request.method,path:raw},origin);
+          if(['instance','frame'].includes(route.kind) && !pathname.endsWith('/metadata')){
+            const match=headers.authorization?.match(/^DPoP ([A-Za-z0-9_.-]+)$/);
+            if(!match)return fail(403,'PATIENT_PROOF_REQUIRED');
+            const decoded=await patientImageDecryption.openPatient(result,raw,{token:match[1]});
+            if(response.destroyed){decoded.body.fill(0);return;}
+            response.once('close',()=>decoded.body.fill(0));diagnostic.finish(200);
+            response.writeHead(200,{'content-type':decoded.contentType,'cache-control':'no-store','content-disposition':'inline'});
+            response.end(decoded.body,()=>decoded.body.fill(0));return;
+          }
+        }
         if (encryptionRequired && result.status === 200 && pathname.startsWith("/dicomweb/") && !pathname.endsWith("/metadata")) {
           const route = parseDataPlaneRequest({ method: request.method, path: raw }, origin);
           if (["instance", "frame"].includes(route.kind)) {

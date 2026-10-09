@@ -2,6 +2,10 @@
 
 관측일: 2026-10-09 (Asia/Seoul). 신규 증적: DRAFT / UNASSIGNED.
 
+### 커밋 전 로컬 통합 확인 — 2026-10-09
+
+`node scripts/verify-patient-self-view-postgres.js` exit0, 15개 확인 항목 PASS, 20.528초, grants4/audits53/proofs5, cleanup=true. 실제 격리 PostgreSQL·JWT/DPoP·Control HTTP·A/B handler와 AES-GCM/로컬 RSA fixture를 연결하고 재사용·변조·철회 후 PACS fixture 조회 증가 없음 및 감사 chain을 확인했다. PACS 응답은 1픽셀 합성 PNG이며 실제 Azure Key Vault·TLS·배포·CT/MRI·브라우저 종단 증거가 아니다. 신규 증적은 DRAFT / UNASSIGNED이며 전체 MVP/v3 완료로 승격하지 않는다.
+
 ## 현재 상태 — 단일 사용자 흐름 우선 / 2026-10-09 환자 capability 최종 회귀 반영
 
 이 절이 발표 환경의 현재 상태 권위 위치다. 아래 `과거 이력`의 현재·미배포·실행 중 설명은 당시 기록이며 현재 상태로 해석하지 않는다. 기존 v3 Acceptance/P0 조건은 축소하지 않는다.
@@ -25,6 +29,18 @@
 다음 작업 한 개: **환자 본인 CT Grant 저장을 기존 감사 hash chain/saveQueue와 안전하게 연결하고 DPoP 발급까지 검증**한다. 사용자 “권고안 실행”으로 S1 방향을 채택했다. 현재 환자 웹/모바일 canvas는 모의 그림이며 의료진 성공을 본인 열람 성공으로 승계하지 않는다. 새 의료진 권한 주입/가짜 병원 간 동의/암호화 우회 없이 authority·소유권·키 발급 분리를 유지한다.
 
 ### 이번 로컬 하위 작업 — Grant 저장 경계 / DRAFT · UNASSIGNED
+
+환자 crypto adapter 추가 후 최종 전체 Node **830/830 PASS/exit0/42.1112171초**. 최신 소스 SHA·명령·fixture 한계: `artifacts/workstation/patient-crypto-local-20261009.json`. Secret findings0(2026-10-09T13:07:54.601Z), 문법/diff 검사 exit0. 아래826/826 이하는 이전 단계 이력이다.
+
+**최신 환자 crypto A/B adapter 로컬 구현**: patient-encrypted-transfer.js의 별도 PATIENT_IMAGE manifest와 AES-GCM AAD를 만들고 기존 Azure RSA-OAEP-256 protocol client를 재사용했다. consentId surrogate 없이 Grant/actor hash/기관/Gateway/감사 세션/path/SOP/deadline·원본 hash와 cipher/manifest/wrapped-key hash를 결속한다. B는 원래 요청 token hash도 비교하며 별도 patient HTTP release의 pre/post unwrap·원자적 consume을 요구한다. explicit A/B crypto profile에 연결했으나 flags는0/실행 VM 변경 없음. 선택17/17 PASS/exit0/458.1245ms: 실제 로컬 RSA/AES 연산 왕복·변조·다른 token/SOP/type·재사용·unwrap 중 철회·audit 장애·B 전용 pixel branch/transient output 정리. **RSA fixture는 Azure 서비스가 아니고 auth/ledger는 doubles, body는 합성 bytes여서 실제 SQL+crypto 종단/PACS pixel/VM/브라우저 증거가 아니다**. 다음 작업 하나는 실제 SQL/HTTP/crypto를 한 흐름으로 연결하고 실제 Key Vault 및 후보 A/B 배포 검증으로 넘어가는 것이다. 관련 FR-014~036/037~041. 신규 증적 DRAFT / UNASSIGNED, 전체 MVP/v3 미완료. 이번 변경 commit/push/배포 안 함.
+
+환자 release HTTP 추가 후 최종 전체 Node **826/826 PASS/exit0/42.5657779초**. 최신 source SHA·시험 경계: `artifacts/workstation/patient-release-http-20261009.json`. 아래824/824 이하와 “HTTP 미연결”은 이전 단계 이력이며, 위 handler의 loopback 범위만 해소됐다. public edge/실제 runtime/crypto 완료로 승계하지 않는다.
+
+**최신 환자 KeyRelease A/B HTTP 인증 경계**: 새 B internal service key는 patient-package-key-release scope와 고정 hospital-b-portal 신원만 제공한다. A/doctor/generic/다른 key와 동일값을 거부한다. patient release handler는 A wrap/prepare와 B authorize를 분리하고 body 추가 신원·권한 속성을400으로 거부한다. server/runtime에 default-off 연결했고 opt-in에는 versioned key·036 ledger와 SELECT/INSERT/상태 column UPDATE, metadata UPDATE/DELETE 부재를 확인한다. PostgreSQL skill의 최소권한 기준을 사용했다. 실제 DB+loopback HTTP14항목 PASS/exit0/23.774초(grants4/audits42/proofs4, cleanup=true), 선택16/16 PASS/exit0/453.1231ms. no-store·32KiB·strict UTF8·5초 body deadline·서비스 scope/subject/authMethod/source·403/503 구분을 구현했다. 실제 dedicated login startup·public TLS edge·patient Key Vault/암호화 pixel·VM 배포는 아직 미완료/미검증이다. Secret findings0(2026-10-09T13:01:17.873Z), JS문법/diff 검사 exit0. 기존 실행 DB/VM/Cloud 변경 없음. 다음 작업 한 개: **patient Azure encrypt/decrypt adapter를 이 release 계약에 연결하고 실제 pixel 전달을 검증**한다. 신규 증적 DRAFT / UNASSIGNED. 전체 MVP/v3 완료 아님.
+
+환자 KeyRelease ledger 추가 후 최종 전체 Node **824/824 PASS/exit0/42.6108249초**. 최신 source SHA와 증거 한계: `artifacts/workstation/patient-key-release-ledger-20261009.json`. 아래819/819 이하의 실행은 이전 코드 이력이다.
+
+**최신 환자 KeyRelease policy/실제 SQL 경계**: HEAD `b53ee06e6a93ed4da7716cc5c5d14dc48cee3abd` + 이번 변경 dirty. Git fetch의 자동 maintenance는 종료 exit0, 직전 체크포인트 push 완료를 확인했다. `PatientBoundKeyRelease`·별도 ledger migration036·bound repository를 구현했다. 영수증과 current patient authority·SOP·Gateway·3개 package hash를 결속하며 PENDING은 감사 저장과 live 재검증 후에만 PREPARED로 활성화한다. PRECHECKED 이후 atomic consume은 한 번만 성공하고 감사 실패 후 상태를 되돌리지 않는다. 별도 PG 역할은 SELECT/INSERT와 status/consumed_at UPDATE만 부여했다(격리 시험 역할; 실행 DB 변경 없음). 선택14/14 PASS/exit0/179.4697ms, 최종 실제 격리 PG13항목 PASS/exit0/15.652초(grants4/audits39/proofs4, cleanup=true). 먼저16.046초 PASS 후 중앙 감사 enum 적용 기준으로 재실행했다. DB 재조회 hash chain 확인, SQL 합성 철회·hash 변조·precheck 전 소비 거부·동시 consume 한 건·감사 장애 PENDING 확인이다. 실제 Azure patient wrap/unwrap·HTTP release 인증 경계·A/B listener·환자 Viewer는 아직 미완료/미검증이다. 준비 감사와 상태 변경은 단일 transaction이 아니고 fail-closed orphan 상태를 허용하며 전체 HA/정확히 한 번 전달 주장을 하지 않는다. 관련 FR-014~025/026~036/037~041. Secret findings0(2026-10-09T12:56:13.858Z), 문법 검사 exit0. 다음 작업 한 개: **전용 A/B release 인증 경계와 patient Key Vault adapter를 연결해 실제 암호화 pixel 전달**. 신규 증적 DRAFT / UNASSIGNED, 이번 추가 변경 commit/push/배포 안 함.
 
 환자 A/B transport 추가 후 최종 전체 Node **819/819 PASS/exit0/42.6429015초**. 소스 hash·시험 경계·미완료 범위: `artifacts/workstation/patient-transport-local-20261009.json`. 아래811/811 및808/808은 이전 구현 상태의 회귀 이력이다.
 

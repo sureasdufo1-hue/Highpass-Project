@@ -4,6 +4,8 @@ import { createPatientSelfViewPersistence } from './patient-self-view-audit-adap
 import { PatientSelfViewGrantService } from './patient-self-view-grant-service.js';
 import { PatientSelfViewAuthorization } from './patient-self-view-authorization.js';
 import { InternalServiceProvider, requireInternalServiceScope } from './auth.js';
+import {PatientBoundKeyRelease,PostgresPatientKeyReleaseRepository} from './patient-bound-key-release.js';
+import {createPatientKeyReleaseHttpHandler} from './patient-key-release-http-handler.js';
 
 export async function createPatientSelfViewGrantRuntime({store,service,env=process.env}) {
   if(env.HIPASS_CAPSTONE_PATIENT_GRANTS!=='1')return null;
@@ -14,6 +16,8 @@ export async function createPatientSelfViewGrantRuntime({store,service,env=proce
     throw new Error('PATIENT_GRANT_PROFILE_REQUIRED');
   requireInternalServiceScope(new InternalServiceProvider(env).authenticate({headers:{'x-hipass-service-token':env.HIPASS_PATIENT_SELF_VIEW_SERVICE_TOKEN}}),
     'gateway:patient-self-view-authorize');
+  if(env.HIPASS_CAPSTONE_PATIENT_KEY_RELEASE==='1')requireInternalServiceScope(
+    new InternalServiceProvider(env).authenticate({headers:{'x-hipass-service-token':env.HIPASS_PATIENT_KEY_RELEASE_SERVICE_TOKEN}}),'gateway:patient-package-key-release');
   const pool=new pg.Pool({connectionString:env.HIPASS_PATIENT_AUTHORITY_DATABASE_URL,max:2,
     connectionTimeoutMillis:5000,query_timeout:5000,statement_timeout:4000,
     options:'-c lock_timeout=2000 -c search_path=public,pg_catalog'});
@@ -38,7 +42,19 @@ export async function createPatientSelfViewGrantRuntime({store,service,env=proce
       authority:new PatientSelfViewAuthorityReader({pool,enabled:true,allowIssuedGrant:true}),service,
       keyProvider:service.dicomTokenKeyProvider,publicBaseUrl:service.publicBaseUrl,
       sourceHospitalId:env.HIPASS_DATA_PLANE_SOURCE_HOSPITAL_ID,enabled:true});
-    return {issuer,authorizer,close:()=>pool.end()};
-  } catch(error){await pool.end();throw new Error(['PATIENT_AUTHORITY_ROLE_UNSAFE','PATIENT_AUTHORITY_MIGRATION_REQUIRED'].includes(error.message)
+    let routeKeyRelease=null;
+    if(env.HIPASS_CAPSTONE_PATIENT_KEY_RELEASE==='1'){
+      const permissions=(await pool.query(`SELECT has_table_privilege(current_user,'public.capstone_patient_key_releases','SELECT')
+        AND has_table_privilege(current_user,'public.capstone_patient_key_releases','INSERT')
+        AND has_column_privilege(current_user,'public.capstone_patient_key_releases','status','UPDATE')
+        AND has_column_privilege(current_user,'public.capstone_patient_key_releases','consumed_at','UPDATE')
+        AND NOT has_column_privilege(current_user,'public.capstone_patient_key_releases','metadata','UPDATE')
+        AND NOT has_table_privilege(current_user,'public.capstone_patient_key_releases','DELETE') AS ready`)).rows[0];
+      if(permissions?.ready!==true)throw new Error('PATIENT_RELEASE_ROLE_UNSAFE');
+      const policy=new PatientBoundKeyRelease({authorizer,service,repository:new PostgresPatientKeyReleaseRepository(pool),keyId:env.HIPASS_PATIENT_KEY_VAULT_KEY_ID});
+      routeKeyRelease=createPatientKeyReleaseHttpHandler({policy,service,sourceHospitalId:env.HIPASS_DATA_PLANE_SOURCE_HOSPITAL_ID});
+    }
+    return {issuer,authorizer,routeKeyRelease,close:()=>pool.end()};
+  } catch(error){await pool.end();throw new Error(['PATIENT_AUTHORITY_ROLE_UNSAFE','PATIENT_AUTHORITY_MIGRATION_REQUIRED','PATIENT_RELEASE_ROLE_UNSAFE'].includes(error.message)
     ?error.message:'PATIENT_AUTHORITY_STARTUP_UNAVAILABLE');}
 }

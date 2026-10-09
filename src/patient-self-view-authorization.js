@@ -40,6 +40,20 @@ export class PatientSelfViewAuthorization {
     if(current.statusCode===503)throw new Error('AUTHORITY_DATABASE_UNAVAILABLE');
     return current.decision==='ALLOWED' && current.scope.refId===row.ref_id && current.scope.ownershipRevision===row.ownership_revision ? current : null;
   }
+  async revalidatePreparationReceipt(value) {
+    if(!this.enabled || typeof value!=='string' || value.length>8192)throw new Error('PATIENT_RECEIPT_INVALID');
+    const parts=value.split('.');if(parts.length!==2)throw new Error('PATIENT_RECEIPT_INVALID');
+    const expected=Buffer.from(createHmac('sha256',this.receiptKey).update(parts[0]).digest('base64url')),supplied=Buffer.from(parts[1]);
+    if(supplied.length!==expected.length || !timingSafeEqual(supplied,expected))throw new Error('PATIENT_RECEIPT_INVALID');
+    const receipt=JSON.parse(Buffer.from(parts[0],'base64url'));
+    if(receipt.type!=='PATIENT_RESPONSE_PREPARATION' || !Number.isSafeInteger(receipt.deadline)
+      || this.clock()>=receipt.deadline || receipt.deadline>receipt.claims.exp*1000)throw new Error('PATIENT_RECEIPT_EXPIRED');
+    const route=parsePatientDataPlaneRequest({method:'GET',path:receipt.path},this.publicBaseUrl);
+    const key=typeof this.keyProvider?.getKeyAsync==='function'?await this.keyProvider.getKeyAsync(receipt.kid):this.keyProvider?.getKey(receipt.kid);
+    if(!key || !['ACTIVE','VERIFY_ONLY'].includes(key.status) || key.retiredAt)throw new Error('PATIENT_SIGNING_KEY_INACTIVE');
+    if(!await this.readLive(receipt.claims,receipt.tokenHash) || this.clock()>=receipt.deadline)throw new Error('PATIENT_GRANT_INACTIVE');
+    return {...receipt,route};
+  }
   async ready(input,caller) {
     if(!this.enabled)return {accepted:false,statusCode:503,reason:'PATIENT_GRANT_DISABLED'};
     let receipt;

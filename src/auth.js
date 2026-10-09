@@ -44,6 +44,11 @@ export class InternalServiceProvider extends AuthenticationProvider {
     const dataPlane = this.env.HIPASS_DATA_PLANE_SERVICE_TOKEN;
     const keyRelease = this.env.HIPASS_KEY_RELEASE_SERVICE_TOKEN;
     const patientView = this.env.HIPASS_PATIENT_SELF_VIEW_SERVICE_TOKEN;
+    const patientRelease=this.env.HIPASS_PATIENT_KEY_RELEASE_SERVICE_TOKEN;
+    const isPatientRelease=typeof serviceToken==='string' && patientRelease && safeEqual(serviceToken,patientRelease);
+    if(isPatientRelease && (Buffer.byteLength(patientRelease)<32 || /[\r\n]/.test(patientRelease)
+      || [patientView,keyRelease,dataPlane,privacy,this.env.HIPASS_INTERNAL_SERVICE_TOKEN].includes(patientRelease)))
+      throw new AuthError(503,'PATIENT_RELEASE_SERVICE_CONFIGURATION_INVALID');
     const isPatientView = typeof serviceToken === 'string' && patientView && safeEqual(serviceToken,patientView);
     if(isPatientView && (Buffer.byteLength(patientView)<32 || [keyRelease,dataPlane,privacy,this.env.HIPASS_INTERNAL_SERVICE_TOKEN].includes(patientView)
       || !/^[A-Za-z0-9_-]{1,128}$/.test(this.env.HIPASS_DATA_PLANE_SOURCE_HOSPITAL_ID??'')))throw new AuthError(503,'PATIENT_VIEW_SERVICE_CONFIGURATION_INVALID');
@@ -57,17 +62,18 @@ export class InternalServiceProvider extends AuthenticationProvider {
     const isPrivacy = typeof serviceToken === "string" && privacy && safeEqual(serviceToken, privacy);
     const isInternal = typeof serviceToken === "string" && this.env.HIPASS_INTERNAL_SERVICE_TOKEN
       && safeEqual(serviceToken, this.env.HIPASS_INTERNAL_SERVICE_TOKEN);
-    if (!isPrivacy && !isInternal && !isDataPlane && !isKeyRelease && !isPatientView) throw new AuthError(401, "INTERNAL_SERVICE_TOKEN_INVALID");
-    const identity = isPatientView ? 'patient-self-view-gateway' : isKeyRelease ? "key-release-gateway" : isDataPlane ? "data-plane-gateway" : isPrivacy ? "privacy-service" : "internal-service";
+    if (!isPrivacy && !isInternal && !isDataPlane && !isKeyRelease && !isPatientView && !isPatientRelease) throw new AuthError(401, "INTERNAL_SERVICE_TOKEN_INVALID");
+    const identity = isPatientRelease ? 'patient-key-release-gateway' : isPatientView ? 'patient-self-view-gateway' : isKeyRelease ? "key-release-gateway" : isDataPlane ? "data-plane-gateway" : isPrivacy ? "privacy-service" : "internal-service";
     return normalizePrincipal({
       subject: identity,
       userId: identity,
       actorType: PrincipalRole.INTERNAL_SERVICE,
       role: PrincipalRole.INTERNAL_SERVICE,
       roles: [PrincipalRole.INTERNAL_SERVICE],
-      scopes: isPatientView ? ['gateway:patient-self-view-authorize'] : isKeyRelease ? ["gateway:package-key-release"] : isDataPlane ? ["gateway:data-plane-authorize"] : isPrivacy ? ["privacy:inspect"]
+      scopes: isPatientRelease ? ['gateway:patient-package-key-release'] : isPatientView ? ['gateway:patient-self-view-authorize'] : isKeyRelease ? ["gateway:package-key-release"] : isDataPlane ? ["gateway:data-plane-authorize"] : isPrivacy ? ["privacy:inspect"]
         : ["audit:write", "gateway:introspect", ...(!privacy ? ["privacy:inspect"] : [])],
       hospitalId: isPatientView ? this.env.HIPASS_DATA_PLANE_SOURCE_HOSPITAL_ID : isKeyRelease ? this.env.HIPASS_KEY_RELEASE_RECIPIENT_HOSPITAL_ID : null,
+      ...(isPatientRelease?{viewingGatewayId:'hospital-b-portal'}:{}),
       patientId: null,
       doctorId: null,
       sessionId: identity,

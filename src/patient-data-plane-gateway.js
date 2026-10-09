@@ -10,7 +10,7 @@ const metadataTags=new Set(['00080016','00080018','00080060','0020000D','0020000
 // Dedicated patient authority, never doctor credentials/consents. Runtime callers
 // must provide the patient Key Vault adapter before enabling any pixel route.
 export function createPatientDataPlaneHandler({publicBaseUrl,controlOrigin,orthancOrigin,serviceToken,
-  sourceHospitalId,viewingGatewayId='hospital-b-portal',controlTls,orthancTls,transport=boundedHttps,patientImageEncryption,encryptionTimeoutMs=25000}) {
+  sourceHospitalId,viewingGatewayId='hospital-b-portal',controlTls,orthancTls,transport=boundedHttps,patientImageEncryption,patientImageEncryptionFactory,encryptionTimeoutMs=25000}) {
   publicBaseUrl=requireHttpsOrigin(publicBaseUrl);controlOrigin=requireHttpsOrigin(controlOrigin);orthancOrigin=requireHttpsOrigin(orthancOrigin);
   if(typeof serviceToken!=='string' || Buffer.byteLength(serviceToken)<32 || /[\r\n]/.test(serviceToken)
     || typeof sourceHospitalId!=='string' || !/^[A-Za-z0-9_-]{1,128}$/.test(sourceHospitalId)
@@ -20,6 +20,7 @@ export function createPatientDataPlaneHandler({publicBaseUrl,controlOrigin,ortha
       'x-hipass-service-token':serviceToken},body:JSON.stringify(input),maxBytes:32768,timeoutMs:5000});
     return {status:result.status,body:JSON.parse(result.body.toString('utf8'))};
   };
+  patientImageEncryption=patientImageEncryptionFactory?.(control)??patientImageEncryption;
   return async(request,response)=>{
     const fail=(status,error)=>{if(!response.destroyed){response.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});response.end(JSON.stringify({error}));}};
     let plaintext;

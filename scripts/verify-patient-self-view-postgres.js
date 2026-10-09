@@ -1,6 +1,6 @@
 // Isolated synthetic integration probe. Never connects to the deployed database.
 import { execFileSync } from 'node:child_process';
-import { randomBytes, randomUUID, createHash, generateKeyPairSync, sign, createHmac } from 'node:crypto';
+import { randomBytes, randomUUID, createHash, generateKeyPairSync, sign, createHmac,publicEncrypt,privateDecrypt,constants } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import pg from 'pg';
@@ -18,11 +18,17 @@ import { ingressMeta, signIngress } from '../src/ingress.js';
 import { createPatientSelfViewGrantHttpHandler, createPatientGrantAuthenticationAudit } from '../src/patient-self-view-grant-http-handler.js';
 import { PatientSelfViewAuthorization } from '../src/patient-self-view-authorization.js';
 import { InternalServiceProvider } from '../src/auth.js';
+import {PatientBoundKeyRelease,PostgresPatientKeyReleaseRepository} from '../src/patient-bound-key-release.js';
+import {createPatientKeyReleaseHttpHandler} from '../src/patient-key-release-http-handler.js';
+import {createPatientImageEncryptor,createPatientImageDecryptor} from '../src/patient-encrypted-transfer.js';
+import {createPatientDataPlaneHandler} from '../src/patient-data-plane-gateway.js';
+import {createCapstoneBPortal} from '../src/capstone-b-portal.js';
+import {readJson} from '../src/http-utils.js';
 
 const docker = args => execFileSync('docker',args,{encoding:'utf8',timeout:15000,env:childEnv,stdio:['pipe','pipe','pipe']}).trim();
 const childEnv={...process.env,POSTGRES_PASSWORD:randomBytes(32).toString('hex')};
 const name=`hp-selfview-validation-${randomUUID().slice(0,8)}`;
-let ownedId,admin,pool,legacy,http,cleanup=false,stage='container',failureCode,finalCounts;
+let ownedId,admin,pool,legacy,http,aHttp,bHttp,cleanup=false,stage='container',failureCode,finalCounts;
 const results=[]; const start=Date.now();
 try {
   const image=docker(['inspect','hipass-postgres','--format','{{.Image}}']);
@@ -50,7 +56,7 @@ try {
     assert.ok(ddl,'SCHEMA_TABLE_REQUIRED');await admin.query({text:ddl[0],query_timeout:20000});
   }
   await admin.query('ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS ticket_id varchar');
-  for(const migration of ['033_capstone_patient_self_view_authority.sql','034_capstone_patient_self_view_grants.sql','035_capstone_patient_audit_lock.sql'])
+  for(const migration of ['033_capstone_patient_self_view_authority.sql','034_capstone_patient_self_view_grants.sql','035_capstone_patient_audit_lock.sql','036_capstone_patient_key_releases.sql'])
     await admin.query({text:await readFile(new URL(`../db/migrations/${migration}`,import.meta.url),'utf8'),query_timeout:20000});
   await admin.query(dpopReplaySchemaSql);
   const now=Date.now(),ref=randomUUID();
@@ -67,6 +73,8 @@ try {
     GRANT SELECT ON patients,hospitals,imaging_studies,imaging_series,capstone_patient_accounts,capstone_patient_ownership_refs,audit_logs TO hp_selfview_probe;
     GRANT INSERT ON capstone_patient_self_view_grants,audit_logs TO hp_selfview_probe;
     GRANT SELECT ON capstone_patient_self_view_grants TO hp_selfview_probe;
+    GRANT SELECT,INSERT ON capstone_patient_key_releases TO hp_selfview_probe;
+    GRANT UPDATE(status,consumed_at) ON capstone_patient_key_releases TO hp_selfview_probe;
     GRANT EXECUTE ON FUNCTION public.capstone_patient_lock_audit() TO hp_selfview_probe;
     GRANT SELECT,INSERT,UPDATE,DELETE ON dpop_replay_entries TO hp_selfview_probe;
     GRANT UPDATE (patient_id) ON patients TO hp_selfview_probe;
@@ -171,7 +179,18 @@ try {
   const handler=createPatientSelfViewGrantHttpHandler({issuer,auditAuthenticationDenied:createPatientGrantAuthenticationAudit(service),authenticate:r=>authenticateRequest(r,authEnv),requestMeta:r=>({
     ...ingressMeta(r,ingressSecret),method:r.method,externalUrl:new URL(r.url,'https://synthetic.invalid').href,dpopProof:r.headers.dpop,
   })});
-  http=createServer(async(req,res)=>{try{if(!await handler(req,res,new URL(req.url,'http://localhost'))){res.writeHead(404);res.end();}}catch{res.writeHead(503);res.end();}});
+  let releaseHandler=null,releaseAuthEnv,patientAuthorizer=null;
+  http=createServer(async(req,res)=>{try{
+    if(patientAuthorizer && ['/gateway/patient-self-view/authorize','/gateway/patient-self-view/ready'].includes(req.url)){
+      const principal=new InternalServiceProvider(releaseAuthEnv).authenticate(req),body=await readJson(req,{maxBytes:32768,strictUtf8:true});
+      const result=await patientAuthorizer[req.url.endsWith('/ready')?'ready':'authorize'](body,principal);
+      res.writeHead(result.statusCode,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(result));return;
+    }
+    if(releaseHandler && req.url.startsWith('/gateway/patient-self-view/package/')){
+      await releaseHandler(req,res,new URL(req.url,'http://localhost'),new InternalServiceProvider(releaseAuthEnv).authenticate(req));return;
+    }
+    if(!await handler(req,res,new URL(req.url,'http://localhost'))){res.writeHead(404);res.end();}
+  }catch{res.writeHead(503);res.end();}});
   http.requestTimeout=25000;http.headersTimeout=10000;
   await new Promise(resolve=>http.listen(0,'127.0.0.1',resolve));
   const jwt=changes=>{
@@ -212,12 +231,104 @@ try {
     dpopProof:makeProof({method:'GET',target:patientUrl,token:response.body.accessToken})};
   const checked=await verifier.authorize(access,caller);assert.equal(checked.active,true);assert.equal(checked.scope.permission,'VIEW_ONLY');
   assert.ok(!JSON.stringify(checked).includes(access.token));
+  stage='patient-key-release-ledger';
+  const pixelPath=patientPath+'/1.2.3.1.1/rendered';
+  const pixelDecision=await verifier.authorize({...access,path:pixelPath,dpopProof:makeProof({method:'GET',target:'https://synthetic.invalid'+pixelPath,token:access.token})},caller);
+  assert.equal(pixelDecision.active,true);
+  const releaseRepo=new PostgresPatientKeyReleaseRepository(queryPool);
+  const keyId='https://synthetic-demo.vault.azure.net/keys/demo/'+ 'a'.repeat(32);
+  const patientRelease=new PatientBoundKeyRelease({authorizer:verifier,service,repository:releaseRepo,keyId});
+  const bReleaseKey=randomBytes(32).toString('hex');
+  releaseAuthEnv={HIPASS_PATIENT_SELF_VIEW_SERVICE_TOKEN:gatewayKey,HIPASS_PATIENT_KEY_RELEASE_SERVICE_TOKEN:bReleaseKey,HIPASS_DATA_PLANE_SOURCE_HOSPITAL_ID:'H-A'};
+  releaseHandler=createPatientKeyReleaseHttpHandler({policy:patientRelease,service,sourceHospitalId:'H-A'});
+  patientAuthorizer=verifier;
+  const releaseHttp=async(endpoint,key,body)=>{
+    const result=await fetch(`http://127.0.0.1:${http.address().port}/gateway/patient-self-view/package/${endpoint}`,{method:'POST',
+      headers:{'content-type':'application/json','x-hipass-service-token':key},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
+    return {status:result.status,body:await result.json()};
+  };
+  const packageBinding={packageId:'pkg_'+randomUUID().replaceAll('-',''),keyId,viewingGatewayId:'hospital-b-portal',
+    wrappedKeyHash:'a'.repeat(64),ciphertextHash:'b'.repeat(64),manifestHash:'c'.repeat(64)};
+  assert.equal(await patientRelease.authorizeWrap({receipt:pixelDecision.receipt,packageId:packageBinding.packageId,keyId}),true);
+  const preparedHttp=await releaseHttp('prepare',gatewayKey,{receipt:pixelDecision.receipt,packageBinding});assert.equal(preparedHttp.status,200);
+  const release=preparedHttp.body;
+  const releaseInput={...release,receipt:pixelDecision.receipt,packageBinding,authenticatedViewingGatewayId:'hospital-b-portal'};
+  await assert.rejects(patientRelease.authorize({...releaseInput,phase:'AFTER_UNWRAP'}));
+  await assert.rejects(patientRelease.authorize({...releaseInput,phase:'BEFORE_UNWRAP',packageBinding:{...packageBinding,manifestHash:'d'.repeat(64)}}));
+  const authorizeBody={receipt:pixelDecision.receipt,packageBinding,releaseId:release.releaseId,phase:'BEFORE_UNWRAP'};
+  assert.equal((await releaseHttp('authorize',gatewayKey,authorizeBody)).status,403);
+  assert.equal((await releaseHttp('authorize',bReleaseKey,{...authorizeBody,authenticatedViewingGatewayId:'spoof'})).status,400);
+  assert.equal((await releaseHttp('authorize',bReleaseKey,authorizeBody)).status,200);
+  assert.equal((await releaseHttp('prepare',bReleaseKey,{receipt:pixelDecision.receipt,packageBinding})).status,403);
+  results.push('REAL_PATIENT_RELEASE_HTTP_A_B_PRINCIPALS_AND_BODY_IDENTITY_DENIAL');
+  const consumers=await Promise.allSettled([patientRelease.authorize({...releaseInput,phase:'AFTER_UNWRAP'}),patientRelease.authorize({...releaseInput,phase:'AFTER_UNWRAP'})]);
+  assert.equal(consumers.filter(result=>result.status==='fulfilled').length,1);
+  assert.equal((await releaseRepo.read(release.releaseId)).status,'CONSUMED');
+  const second=await patientRelease.prepare({receipt:pixelDecision.receipt,packageBinding:{...packageBinding,packageId:'pkg_'+randomUUID().replaceAll('-','')}});
+  const originalSave=store.save.bind(store);store.save=async()=>{throw new Error('synthetic audit outage');};
+  await assert.rejects(patientRelease.prepare({receipt:pixelDecision.receipt,packageBinding:{...packageBinding,packageId:'pkg_'+randomUUID().replaceAll('-','')}}));
+  store.save=originalSave;await store.save();
+  assert.equal((await admin.query("SELECT count(*)::int AS n FROM capstone_patient_key_releases WHERE status='PENDING'")).rows[0].n,1);
+  results.push('REAL_PATIENT_RELEASE_LEDGER_PENDING_AUDIT_HASH_BINDING_AND_SINGLE_CONSUME');
+  stage='patient-sql-http-a-b-crypto';
+  const rsa=generateKeyPairSync('rsa',{modulusLength:2048});
+  const keyTransport=async({url,body})=>{
+    const unwrap=url.includes('/unwrapkey?'),input=Buffer.from(body.value,'base64url');
+    const output=(unwrap?privateDecrypt:publicEncrypt)({key:unwrap?rsa.privateKey:rsa.publicKey,padding:constants.RSA_PKCS1_OAEP_PADDING,oaepHash:'sha256'},input);
+    try{return {kid:keyId,value:output.toString('base64url')};}finally{input.fill(0);output.fill(0);}
+  };
+  const rsaConfig={keyId,tokenProvider:async()=> 'synthetic-local-rsa-protocol',keyTransport};
+  const loopbackControl=async(path,key,body)=>{
+    const result=await fetch(`http://127.0.0.1:${http.address().port}${path}`,{method:'POST',headers:{'content-type':'application/json','x-hipass-service-token':key},
+      body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});return {status:result.status,body:await result.json()};
+  };
+  // Valid synthetic one-pixel PNG fixture, NOT DICOM or the actual CT/MR PACS.
+  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jfSkAAAAASUVORK5CYII=','base64');
+  let pacsReads=0;
+  const aHandler=createPatientDataPlaneHandler({publicBaseUrl:'https://synthetic.invalid',controlOrigin:'https://synthetic-control.invalid',orthancOrigin:'https://synthetic-pacs.invalid',
+    serviceToken:gatewayKey,sourceHospitalId:'H-A',patientImageEncryptionFactory:control=>createPatientImageEncryptor({...rsaConfig,control}),transport:async(origin,path,options)=>{
+      if(origin==='https://synthetic-control.invalid'){
+        const result=await loopbackControl(path,options.headers['x-hipass-service-token'],JSON.parse(options.body));
+        return {status:result.status,contentType:'application/json',body:Buffer.from(JSON.stringify(result.body))};
+      }
+      assert.equal(origin,'https://synthetic-pacs.invalid');assert.equal(options.headers.authorization,undefined);assert.equal(options.headers.dpop,undefined);
+      pacsReads++;return {status:200,contentType:'image/png',body:Buffer.from(png)};
+    }});
+  aHttp=createServer(aHandler);aHttp.requestTimeout=10000;aHttp.headersTimeout=10000;
+  await new Promise(resolve=>aHttp.listen(0,'127.0.0.1',resolve));
+  const patientDecryption=createPatientImageDecryptor({...rsaConfig,publicBaseUrl:'https://synthetic.invalid',control:(path,body)=>loopbackControl(path,bReleaseKey,body)});
+  let lastEncrypted;
+  bHttp=createServer(createCapstoneBPortal({root:new URL('../public/',import.meta.url).pathname.replace(/^\/([A-Za-z]:)/,'$1'),ca:Buffer.from('explicit-fixture-only'),
+    patientSelfViewEnabled:true,patientImageDecryption:patientDecryption,transport:async(origin,path,options)=>{
+      assert.equal(origin,'https://10.90.88.2:9443');
+      const result=await fetch(`http://127.0.0.1:${aHttp.address().port}${path}`,{headers:options.headers,signal:AbortSignal.timeout(10000)});
+      const body=Buffer.from(await result.arrayBuffer());if(result.status===200)lastEncrypted={status:200,contentType:result.headers.get('content-type'),body:Buffer.from(body)};
+      return {status:result.status,contentType:result.headers.get('content-type'),body};
+    }}));
+  bHttp.requestTimeout=15000;bHttp.headersTimeout=10000;await new Promise(resolve=>bHttp.listen(0,'127.0.0.1',resolve));
+  const pipelineProof=makeProof({method:'GET',target:'https://synthetic.invalid'+pixelPath,token:access.token});
+  const pipelineFetch=async(token,proof)=>{
+    const result=await fetch(`http://127.0.0.1:${bHttp.address().port}${pixelPath}`,{headers:{authorization:'DPoP '+token,dpop:proof},signal:AbortSignal.timeout(15000)});
+    return {status:result.status,body:Buffer.from(await result.arrayBuffer())};
+  };
+  const restored=await pipelineFetch(access.token,pipelineProof);assert.equal(restored.status,200);assert.deepEqual(restored.body,png);
+  assert.ok(lastEncrypted && !lastEncrypted.body.includes(png));
+  const actualPayload=JSON.parse(lastEncrypted.body),actualRelease=await releaseRepo.read(actualPayload.releaseId);
+  assert.equal(actualRelease.status,'CONSUMED');assert.equal(actualRelease.grantId,JSON.parse(Buffer.from(access.token.split('.')[1],'base64url')).jti);
+  await assert.rejects(patientDecryption.openPatient(lastEncrypted,pixelPath,{token:access.token}));
+  assert.equal((await pipelineFetch(access.token,pipelineProof)).status,403);
+  assert.equal((await pipelineFetch(access.token+'a',makeProof({method:'GET',target:'https://synthetic.invalid'+pixelPath,token:access.token+'a'}))).status,403);
+  assert.equal(pacsReads,1);
+  results.push('REAL_PG_HTTP_A_B_PATIENT_AES_RSA_FIXTURE_ROUNDTRIP_AND_REPLAY_NO_PACS_SIDE_EFFECT');
   assert.equal((await verifier.ready({receipt:checked.receipt,bytesPrepared:128,outcome:'READY'},caller)).accepted,true);
   assert.equal((await verifier.ready({receipt:'a'+checked.receipt,bytesPrepared:128,outcome:'READY'},caller)).accepted,false);
   assert.equal((await verifier.authorize(access,caller)).reason,'DPOP_NONCE_REPLAYED');
   assert.equal((await verifier.authorize({...access,path:patientPath.replace('1.2.3.1','1.2.3.2')},caller)).reason,'SCOPE_MISMATCH');
   const usedClaims=JSON.parse(Buffer.from(access.token.split('.')[1],'base64url'));
   await admin.query("UPDATE capstone_patient_self_view_grants SET status='REVOKED' WHERE grant_id=$1",[usedClaims.jti]);
+  assert.equal((await pipelineFetch(access.token,makeProof({method:'GET',target:'https://synthetic.invalid'+pixelPath,token:access.token}))).status,403);
+  assert.equal(pacsReads,1);
+  await assert.rejects(patientRelease.authorize({...releaseInput,releaseId:second.releaseId,packageBinding:(await releaseRepo.read(second.releaseId)).binding,phase:'BEFORE_UNWRAP'}));
   assert.equal((await verifier.ready({receipt:checked.receipt,bytesPrepared:128,outcome:'READY'},caller)).accepted,false);
   assert.equal((await verifier.authorize({...access,dpopProof:makeProof({method:'GET',target:patientUrl,token:access.token})},caller)).active,false);
   await admin.query("UPDATE capstone_patient_self_view_grants SET status='ACTIVE' WHERE grant_id=$1",[usedClaims.jti]);
@@ -232,6 +343,7 @@ try {
   finalCounts={...await count(),proofs:(await admin.query('SELECT count(*)::int AS count FROM dpop_replay_entries')).rows[0].count};
 } catch(error) {process.exitCode=1;failureCode=typeof error.code==='string'?error.code:error.message==='Query read timeout'?'QUERY_TIMEOUT':error.name;results.push(`FAIL_OR_ENVIRONMENT_BLOCKED:${stage}`);}
 finally {
+  for(const server of [bHttp,aHttp])if(server){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
   if(http){http.closeAllConnections();await new Promise(resolve=>http.close(resolve));}
   await pool?.end().catch(()=>{});await legacy?.end().catch(()=>{});await admin?.end().catch(()=>{});
   if(ownedId) {try {docker(['stop','--time','3',ownedId]);cleanup=true;}catch{process.exitCode=1;}}
