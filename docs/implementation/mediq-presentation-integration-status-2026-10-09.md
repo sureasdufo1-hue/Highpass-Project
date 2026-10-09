@@ -2,6 +2,66 @@
 
 관측일: 2026-10-09 (Asia/Seoul). 신규 증적: DRAFT / UNASSIGNED.
 
+### 커밋·푸시 체크포인트 — 2026-10-09
+
+사용자의 커밋·푸시 지시에 따라 환자 Viewer·DB 준비 도구·Compose overlay·검증 스크립트·테스트·문서를 기록한다. 이번 선택 회귀26/26 PASS, exit0, 765.2852ms 및 secret 패턴 검사 findings0, diff 검사 PASS. 전체848/848은 아래의 이전 실행 결과이며 이번에 재실행한 결과가 아니다. VM 설정·배경 이미지·secret·인증서·영상 payload·실행 artifact는 제외한다. 커밋·푸시는 배포나 전체 MVP 완료를 의미하지 않는다.
+
+보존된 실제 Chrome 검증 결과 `artifacts/workstation/patient-pixel-browser-1704528fdb99/result.json`: 11항목 PASS, 9.964초, cleanup=true, browserStopConfirmed=true. 신뢰된 로컬 HTTPS에서 2×2 PNG 두 영상의 실제 decode/다음 영상·닫기/Escape·거부/범위 불일치/손상/만료·늦은 응답 차단·브라우저 storage 미사용을 확인했다. 종료된 자체 Chrome의 exit1은 강제 종료 확인 결과이며 스크립트 PASS와 구분한다. ERR_ABORTED2건은 중단된 요청 기록이지 정책 DENY 증거가 아니다. 기존 실패 기록은 보존한다. 최초 실패의 임시 프로필 잔여 디렉터리와 fixture HTML의 UTF-8 표시 보완은 남아 있다.
+
+이 브라우저 시험은 합성 protocol fixture이며 실제 PACS·Azure·SQL authority·환자 웹/모바일 전체 앱·현재 배포의 종단 성공이 아니다. 신규 증적 DRAFT / UNASSIGNED, 전체 MVP/v3 미완료. **다음 작업 한 개: 동일 공통 Viewer를 실제 PACS/Vault와 격리 SQL 사용자 흐름에 연결해 브라우저 정상·거부를 검증한다.** 아래의 미커밋/다음 작업 표현은 각 관측 당시 이력이다.
+
+### 환자 웹·모바일 실제 pixel 경로 연결 구현 — 2026-10-09
+
+`public/patient-pixel-viewer.js`에 공통 환자 전용 Viewer를 구현하고 웹 `openPatientStudyViewer`·모바일 `openCineViewer`에서 연결했다. 현재 검사 목록의 첫 Series 하나만 선택해 signed PATIENT 인증·메모리 P-256 DPoP로 `self-view-grants` 발급 → 정확한 Study/Series/SOP 목록 검증 → 선택 SOP의 `/patient-dicomweb/.../rendered`를 lazy fetch한다. B의 기존 환자 전용 Azure decrypt 경로를 사용하도록 요청하며 브라우저는 provider key/DEK를 받지 않는다. 서버 Grant lifetime≤300초와 절대 만료 확인, 새 proof jti/ath, no-store/no-referrer·유한 요청/decode timeout, 닫기/실패/만료 시 object URL 해제·영상 제거, 다운로드 버튼 없음. 실제 PNG/JPEG decode 전에는 성공 표시하지 않는다. 요청 거부 시 예시 canvas/의료진 token으로 대체하지 않는다. 기존 illustrative controller는 역사적 코드로만 보존했고 새 열람 entrypoint에서는 호출하지 않는다.
+
+PWA shell-v5는 공통 JS만 public allowlist에 추가했고 API·환자 DICOMweb·Authorization 요청의 Cache Storage 우회는 유지했다. UI/UX Pro Max 스킬의 로딩·상태 문구·native dialog/Escape·focus 복귀·버튼 비활성 지침을 적용했다. 스킬 검색은 `core` 누락으로2회 실패했으므로 검색 결과를 적용했다고 주장하지 않는다. 기존 디자인을 전면 재설계하지 않았다.
+
+신규 모델5/5 PASS/197.7273ms, 선택21/21 PASS/973.2457ms/exit0. 테스트는 mock HTTP/3바이트 blob·Node WebCrypto·entrypoint delegation 기준이며 실제 PNG decode/브라우저/DB/Key Vault의 정상 pixel 표시 증거는 아니다. 최초 전체 Node **845/847, 2 FAIL, 42.0676195초/exit1** (`patient-pixel-ui-node-regression-20261009.log`)을 보존했다: 이전 VM 테스트에 새 `capstoneAuth` 의존성이 없고, 모바일 테스트가 단일 예시 프레임 상태를 기대했다. 새 인증 거부→Viewer 미시작 및 signed context delegation을 검증하도록 갱신했다. 최종 전체 Node **848/848 PASS/42.4650079초/exit0** (`patient-pixel-ui-node-regression-final-20261009.log`), secret findings0·문법/diff PASS.
+
+이번 변경은 미배포/미커밋이며 기존 `fedbae566…` 이미지에는 새 UI가 없다. 실제 합성 환자 authority/ref 등록·patient ingress/A/B 활성화·실제 CT/MRI pixel/다음 slice 브라우저 검증·만료/철회 UI·최종 독립 검토는 아직 남아 있다. 신규 증적 DRAFT / UNASSIGNED, 전체 MVP/v3 미완료. 관련 FR-006~013/021~025/026~036/037~041.
+
+**다음 작업 한 개: 실제 브라우저에서 이 공통 Viewer의 정상·거부·만료·닫기/late response를 격리 HTTPS 환경으로 검증하고, 동일 코드를 실제 PACS/Vault 흐름에 연결.** 모델 PASS를 브라우저 종단 PASS로 승계하지 않는다.
+
+### 실제 secret mount·Control entrypoint 격리 종단 시작 — 2026-10-09
+
+`scripts/verify-patient-compose-startup.js`를 구현하고 실행했다. 별도 무작위 Compose project·volume·임시 독립 secret 파일만 생성, base/preparation/patient overlay를 실제 Docker Compose로 조합했다. 기존 Control 파일 mount/start → stop → preparation preflight/apply → 재적용 거부 → 환자 Control 전체 entrypoint/전용 DB LOGIN/health ready → A 정상 주체의 잘못된 본문400/B 주체의 A wrap 호출403 → 중복 A/B secret 시작 거부 → 기존 격리 Control health200을 확인했다. **7항목 PASS/193.687초/exit0**, artifact `artifacts/workstation/hp-patient-startup-3b15db4ee33b.json`, cleanup=true. Docker label 및 volume project prefix 확인 후 생성한 자산만 제거했고 secret 파일도 개별 삭제했다. 각 Docker/Compose 명령60초, Compose wait45초, HTTP3~5초 제한; command timeout을 정책 DENY로 판정하지 않는다.
+
+후보 `highpass-platform-mvp:capstone-patient-startup-20261009` / `sha256:fedbae566527f479bda3498114a45b7878b5019c490959347d90e33f2752ec28`, 기존 a548 base ID 전후 일치·network-none build exit0. preparation helper/entrypoint/Control entrypoint/secret loader4개 source SHA 일치 PASS. Trivy HIGH0/CRITICAL0·Container Gate PASS/exit0 (`artifacts/security/container-scan/patient-startup-20261009.json`, 2026-10-09T14:24:23Z). 이미지는 preparation/runtime 코드 기준이며 이후 추가한 host verifier·문서 자체를 포함한다고 주장하지 않는다. 실행 후 verifier의 secret cleanup 실패 표시를 보강했고, 이 미실행 실패 분기는 문법 검증 범위로만 남긴다.
+
+선택10/10 PASS/192.117ms/exit0, secret findings0·문법/diff PASS. 이번에는 전체 Node를 다시 실행하지 않았고 이전843/843 결과는 당시 회귀로 유지한다. 이번 실제 시작은 격리 Compose·실제 파일·SQL·Control 기준이지만 **public TLS·실제 Azure·환자/ref 등록·환자 브라우저 정상 열람·실제 배포 DB·rollback** 증거가 아니다. 발표용 A/B/Cloud 서비스는 변경하지 않았다. 신규 증적 DRAFT / UNASSIGNED, 변경 미커밋, 전체 MVP/v3 미완료.
+
+**다음 작업 한 개: 환자 웹/모바일의 기존 예시 canvas를 승인된 본인 Grant→암호화 Gateway→실제 CT/MRI Viewer 경로로 연결하고 같은 UI에서 정상·거부 검증.** 실제 배포 활성화 전에는 소유 ref의 명시적 등록과 최신 증적 독립 검토를 유지한다.
+
+### 환자 DB 준비 도구와 동일 전용 LOGIN 검증 — 2026-10-09
+
+`prepare-capstone-patient-database.js`와 공유 preparation helper, operator-only `capstone-patient-preparation.compose.yml`을 구현했다. 기본 rollback-only preflight, 명시적 `--apply`에서만 migration033~036·`hipass_patient_authority` LOGIN/최소권한 생성. 고정 객체명·bound password format·transaction advisory lock·lock2초/statement5초, 기존 계정/부분 객체는 수정하지 않고 중단한다. admin 파일은 준비 컨테이너에만 readonly mount하며 Control에는 추가하지 않는다. 환자/소유 ref 자동 seed·실제 DB 실행·배포는 없음. PostgreSQL 최소권한 스킬에 따라 선택된 column/table 권한만 부여한다.
+
+실제 격리 PostgreSQL verifier가 이제 이 preparation helper를 사용한다. preflight 무변경 → migration 두번째 단계의 의도된 실패/rollback → fresh 적용 → 다른 password 재적용 거부/기존 상태 보존 → **바로 이 전용 LOGIN으로 runtime 시작·metadata UPDATE/superuser 거부·복구**를 검증했다. `node scripts/verify-patient-self-view-postgres.js`: **17항목 PASS/12.390초/exit0**, grants4/audits53/proofs5·cleanup=true. 실제 파일 mount·전체 Control entrypoint·배포 DB·public TLS·브라우저 성공 증거는 아직 아니다. 암호화 LOCAL_RSA_FIXTURE / ONE_PIXEL_PNG_FIXTURE.
+
+선택5/5 PASS/151.7233ms, preparation profile Compose JSON 검사(default preflight/admin 미전달/비공개 네트워크/readonly) PASS/exit0. 전체 Node **843/843 PASS/42.0272789초/exit0**, `artifacts/workstation/patient-preparation-node-regression-20261009.log`; Secret findings0·문법/diff PASS. 새 scripts는 기존 `6953a827…` image에 없으므로 재빌드 전 준비 container를 실행하면 안 된다. 변경 미커밋, 신규 증적 DRAFT / UNASSIGNED, 전체 MVP/v3 미완료.
+
+**다음 작업 한 개: 새 소스 이미지와 실제 readonly secret mount로 격리 Compose의 preparation→Control 시작을 검증하고 환자 Viewer 연결을 진행.** 실제 활성화·rollback·합성 계정/ref 등록·브라우저 정상/거부·독립 검토는 남아 있다.
+
+### 환자 배포 overlay 및 격리 시작 재검증 — 2026-10-09
+
+명시적 `infra/azure/capstone-control-patient.compose.yml`을 추가하고 `.env.example`에 외부 secret 파일 경로를 명시했다. 기존 base Compose 기본 비활성 유지, 환자 전용 LOGIN 이름·독립3개 readonly 파일·versioned Vault key 설정이며 Control에 Vault identity/DB admin key/새 공개 포트를 넣지 않는다. PostgreSQL 최소권한 스킬을 적용했으며 실제 운영 DB/권한/환자 ref는 수정하지 않았다.
+
+선택6/6 PASS/224.917ms/exit0. 실제 `docker compose config --format json`에서3개 readonly mount·Control/DB 무공개 포트·필수 key 누락 거부 PASS/exit0; 합성 URL과 validation-only 경로를 사용했고 서비스 시작 없음. `node scripts/verify-patient-self-view-postgres.js` **16항목 PASS/17.788초/exit0**, grants4/audits53/proofs5·cleanup=true. 실제 격리 SQL의 최소권한 LOGIN runtime, metadata UPDATE/superuser 시작 거부 및 복구 포함. 이 결과는 기존 verifier의 localhost 전용 LOGIN 기준으로, 새 overlay의 `hipass_patient_authority` 계정/파일 mount를 사용한 실제 서비스 시작 검증은 아니다. 암호화 LOCAL_RSA_FIXTURE / ONE_PIXEL_PNG_FIXTURE, public TLS/Azure/브라우저 증거로 승계하지 않는다.
+
+전체 Node **839/839 PASS/42.1160627초/exit0**, `artifacts/workstation/patient-compose-node-regression-20261009.log`. Secret findings0/diff 검사 PASS. 앞선 후보 `6953a827…`의 런타임 JS는 그대로지만 이번 overlay·env example·test·문서는 이미지 빌드 이후 추가이며 포장 완료 주장과 구분한다. 변경 미커밋, 신규 증적 DRAFT / UNASSIGNED, 전체 MVP/v3 미완료.
+
+**다음 작업 한 개: migration033~036·전용 LOGIN 최소권한의 명시적 배포 준비 도구와 격리 파일-mount 시작 검증.** 자동 계정/소유 ref seed와 실제 활성화는 아직 없으며, 신규 증적 독립 검토 및 실제 배포·rollback·환자 Viewer 종단검증이 남아 있다.
+
+### 최신 커밋 소스 후보 이미지 검사 — 2026-10-09
+
+소스 HEAD `30de0b39701fd4088d6a1bc740f8bd6e64b7879d` 기준 후보 `highpass-platform-mvp:capstone-patient-config-30de0b3` / `sha256:6953a8273f67d63cf4cf143fe04ec638827cbf54b3c371a51aa2cf7f5ad4f76f`를 빌드했다. 기존 base `a5487906…` 태그의 빌드 전후 ID 일치, `--pull=false --network=none`, 120초 상한, exit0. 최초 bare image ID FROM 시도는 레지스트리 이름으로 해석돼 exit1이었으며 성공으로 기록하지 않는다.
+
+환자 런타임 설정·entrypoint·암호화·인가·Grant runtime·release·worker·SQL verifier·모바일 JS·migration036의 **선택10개 파일 local/image SHA 일치 PASS/exit0**. 최초 검증은 잘못 지정한 migration 파일명으로 exit1, 다음은 distroless PATH에 `node`가 없어 exit127이었다. 실제 이미지 entrypoint `/nodejs/bin/node` 확인 후 network-none/read-only/cap-drop/no-new-privileges 컨테이너에서 성공했다. 전체 파일 트리 일치 또는 실제 서비스 시작 증거는 아니다.
+
+고정 Trivy 0.58.2 digest로 정확한 후보 이미지 스캔 **HIGH0/CRITICAL0, Container Gate PASS/exit0**, 증적 `artifacts/security/container-scan/patient-config-30de0b3.json` (2026-10-09T14:09:25Z). 이전 후보 `3fdee566…`는 이력으로만 유지한다. 이미지 빌드·검사만 수행했으며 A/B/Cloud 서비스·DB·volume·환자 런타임 활성화는 변경하지 않았다. 신규 증적 DRAFT / UNASSIGNED, 전체 MVP/v3 미완료.
+
+**다음 작업 한 개: 전용 환자 DB 계정·migration·외부 secret mount의 기존 배포 계약 정렬 및 시작 검증.** 실제 환자 브라우저 Viewer 연결과 정상·거부 종단검증은 그 뒤에 같은 흐름으로 완료해야 한다.
+
 ### 최신 커밋 전 회귀 및 런타임 설정 — 2026-10-09
 
 환자 런타임은 기본 비활성을 유지한다. 활성화 시 전용 `hipass_patient_authority` DB 연결과 외부 파일의 환자 A/B 서비스 자격증명을 읽으며, 기존 의료진·DB·발표 키 재사용과 잘못된 프로필은 시작 전에 거부한다. 실제 배포 DB 계정 생성·migration·서비스 활성화는 수행하지 않았다.

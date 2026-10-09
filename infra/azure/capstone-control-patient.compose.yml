@@ -1,0 +1,18 @@
+# Explicit, reviewed activation overlay only; not included by the base stack.
+# Apply migrations033-036 and dedicated minimum privileges BEFORE using this.
+# No account/ownership seeding, admin credentials, Vault identity or DB bootstrap.
+services:
+  control:
+    environment:
+      HIPASS_CAPSTONE_PATIENT_GRANTS: '1'
+      HIPASS_CAPSTONE_PATIENT_KEY_RELEASE: '1'
+      HIPASS_CAPSTONE_SINGLE_WRITER: '1'
+      HIPASS_PATIENT_AUTHORITY_DATABASE_USER: hipass_patient_authority
+      HIPASS_PATIENT_AUTHORITY_PASSWORD_FILE: /run/secrets/patient-authority-password
+      HIPASS_PATIENT_SELF_VIEW_SERVICE_TOKEN_FILE: /run/secrets/patient-a-service-secret
+      HIPASS_PATIENT_KEY_RELEASE_SERVICE_TOKEN_FILE: /run/secrets/patient-b-service-secret
+      HIPASS_PATIENT_KEY_VAULT_KEY_ID: ${HIPASS_PATIENT_KEY_VAULT_KEY_ID:?fixed versioned patient Vault key required}
+    volumes:
+      - ${HIPASS_CLOUD_SECRET_DIR:?root-protected secrets required}/patient-authority-password:/run/secrets/patient-authority-password:ro
+      - ${HIPASS_CLOUD_SECRET_DIR}/patient-a-service-secret:/run/secrets/patient-a-service-secret:ro
+      - ${HIPASS_CLOUD_SECRET_DIR}/patient-b-service-secret:/run/secrets/patient-b-service-secret:ro

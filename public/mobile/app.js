@@ -2,6 +2,7 @@
 // Patient-Controlled Medical Imaging & MyData Mobility Client
 // Security Contract: Zero browser plaintext storage (no localStorage/sessionStorage), Fail-Closed
 import { initializeCapstoneAuth } from "/capstone-auth.js";
+import {openPatientPixelViewer} from '/patient-pixel-viewer.js';
 let capstoneAuth = null;
 const syncChannel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("HI_PASS_SYNC_CHANNEL") : null;
 const secondarySyncChannel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("hipass_sync") : null;
@@ -800,6 +801,13 @@ function setupCinePlayer() {
 }
 
 async function openCineViewer(study) {
+  if(!capstoneAuth){showToast('본인 영상은 보안 시연 로그인 후 열람할 수 있습니다.');return;}
+  try{await openPatientPixelViewer({patientId:state.patientId,study,headers:patientHeaders()});}
+  catch{showToast('본인 열람 인증을 확인하지 못했습니다. 다시 로그인해 주세요.');}
+}
+
+// Historical mock canvas is not a fallback for denied/unavailable real pixels.
+async function openRetiredIllustrativeCineViewer(study) {
   try {
     const response = await fetch(`/api/patients/${state.patientId}/studies/${encodeURIComponent(study.studyInstanceUid)}/self-view`, {
       method: "POST", headers: patientHeaders(), body: JSON.stringify({}), signal: AbortSignal.timeout(10000),

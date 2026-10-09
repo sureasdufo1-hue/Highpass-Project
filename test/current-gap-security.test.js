@@ -132,7 +132,7 @@ test("FIX-004: source error cannot become a synthetic successful archive", async
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test("FIX-003: patient viewer stays closed after self-view rejection", async () => {
+test("FIX-003: patient viewer stays closed after patient authentication rejection", async () => {
   const source = await readFile("public/app.js", "utf8");
   const start = source.indexOf("async function openPatientStudyViewer(");
   const end = source.indexOf("function updatePatientViewerControls(", start);
@@ -141,6 +141,8 @@ test("FIX-003: patient viewer stays closed after self-view rejection", async () 
   const context = vm.createContext({
     lastStudies: [{ studyInstanceUid: "1.2.3" }], demo: { patientId: "P-1001" },
     postJson: async () => { throw new Error("DENY"); }, showToast: (message) => messages.push(message),
+    capstoneAuth:{headers(){throw new Error('AUTHENTICATION_DENIED');}},
+    openPatientPixelViewer(){assert.fail('Rejected authentication must not start pixel viewer');},
     patientViewerState: new Proxy({}, { set() { setupCount++; return true; } }), encodeURIComponent,
   });
   vm.runInContext(source.slice(start, end), context);

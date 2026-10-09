@@ -26,12 +26,14 @@ import {createCapstoneBPortal} from '../src/capstone-b-portal.js';
 import {readJson} from '../src/http-utils.js';
 import {fileURLToPath} from 'node:url';
 import {createPatientSelfViewGrantRuntime} from '../src/patient-self-view-grant-runtime.js';
+import {preparePatientDatabase} from './lib/patient-database-preparation.js';
 
 const docker = args => execFileSync('docker',args,{encoding:'utf8',timeout:15000,env:childEnv,stdio:['pipe','pipe','pipe']}).trim();
 const childEnv={...process.env,POSTGRES_PASSWORD:randomBytes(32).toString('hex')};
 const name=`hp-selfview-validation-${randomUUID().slice(0,8)}`;
 let ownedId,admin,pool,legacy,http,aHttp,bHttp,cleanup=false,stage='container',failureCode,finalCounts;
 const results=[]; const start=Date.now();
+const loginPassword=randomBytes(32).toString('hex');
 const phantomModality=process.env.HIPASS_PATIENT_PROBE_PHANTOM;
 assert.ok(!phantomModality || ['CT','MR'].includes(phantomModality));
 const studyUid=phantomModality?'1.2.826.0.1.3680043.10.5432.20261009.'+(phantomModality==='CT'?'1':'2'):'1.2.3';
@@ -62,8 +64,18 @@ try {
     assert.ok(ddl,'SCHEMA_TABLE_REQUIRED');await admin.query({text:ddl[0],query_timeout:20000});
   }
   await admin.query('ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS ticket_id varchar');
-  for(const migration of ['033_capstone_patient_self_view_authority.sql','034_capstone_patient_self_view_grants.sql','035_capstone_patient_audit_lock.sql','036_capstone_patient_key_releases.sql'])
-    await admin.query({text:await readFile(new URL(`../db/migrations/${migration}`,import.meta.url),'utf8'),query_timeout:20000});
+  assert.deepEqual(await preparePatientDatabase(admin,{password:loginPassword}),{status:'READY',applied:false});
+  let migrationWrites=0;
+  const failingClient={query:async(...args)=>{
+    if(typeof args[0]==='string' && args[0].includes('CREATE TABLE capstone_patient_') && ++migrationWrites===2)
+      throw new Error('SYNTHETIC_MIGRATION_FAILURE');
+    return admin.query(...args);
+  }};
+  await assert.rejects(preparePatientDatabase(failingClient,{password:loginPassword,apply:true}),/SYNTHETIC_MIGRATION_FAILURE/);
+  assert.deepEqual(await preparePatientDatabase(admin,{password:loginPassword}),{status:'READY',applied:false});
+  assert.equal((await preparePatientDatabase(admin,{password:loginPassword,apply:true})).applied,true);
+  await assert.rejects(preparePatientDatabase(admin,{password:randomBytes(32).toString('hex'),apply:true}),/EXISTING_STATE_PRESERVED/);
+  results.push('REAL_PREPARATION_PREFLIGHT_TRANSACTION_ROLLBACK_AND_EXISTING_STATE_PRESERVED');
   await admin.query(dpopReplaySchemaSql);
   const now=Date.now(),ref=randomUUID();
   await admin.query("INSERT INTO patients VALUES ('HP-TEST-PHANTOM-001','Synthetic phantom','1970-01-01',NULL,now())");
@@ -377,22 +389,20 @@ try {
   results.push('REAL_PATIENT_PREPARATION_RECEIPT_AUDIT_TAMPER_REVOCATION_AND_OWNERSHIP_RECHECK');
   stage='dedicated-runtime-login';
   // Generated isolated login only; never activates a deployed DB or exports credentials.
-  const loginPassword=randomBytes(32).toString('hex');
-  await admin.query(`CREATE ROLE hp_patient_runtime LOGIN PASSWORD '${loginPassword}'; GRANT hp_selfview_probe TO hp_patient_runtime`);
   const runtimeEnv={...releaseAuthEnv,HIPASS_CAPSTONE_PATIENT_GRANTS:'1',HIPASS_CAPSTONE_PATIENT_KEY_RELEASE:'1',
     HIPASS_CONTROL_PLANE_ONLY:'1',HIPASS_STORE:'postgres',AUTH_MODE:'TEST',HIPASS_DPOP_REQUIRED:'1',
     HIPASS_CAPSTONE_SINGLE_WRITER:'1',HIPASS_INGRESS_SECRET:randomBytes(32).toString('hex'),
     JWT_ISSUER:'highpass-capstone-test-idp',JWT_AUDIENCE:'highpass-capstone-api',HIPASS_PATIENT_KEY_VAULT_KEY_ID:keyId,
-    HIPASS_PATIENT_AUTHORITY_DATABASE_URL:`postgresql://hp_patient_runtime:${loginPassword}@127.0.0.1:${port}/postgres`};
+    HIPASS_PATIENT_AUTHORITY_DATABASE_URL:`postgresql://hipass_patient_authority:${loginPassword}@127.0.0.1:${port}/postgres`};
   const startRuntime=()=>createPatientSelfViewGrantRuntime({store,service,env:runtimeEnv});
   const runtime=await startRuntime();
   try{assert.equal(typeof runtime.issuer.issue,'function');assert.equal(typeof runtime.authorizer.authorize,'function');assert.equal(typeof runtime.routeKeyRelease,'function');}
   finally{await runtime.close();}
-  await admin.query('GRANT UPDATE(metadata) ON capstone_patient_key_releases TO hp_patient_runtime');
+  await admin.query('GRANT UPDATE(metadata) ON capstone_patient_key_releases TO hipass_patient_authority');
   await assert.rejects(startRuntime(),error=>error.message==='PATIENT_RELEASE_ROLE_UNSAFE');
-  await admin.query('REVOKE UPDATE(metadata) ON capstone_patient_key_releases FROM hp_patient_runtime; ALTER ROLE hp_patient_runtime SUPERUSER');
+  await admin.query('REVOKE UPDATE(metadata) ON capstone_patient_key_releases FROM hipass_patient_authority; ALTER ROLE hipass_patient_authority SUPERUSER');
   await assert.rejects(startRuntime(),error=>error.message==='PATIENT_AUTHORITY_ROLE_UNSAFE');
-  await admin.query('ALTER ROLE hp_patient_runtime NOSUPERUSER');
+  await admin.query('ALTER ROLE hipass_patient_authority NOSUPERUSER');
   const recovered=await startRuntime();await recovered.close();
   results.push('REAL_DEDICATED_LOGIN_RUNTIME_STARTUP_METADATA_UPDATE_SUPERUSER_DENIAL_AND_RECOVERY');
   finalCounts={...await count(),proofs:(await admin.query('SELECT count(*)::int AS count FROM dpop_replay_entries')).rows[0].count};

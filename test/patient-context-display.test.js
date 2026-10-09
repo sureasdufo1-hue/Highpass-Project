@@ -31,12 +31,16 @@ test('mobile selected profile uses its server context literally, without another
   }
 });
 
-test('mobile preview remains server-authorized and never invents DICOM slice counts', async () => {
+test('mobile viewer delegates signed patient context and never invents DICOM slice counts', async () => {
   const code = extract(mobile, 'async function openCineViewer(', 'function closeCineViewer(');
   for (const allowed of [false, true]) {
     const nodes = new Map();
     const state = {};
+    state.patientId='HP-TEST-PHANTOM-001';
+    const calls=[];
     const context = vm.createContext({ state, AbortSignal, patientHeaders: () => ({}), showToast() {},
+      capstoneAuth:allowed?{}:null,
+      openPatientPixelViewer:async input=>calls.push(input),
       fetch: async () => ({ ok: allowed }),
       document: { querySelector(selector) {
         if (!nodes.has(selector)) nodes.set(selector, { textContent: '', style: {}, hidden: true });
@@ -46,14 +50,15 @@ test('mobile preview remains server-authorized and never invents DICOM slice cou
     vm.runInContext(code, context);
     await vm.runInContext('openCineViewer({studyInstanceUid:"1.2.3",modality:"CT",description:"合成 CT",series:[{instances:Array(12).fill({})}]})', context);
     if (!allowed) {
+      assert.equal(calls.length,0);
       assert.equal(state.cineStudy, undefined);
       assert.equal(nodes.size, 0);
     } else {
-      assert.equal(state.cineTotalSlices, 1);
-      assert.match(nodes.get('#cine-title').textContent, /실제 DICOM 아님/);
-      assert.equal(nodes.get('#cine-slider').disabled, true);
-      assert.equal(nodes.get('#btn-cine-play').disabled, true);
-      assert.equal(nodes.get('#hud-study-date').textContent, '검사일 미확인');
+      assert.equal(calls.length,1);
+      assert.equal(calls[0].patientId,'HP-TEST-PHANTOM-001');
+      assert.equal(calls[0].study.studyInstanceUid,'1.2.3');
+      assert.equal(state.cineTotalSlices,undefined);
+      assert.equal(nodes.size,0);
     }
   }
 });

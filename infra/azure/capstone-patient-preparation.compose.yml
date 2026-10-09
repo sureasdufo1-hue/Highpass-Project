@@ -1,0 +1,18 @@
+# Operator-only profile. Does not activate patient routes or seed patient data.
+services:
+  patient-prepare:
+    profiles: [patient-preparation]
+    image: ${HIPASS_APP_IMAGE:?fresh reviewed patient application image required}
+    command: [scripts/prepare-capstone-patient-database.js]
+    environment:
+      AUTH_MODE: TEST
+      HIPASS_CONTROL_PLANE_ONLY: '1'
+      CAPSTONE_ADMIN_PASSWORD_FILE: /run/secrets/admin-password
+      HIPASS_PATIENT_AUTHORITY_PASSWORD_FILE: /run/secrets/patient-authority-password
+    volumes:
+      - ${HIPASS_CLOUD_SECRET_DIR:?root-protected secrets required}/admin-password:/run/secrets/admin-password:ro
+      - ${HIPASS_CLOUD_SECRET_DIR}/patient-authority-password:/run/secrets/patient-authority-password:ro
+    networks: [db_private]
+    depends_on:
+      postgres: {condition: service_healthy}
+    restart: 'no'

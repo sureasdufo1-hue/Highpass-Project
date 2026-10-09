@@ -2,6 +2,18 @@
 
 2026-10-09 · S1 USER-ADOPTED CONTRACT / IMPLEMENTATION IN PROGRESS
 
+## 환자 Control 배포 준비 계약
+
+명시적 준비 도구 `scripts/prepare-capstone-patient-database.js`는 기본 preflight이며 `--apply`에서만 변경한다. 별도 `capstone-patient-preparation.compose.yml`의 `patient-preparation` profile은 bootstrap admin/password와 새 전용 password 파일만 준비 컨테이너에 readonly mount한다. Control에 admin key를 전달하지 않는다. 신규 소스 이미지 재빌드 후 `docker compose -f infra/azure/capstone-control.compose.yml -f infra/azure/capstone-patient-preparation.compose.yml --profile patient-preparation run --rm patient-prepare`로 preflight한다. 승인된 실제 변경 시에만 같은 명령의 서비스 뒤에 `scripts/prepare-capstone-patient-database.js --apply`를 추가한다. 이번에는 이 명령을 배포 DB에서 실행하지 않았다.
+
+준비는 advisory transaction lock·2초 lock timeout·5초 statement timeout을 적용한다. migration033~036과 별도 LOGIN/선별 권한을 한 transaction에서 생성하며 실패 시 rollback한다. 기존 계정 또는 부분/전체 객체가 존재하면 암호 회전·DROP·권한 보정 없이 중단한다. 재실행 거부는 이 도구의 의도된 기존 상태 보호이며 멱등 업데이트 성공이 아니다. 합성 환자/ref는 자동 등록하지 않는다. SELECT FOR SHARE에 필요한 특정 column UPDATE는 남지만 audit UPDATE/DELETE·release metadata UPDATE·table-wide UPDATE·schema CREATE·관리 role membership은 부여하지 않는다. DB 준비 성공과 실제 파일-mount 서비스 시작·브라우저 검증을 구분한다.
+
+`infra/azure/capstone-control-patient.compose.yml`는 명시적 opt-in overlay다. 기본 Compose는 환자 기능을 켜지 않는다. 별도 `hipass_patient_authority` LOGIN·migration033~036·최소권한 및 합성 계정/소유 ref의 명시적 등록이 준비되고 신규 증적의 독립 검토를 마친 뒤에만 활성화한다. 기존 `hipass_app`나 bootstrap 계정을 환자 연결로 재사용하지 않는다.
+
+외부 root-protected secret 디렉터리에 `patient-authority-password`, `patient-a-service-secret`, `patient-b-service-secret`가 각각 필요하다. 모두 독립적인32~256자 값이며 readonly 파일 mount로만 전달한다. DB 비밀번호나 원문 서비스 key를 Compose YAML·Git·명령줄·보고서에 넣지 않는다. Control에는 Vault 인증서/개인키를 추가하지 않는다. Vault key는 고정 version URL의 `HIPASS_PATIENT_KEY_VAULT_KEY_ID`만 전달한다.
+
+검증 명령: 기존 배포 환경변수 파일을 사용해 `docker compose -f infra/azure/capstone-control.compose.yml -f infra/azure/capstone-control-patient.compose.yml config --quiet`를 실행한다. 설정 검증은 DB migration·권한·실제 mount 파일·서비스 시작 검증이 아니다. 아직 자동 migration/bootstrap 서비스를 연결하지 않았다. rollback은 기존 이미지와 overlay 없는 기존 구성을 복구하며, 신규 authority/ledger를 DROP하거나 기존 DB/volume을 삭제하지 않는다. 실제 rollback은 활성화 배포와 함께 별도 검증해야 한다.
+
 ## 2026-10-09 실제 합성 CT/MRI 전달 검증 범위
 
 `patient-vault-integration-ops.py --phantom CT|MR`는 고정된 PHANTOM Study/Series/SOP만 허용한다. 격리 SQL의 동일 환자 Grant/DPoP·receipt·release ledger에 결속하여 A 실제 private PACS mTLS QIDO12 SOP·두 WADO rendered slice → A actual Azure wrap/AES-GCM → B current release authorize/consume·actual unwrap →256×256 pixel 무결성을 검증했다. 재사용/토큰 변조/DPoP 재사용/SQL 철회 후 actual PACS read 증가 없음 및 감사 chain도 확인했다. 두 modality 모두 SQL17항목/exit0/PASS, 증적은 현재 상태 문서를 참조한다. actual PACS 데이터는 합성이며 운영 Cloud DB/기존 환자 ref는 수정하지 않았다.

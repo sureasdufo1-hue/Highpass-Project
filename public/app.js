@@ -5,6 +5,7 @@
    - FHIR R4 PHR, 5-Step Pipeline, Cloud Viewer, PACS Import & Live Receipts
    ========================================================================== */
 import { initializeCapstoneAuth } from "/capstone-auth.js";
+import {openPatientPixelViewer} from '/patient-pixel-viewer.js';
 import { initializePatientComponents, renderPatientOverview, createPatientQrController, renderPatientQr } from "/ui/patient.js";
 import { selectConsentForStudy, isRevocationAcknowledged } from "/consent-selection.js";
 import { renderClinicianDetail, clinicianDetailModel, filterClinicalStudies, renderClinicalMetrics, renderClinicalStudyList } from "/ui/clinician.js";
@@ -3508,6 +3509,15 @@ function setupPatientViewerModalEvents() {
 }
 
 async function openPatientStudyViewer(studyUid) {
+  const study=lastStudies.find(item=>item.studyInstanceUid===studyUid);
+  if(!study){showToast('해당 의료영상을 찾을 수 없습니다.');return;}
+  if(!capstoneAuth){showToast('본인 영상은 보안 시연 로그인 후 열람할 수 있습니다.');return;}
+  try{await openPatientPixelViewer({patientId:demo.patientId,study,headers:capstoneAuth.headers('PATIENT')});}
+  catch{showToast('본인 열람 인증을 확인하지 못했습니다. 다시 로그인해 주세요.');}
+}
+
+// Retained historical mock controller; not used as a real-viewer fallback.
+async function openRetiredIllustrativePatientViewer(studyUid) {
   const study = lastStudies.find((s) => s.studyInstanceUid === studyUid);
   if (!study) {
     showToast("해당 의료영상을 찾을 수 없습니다.");
