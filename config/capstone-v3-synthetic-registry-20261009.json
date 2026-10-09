@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "scope": "CAPSTONE_SYNTHETIC_ONLY",
+  "issuer": "highpass-v3-capstone-mock",
+  "audience": "highpass-v3-capstone-api",
+  "institutions": [
+    {"tenantId": "a1000000-1000-4000-8000-000000000001", "hospitalId": "a2000000-1000-4000-8000-000000000001", "code": "SYNTHETIC-CAPSTONE-A", "displayName": "SYNTHETIC A UNIVERSITY HOSPITAL", "authHospitalId": "CAPSTONE-A"},
+    {"tenantId": "b1000000-1000-4000-8000-000000000001", "hospitalId": "b2000000-1000-4000-8000-000000000001", "code": "SYNTHETIC-CAPSTONE-B", "displayName": "SYNTHETIC B UNIVERSITY HOSPITAL", "authHospitalId": "CAPSTONE-B"}
+  ],
+  "records": [
+    {"issuer": "highpass-v3-capstone-mock", "subject": "synthetic-capstone-a-requester", "tenantId": "a1000000-1000-4000-8000-000000000001", "hospitalId": "a2000000-1000-4000-8000-000000000001", "actorId": "a3000000-1000-4000-8000-000000000001", "role": "HOSPITAL_ADMIN", "authHospitalId": "CAPSTONE-A", "status": "ACTIVE", "scopes": ["mapping:read", "mapping:write"]},
+    {"issuer": "highpass-v3-capstone-mock", "subject": "synthetic-capstone-a-reviewer", "tenantId": "a1000000-1000-4000-8000-000000000001", "hospitalId": "a2000000-1000-4000-8000-000000000001", "actorId": "a3000000-1000-4000-8000-000000000002", "role": "SECURITY_ADMIN", "authHospitalId": "CAPSTONE-A", "status": "ACTIVE", "scopes": ["mapping:read", "mapping:review"]},
+    {"issuer": "highpass-v3-capstone-mock", "subject": "synthetic-capstone-a-doctor", "tenantId": "a1000000-1000-4000-8000-000000000001", "hospitalId": "a2000000-1000-4000-8000-000000000001", "actorId": "a3000000-1000-4000-8000-000000000003", "role": "DOCTOR", "authHospitalId": "CAPSTONE-A", "status": "ACTIVE", "scopes": ["mapping:read"]},
+    {"issuer": "highpass-v3-capstone-mock", "subject": "synthetic-capstone-b-requester", "tenantId": "b1000000-1000-4000-8000-000000000001", "hospitalId": "b2000000-1000-4000-8000-000000000001", "actorId": "b3000000-1000-4000-8000-000000000001", "role": "HOSPITAL_ADMIN", "authHospitalId": "CAPSTONE-B", "status": "ACTIVE", "scopes": ["mapping:read", "mapping:write"]},
+    {"issuer": "highpass-v3-capstone-mock", "subject": "synthetic-capstone-b-reviewer", "tenantId": "b1000000-1000-4000-8000-000000000001", "hospitalId": "b2000000-1000-4000-8000-000000000001", "actorId": "b3000000-1000-4000-8000-000000000002", "role": "SECURITY_ADMIN", "authHospitalId": "CAPSTONE-B", "status": "ACTIVE", "scopes": ["mapping:read", "mapping:review"]},
+    {"issuer": "highpass-v3-capstone-mock", "subject": "synthetic-capstone-b-doctor", "tenantId": "b1000000-1000-4000-8000-000000000001", "hospitalId": "b2000000-1000-4000-8000-000000000001", "actorId": "b3000000-1000-4000-8000-000000000003", "role": "DOCTOR", "authHospitalId": "CAPSTONE-B", "status": "ACTIVE", "scopes": ["mapping:read"]}
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "Name": "Highpass Capstone Temporary Key Bootstrap 20261009",
+  "IsCustom": true,
+  "Description": "One-time operator bootstrap; key creation and public metadata only. No crypto, secrets, deletion, purge or access management.",
+  "Actions": [], "NotActions": [],
+  "DataActions": ["Microsoft.KeyVault/vaults/keys/read", "Microsoft.KeyVault/vaults/keys/create/action"],
+  "NotDataActions": [],
+  "AssignableScopes": ["/subscriptions/a3c0e7d4-ce09-4991-946b-88574869edd9/resourceGroups/rg-highpass-capstone-20261008"]
+}

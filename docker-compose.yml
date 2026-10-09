@@ -9,14 +9,17 @@ services:
       EDGE_PUBLIC_HTTPS_PORT: ${HIPASS_HTTPS_HOST_PORT:-3443}
       EDGE_TLS_CERT_FILE: /run/secrets/hipass_edge_tls_cert
       EDGE_TLS_KEY_FILE: /run/secrets/hipass_edge_tls_key
+      EDGE_TLS_CA_FILE: /run/secrets/hipass_mtls_ca
       EDGE_API_ORIGIN: http://hipass-control-api:3000
       EDGE_VIEWER_ORIGIN: http://hospital-b-viewer:8080
+      HIPASS_INGRESS_SECRET: ${HIPASS_INGRESS_SECRET:-}
     ports:
       - "${HIPASS_HTTP_HOST_PORT:-3000}:8080"
       - "${HIPASS_HTTPS_HOST_PORT:-3443}:8443"
     volumes:
       - ./tmp/certs/edge/localhost.crt:/run/secrets/hipass_edge_tls_cert:ro
       - ./tmp/certs/edge/localhost.key:/run/secrets/hipass_edge_tls_key:ro
+      - ./tmp/certs/mtls/ca.crt:/run/secrets/hipass_mtls_ca:ro
     depends_on:
       hipass-control-api:
         condition: service_healthy
@@ -25,7 +28,7 @@ services:
     networks:
       - frontend_net
     healthcheck:
-      test: ["CMD", "/nodejs/bin/node", "-e", "require('node:https').get('https://127.0.0.1:8443/api/health', { rejectUnauthorized: false }, r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      test: ["CMD", "/nodejs/bin/node", "scripts/edge-healthcheck.js"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -45,6 +48,9 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://hipass_app:replace-with-local-development-password@postgres:5432/hipass}
       DICOM_TOKEN_SECRET: ${DICOM_TOKEN_SECRET:-replace-with-local-32-byte-minimum-secret}
       DICOM_TOKEN_TTL_MINUTES: ${DICOM_TOKEN_TTL_MINUTES:-5}
+      HIPASS_INGRESS_SECRET: ${HIPASS_INGRESS_SECRET:-}
+      HIPASS_DPOP_REQUIRED: ${HIPASS_DPOP_REQUIRED:-0}
+      HIPASS_PUBLIC_BASE_URL: https://localhost:${HIPASS_HTTPS_HOST_PORT:-3443}
       AUTH_MODE: ${AUTH_MODE:-DEVELOPMENT_MOCK}
       HIPASS_INTERNAL_SERVICE_TOKEN: ${HIPASS_INTERNAL_SERVICE_TOKEN:-replace-with-local-internal-service-token}
       JWT_ISSUER: ${JWT_ISSUER:-hipass-test}
@@ -199,11 +205,15 @@ services:
     networks:
       - db_net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      # Initialization's temporary server accepts Unix sockets only. Require
+      # TCP so dependent APIs cannot start before the final server is ready.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -t 3 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
       timeout: 5s
       retries: 10
-      start_period: 5s
+      # A fresh volume must finish initdb + fsync before TCP can become ready.
+      # Keep the real TCP probe; tolerate cold initialization under Docker Desktop.
+      start_period: 90s
     restart: unless-stopped
 
 volumes:

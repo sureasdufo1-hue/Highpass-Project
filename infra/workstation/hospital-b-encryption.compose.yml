@@ -1,0 +1,13 @@
+services:
+  portal:
+    environment:
+      CAPSTONE_IMAGE_ENCRYPTION_REQUIRED: '1'
+      CAPSTONE_RUNTIME_DIAGNOSTICS: '1'
+      CAPSTONE_KEY_IDENTITY_DIR: /run/key-identity
+      CAPSTONE_VAULT_KEY_ID: ${HIPASS_KEY_RELEASE_VAULT_KEY_ID:?pinned versioned key required}
+      CAPSTONE_B_KEY_RELEASE_TOKEN_FILE: /run/secrets/b-key-release-secret
+    volumes:
+      - /opt/highpass/capstone-key-identity:/run/key-identity:ro
+      - ${HIPASS_B_PORTAL_SECRET_DIR:?B root-protected secrets required}/b-key-release-secret:/run/secrets/b-key-release-secret:ro
+    extra_hosts:
+      - 'kv-hp-demo-4869edd9.vault.azure.net:10.89.1.4'

@@ -101,6 +101,12 @@ async function runSecurityAndHappyPath() {
     consentId: consent.body.consentId,
   })));
   record("동의 후 접근", allowed.status === 200 && allowed.body.decision === "ALLOWED" && allowed.body.accessToken, "ALLOWED token issued", `${allowed.status} ${allowed.body.decision}`);
+  if (allowed.status !== 200 || typeof allowed.body.accessToken !== "string") {
+    const error = new Error(`Token issuance prerequisite failed: HTTP ${allowed.status}, ${allowed.body.reasonCode ?? allowed.body.error ?? "TOKEN_NOT_ISSUED"}`);
+    error.code = "E2E_TOKEN_PREREQUISITE_FAILED";
+    error.step = "tokenIssue";
+    throw error;
+  }
 
   const token = allowed.body.accessToken;
   const auditSessionId = allowed.body.auditSessionId;
@@ -216,7 +222,17 @@ async function makeExpiredToken() {
   const crypto = await import("node:crypto");
   // Keep the synthetic expired-token fixture aligned with Compose's documented
   // development-only default. Production configurations must inject a secret.
-  const secret = process.env.DICOM_TOKEN_SECRET ?? "replace-with-local-32-byte-minimum-secret";
+  let secret = process.env.DICOM_TOKEN_SECRET ?? "replace-with-local-32-byte-minimum-secret";
+  // Bind fixtures to the exact isolated runtime, never a workstation .env
+  // accidentally loaded for another project. Do not print inspect output.
+  if (process.env.HIPASS_E2E_DATABASE_DOCKER === "1" && process.env.HIPASS_E2E_API_CONTAINER?.startsWith("hp-validation-")) {
+    const { stdout } = await execFileAsync("docker", ["inspect", process.env.HIPASS_E2E_API_CONTAINER], { timeout: dockerTimeoutMs, windowsHide: true });
+    const runtime = JSON.parse(stdout)[0];
+    if (runtime.Config.Labels["com.docker.compose.project"] !== process.env.HIPASS_COMPOSE_PROJECT) throw new Error("Expired fixture runtime scope mismatch");
+    const entry = runtime.Config.Env.find(item => item.startsWith("DICOM_TOKEN_SECRET="));
+    if (!entry) throw new Error("Expired fixture runtime secret missing");
+    secret = entry.slice("DICOM_TOKEN_SECRET=".length);
+  }
   const claims = {
     jti: `e2e-expired-${suffix}`,
     iss: "highpass-control-plane",
@@ -332,7 +348,7 @@ function sqlLiteral(value) {
 }
 
 async function restartControlApi() {
-  await runCommand("docker", ["restart", "hipass-control-api"], "restartControlApi");
+  await runCommand("docker", ["restart", process.env.HIPASS_E2E_API_CONTAINER ?? "hipass-control-api"], "restartControlApi");
   const deadline = Date.now() + restartTimeoutMs;
   let lastError = "not checked";
   while (Date.now() < deadline) {

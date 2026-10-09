@@ -1,0 +1,106 @@
+{
+  "scope": "CAPSTONE_SYNTHETIC_ONLY",
+  "version": 1,
+  "migrations": [
+    {
+      "file": "006_highpass_v3_identity.sql",
+      "sha256": "8435d3118f38edabd6ac8880401f352e0a56c6859009574f95f5a36e77015515"
+    },
+    {
+      "file": "007_highpass_v3_identity_transactions.sql",
+      "sha256": "76b2c468fb396a1aa4462da0a85c2924a8fa18ead743371e7616e82aeb726e88"
+    },
+    {
+      "file": "008_highpass_v3_patient_ref_registration.sql",
+      "sha256": "7d94ae382a7b9e8365560825e7b7d3e1bf4ae3810eed63e692cbed785f77c097"
+    },
+    {
+      "file": "009_highpass_v3_identity_idempotency.sql",
+      "sha256": "5f04d22b4c842758aa3cf7b994280e93da96b26e6dd435b02f7f5e54d52b4d44"
+    },
+    {
+      "file": "010_highpass_v3_mapping_review.sql",
+      "sha256": "240d88e90c5f272369a251eb3280126649eef9878fdfb74be6c355c4d7b6f5b4"
+    },
+    {
+      "file": "011_highpass_v3_exchange_foundation.sql",
+      "sha256": "6bdf67ccb746fa58f8638fffd6e945328474f3be6d49c0d12db7b3fe32286fd4"
+    },
+    {
+      "file": "012_highpass_v3_exchange_create_authority.sql",
+      "sha256": "a57cc8f1d412ffe92b8f38cb87ab99428e1eb3c99dbc062fe754ea215186810d"
+    },
+    {
+      "file": "013_highpass_v3_exchange_read_audit.sql",
+      "sha256": "719540bbe29570ae1232d92baa020f71499cd12b6467ec7fc74224c32d41e8c5"
+    },
+    {
+      "file": "014_highpass_v3_exchange_requested_actions.sql",
+      "sha256": "021f292aeebfae40013bf5fb4f5ad6b9cb8a94c8f17307302d8b337d0b898b7d"
+    },
+    {
+      "file": "015_highpass_v3_exchange_cancel_events.sql",
+      "sha256": "a31fc289e0f46ccfa9d3b16eb67a8cf1ad51cae9ed3be7b7acef7df6483cb7ad"
+    },
+    {
+      "file": "016_highpass_v3_expiry_principal.sql",
+      "sha256": "c9ac9d584a77a76300e4ad6260cc400627fd42031a850f8d199cfe637648ee76"
+    },
+    {
+      "file": "017_highpass_v3_exchange_expiry_events.sql",
+      "sha256": "bd6d512b38d29f8602dcb1f60bddbc90fb8e6b9be638cc37f3d4f11aa6345309"
+    },
+    {
+      "file": "018_highpass_v3_pending_preparation_foundation.sql",
+      "sha256": "7e7531e6fce717614e5def22ba17994521f7f099367045f32784068e346d4de2"
+    },
+    {
+      "file": "019_highpass_v3_pending_source_projection.sql",
+      "sha256": "06c7b6426a05698a9184edf6bde13ca9b404decc19dd383d40353949dc915ebf"
+    },
+    {
+      "file": "020_highpass_v3_pending_write_authority.sql",
+      "sha256": "2130741cda865a095dce14e6aedf85e48125990429090f1f2aae9839868b5146"
+    },
+    {
+      "file": "021_highpass_v3_pending_network_audit.sql",
+      "sha256": "cc70e263a03254d3b9f9a128a28372b34318889ad8ddbcd1c7890655337f6787"
+    },
+    {
+      "file": "022_highpass_v3_preauth_security_events.sql",
+      "sha256": "91244d179d590389e5b0d5483cdebd9b348d34e0ac35fed9d254e5bb5b8518b3"
+    },
+    {
+      "file": "023_highpass_v3_patient_ceremony_foundation.sql",
+      "sha256": "d86133f2b89f5156aaf35c9fdea069dc93d39a079b10348cb11b373352a5bd06"
+    },
+    {
+      "file": "024_highpass_v3_patient_approval_projection.sql",
+      "sha256": "35f0d77656adebdbc1bf7110d4d697dbb4d01418603071faa5970ecb37a9a222"
+    },
+    {
+      "file": "025_highpass_v3_patient_challenge_issuance.sql",
+      "sha256": "13d460f5ea4ad6c51b2e1d6a3ecc33751a3f983c6e56f970dd1becd15c3e5e74"
+    },
+    {
+      "file": "026_highpass_v3_patient_consent_decisions.sql",
+      "sha256": "72ab89e480a6d2b9cdaef8fbc6dd223ea51e93660408a75ca3a45b84a2c82a8c"
+    },
+    {
+      "file": "027_highpass_v3_consent_lifecycle.sql",
+      "sha256": "f5ca37e91d40140ad0d14c2657c05ebe1e4ba94ece817814393a3cc40a59d806"
+    },
+    {
+      "file": "028_highpass_v3_withdrawal_outcomes.sql",
+      "sha256": "4fc050f04918e471616eea816baf57bfd4185afbdc78541639508f00f08d7526"
+    },
+    {
+      "file": "029_highpass_v3_consent_expiry_batches.sql",
+      "sha256": "eeb6f76a2b0ceb611ce79d01ff0d422677859a7bfc267e8d47f1e22b9f71aa0d"
+    },
+    {
+      "file": "031_highpass_v3_identity_network_audit.sql",
+      "sha256": "c70345e0cfffd46df72a5eda51d6bac17c4f001d4b4ed2348759e0cea0d207c4"
+    }
+  ]
+}

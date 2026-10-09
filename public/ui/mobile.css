@@ -1,0 +1,60 @@
+/* Mobile adapter: preserve the existing consent and QR state machines. */
+:root {
+  --bg-app:var(--hp-color-canvas); --bg-card:var(--hp-color-surface);
+  --text-main:var(--hp-color-text); --text-muted:var(--hp-color-text-muted);
+  --primary:var(--hp-color-primary); --primary-hover:var(--hp-color-primary-hover); --primary-light:var(--hp-color-selected);
+  --accent:var(--hp-color-primary); --border:var(--hp-color-border-subtle);
+  --radius-card:var(--hp-radius-card); --radius-btn:var(--hp-radius-control);
+  --success:var(--hp-color-success); --success-bg:var(--hp-color-success-bg);
+  --warning:var(--hp-color-warning); --warning-bg:var(--hp-color-warning-bg);
+  --danger:var(--hp-color-danger); --danger-bg:var(--hp-color-danger-bg);
+}
+body { font-family:var(--hp-font); background:var(--hp-color-selected); display:block; }
+.mobile-shell { min-height:100dvh; border:0; border-radius:0; box-shadow:var(--hp-shadow-card); overflow:clip; }
+.mobile-header { padding:16px; box-shadow:none; }
+.header-top { flex-wrap:wrap; gap:12px; }
+.header-top > div:last-child { flex-wrap:wrap; }
+.brand span:first-child { color:var(--hp-color-primary-active); }
+.patient-info { font-size:12px; line-height:1.7; }
+.mobile-content { overflow:visible; padding:20px 16px calc(96px + env(safe-area-inset-bottom)); }
+.card { border-radius:var(--hp-radius-card); box-shadow:var(--hp-shadow-card); }
+.mediq-hero-card { background:var(--hp-color-selected); border:1px solid var(--hp-color-border-subtle); padding:24px 20px; box-shadow:none; }
+.mediq-hero-card::after { display:none; }
+.mediq-hero-tag { color:var(--hp-color-primary-active); background:none; padding:0; letter-spacing:0; }
+.mediq-hero-title { color:var(--hp-color-text); font-size:26px; line-height:1.4; letter-spacing:-.04em; }
+.mediq-hero-desc { color:var(--hp-color-text-muted); font-size:14px; line-height:1.7; }
+.mediq-hero-btn { width:100%; margin-top:20px; }
+.mobile-shell :is(button,.saas-switch-btn), .auth-card button { min-height:44px; }
+.btn, .btn-sm { font:600 14px var(--hp-font); border-radius:var(--hp-radius-control); }
+.btn-primary, .auth-btn-primary { background:var(--hp-color-primary); color:var(--hp-white); }
+.btn-primary:hover, .auth-btn-primary:hover { background:var(--hp-color-primary-hover); }
+.btn:disabled { opacity:.55; cursor:not-allowed; }
+:is(button,a,input,select):focus-visible { outline:3px solid var(--hp-color-focus); outline-offset:3px; }
+input, select, textarea { font-size:16px; }
+.section-title { font-size:18px; }
+.section-sub { font-size:13px; line-height:1.7; }
+.kind-chip, .filter-pill { min-height:44px; }
+.kind-chip.active, .filter-pill.active { background:var(--hp-color-selected); color:var(--hp-color-primary-active); border-color:var(--hp-color-primary); }
+.mobile-nav { border-top:1px solid var(--hp-color-border-subtle); box-shadow:none; background:var(--hp-color-surface); }
+.nav-item { min-height:60px; font-size:11px; }
+.nav-item.active { color:var(--hp-color-primary-active); background:var(--hp-color-selected); border-radius:8px; }
+.nav-item .icon { font-size:20px; }
+.auth-overlay { background:var(--hp-color-canvas); overflow:auto; }
+.auth-overlay.unlocked { display:none; }
+.auth-card { border-radius:var(--hp-radius-dialog); box-shadow:var(--hp-shadow-card); }
+.auth-title { color:var(--hp-color-primary-active); }
+.auth-desc { line-height:1.7; }
+.auth-shield-ring, .auth-icon-wrap::before { animation:none; }
+.auth-grid-options { gap:8px; }
+.auth-opt-btn { font-size:11px; }
+.qr-box-wrap { background:#fff; max-width:100%; }
+.qr-box-wrap canvas, .qr-box-wrap img { max-width:100%; height:auto; }
+.cine-modal-content { max-height:calc(100dvh - 28px); overflow:auto; }
+.mobile-confirm-dialog { max-width:calc(100vw - 32px); }
+@media(min-width:480px) { .mobile-shell { height:auto; min-height:100dvh; margin:0 auto; } }
+@media(max-width:360px) {
+  .mobile-content { padding-left:12px; padding-right:12px; }
+  .mediq-hero-title { font-size:23px; }
+  .auth-card { padding:20px 16px; }
+}
+@media(prefers-reduced-motion:reduce) { *, *::before, *::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; } }

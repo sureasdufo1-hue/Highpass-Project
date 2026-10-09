@@ -2,18 +2,22 @@ import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import {
   AuthError,
+  InternalServiceProvider,
   PrincipalRole,
   applyAuditScope,
   assertDoctorPrincipal,
+  assertDoctorPrincipalAudited,
   assertPatientPrincipal,
   authenticateRequest,
   canReadAuditLogs,
   isPrivilegedAdmin,
-  requireInternalService,
+  requireInternalServiceScope,
   requireRoles,
   validateAuthConfiguration,
 } from "./auth.js";
 import { HipassService, ServiceValidationError } from "./services.js";
+import { authorizeDataPlane, recordDataPlaneReady, isLegacyImageOperation } from "./data-plane-authorization.js";
+import { ingressMeta, validateIngressConfig } from "./ingress.js";
 import { createStoreFromEnv } from "./store-factory.js";
 import { getBearerToken, readJson, RequestBodyError, sendError, sendJson, sendProblem, serveStatic } from "./http-utils.js";
 import { PhrProviderError, PhrProviderErrorCode, SyntheticFhirProvider } from "./health-data-provider.js";
@@ -21,13 +25,45 @@ import { PhrService } from "./phr-service.js";
 import { OpfLocalAdapter } from "./privacy-adapter.js";
 import { PrivacyProcessingError } from "./privacy-contracts.js";
 import { PrivacyTextInspectionService } from "./privacy-service.js";
+import { createPrivacyHttpHandler } from "./privacy-http-handler.js";
+import { createCapstoneMockIdp } from "./capstone-mock-idp.js";
+import { registerPhantomCatalog, isPhantomCatalogCommitted } from "./capstone-phantom-catalog.js";
+import { createKeyReleaseHttpHandler, keyReleasePaths } from "./key-release-http-handler.js";
+import { PostgresKeyReleaseRepository } from "./consent-bound-key-release.js";
+import { createPatientSelfViewGrantRuntime } from './patient-self-view-grant-runtime.js';
+import { createPatientSelfViewGrantHttpHandler, createPatientGrantAuthenticationAudit } from './patient-self-view-grant-http-handler.js';
 
 const port = Number(process.env.PORT ?? 3000);
 validateAuthConfiguration(process.env);
+validateIngressConfig(process.env);
 const store = createStoreFromEnv();
 await store.load();
 const service = new HipassService(store);
+const patientGrantRuntime = await createPatientSelfViewGrantRuntime({store,service});
+const routePatientGrant = createPatientSelfViewGrantHttpHandler({issuer:patientGrantRuntime?.issuer,
+  authenticate:authenticateRequest,requestMeta,auditAuthenticationDenied:createPatientGrantAuthenticationAudit(service)});
+let routeKeyRelease = null;
+if (process.env.HIPASS_CAPSTONE_KEY_RELEASE === "1") {
+  if (process.env.HIPASS_CONTROL_PLANE_ONLY !== "1" || process.env.HIPASS_STORE !== "postgres" || !process.env.HIPASS_KEY_RELEASE_SERVICE_TOKEN) throw new Error("KEY_RELEASE_PROFILE_REQUIRED");
+  requireInternalServiceScope(new InternalServiceProvider().authenticate({ headers: { "x-hipass-service-token": process.env.HIPASS_KEY_RELEASE_SERVICE_TOKEN } }), "gateway:package-key-release");
+  const { Pool } = await import("pg");
+  const pool = new Pool({ connectionString: store.connectionString, max: 4, connectionTimeoutMillis: 5000,
+    statement_timeout: 4000, query_timeout: 5000, options: "-c lock_timeout=3000" });
+  pool.on("error", () => console.warn("KEY_RELEASE_DATABASE_UNAVAILABLE"));
+  const schema = await pool.query("SELECT to_regclass('capstone_key_releases') IS NOT NULL AS ready");
+  if (schema.rows[0]?.ready !== true) { await pool.end(); throw new Error("KEY_RELEASE_MIGRATION_REQUIRED"); }
+  await pool.query("SELECT release_id, metadata, expires_at, consumed_at FROM capstone_key_releases LIMIT 0");
+  routeKeyRelease = createKeyReleaseHttpHandler({ service, repository: new PostgresKeyReleaseRepository(pool), configuration: {
+    sourceHospitalId: process.env.HIPASS_DATA_PLANE_SOURCE_HOSPITAL_ID,
+    publicBaseUrl: process.env.HIPASS_DATA_PLANE_PUBLIC_BASE_URL,
+    recipientHospitalId: process.env.HIPASS_KEY_RELEASE_RECIPIENT_HOSPITAL_ID,
+    keyId: process.env.HIPASS_KEY_RELEASE_VAULT_KEY_ID,
+  } });
+}
+const capstoneMockIdp = createCapstoneMockIdp(process.env);
 const privacyService = new PrivacyTextInspectionService({ adapter: new OpfLocalAdapter() });
+const privacyRequestTimeoutMs = Number(process.env.HIPASS_PRIVACY_REQUEST_TIMEOUT_MS ?? 30000);
+const routePrivacy = createPrivacyHttpHandler({ service: privacyService, timeoutMs: privacyRequestTimeoutMs });
 const phrCursorSecret = process.env.PHR_CURSOR_SECRET ?? process.env.DICOM_TOKEN_SECRET;
 const phrReferenceSecret = process.env.PHR_REFERENCE_SECRET ?? phrCursorSecret;
 const phrService = new PhrService({
@@ -41,10 +77,18 @@ const phrService = new PhrService({
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url, `http://${request.headers.host}`);
-    if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/dicomweb/") || url.pathname.startsWith("/gateway/")) {
-      const forwarded = request.headers["x-forwarded-for"];
-      const clientIp = forwarded ? String(forwarded).split(",")[0].trim() : request.socket.remoteAddress;
-      const ja3 = request.headers["x-ja3-fingerprint"] || request.headers["x-ja4-fingerprint"] || null;
+    if (process.env.HIPASS_CONTROL_PLANE_ONLY === "1" && isLegacyImageOperation(url.pathname)) {
+      await service.writeAudit({ actorType: "SYSTEM", actorId: "control-plane-boundary", action: "ACCESS_DENIED", result: "FAIL", reason: "CONTROL_PLANE_IMAGE_ROUTE_DISABLED", ipAddress: request.socket.remoteAddress });
+      await store.save();
+      sendJson(response, 403, { error: "CONTROL_PLANE_IMAGE_ROUTE_DISABLED" });
+      return;
+    }
+    // Readiness discloses no protected data and must not inherit an actor's
+    // security delay, otherwise negative tests can make healthy services restart.
+    if (url.pathname !== "/api/health" && (url.pathname.startsWith("/api/") || url.pathname.startsWith("/dicomweb/") || url.pathname.startsWith("/gateway/"))) {
+      const ingress = ingressMeta(request, process.env.HIPASS_INGRESS_SECRET);
+      const clientIp = ingress.ipAddress;
+      const ja3 = ingress.ja3Fingerprint;
       const tarpit = service.calculateTarpitDelay({ ipAddress: clientIp, ja3Fingerprint: ja3 });
       if (tarpit.throttled && tarpit.delayMs > 0) {
         response.setHeader("x-hipass-tarpit-delay-ms", String(tarpit.delayMs));
@@ -74,8 +118,13 @@ const server = createServer(async (request, response) => {
       await serveStatic(response, "/index.html");
       return;
     }
+    if (url.pathname.startsWith("/assets/clinical/") && process.env.HIPASS_ENABLE_CURATED_DICOM !== "1") {
+      sendJson(response, 404, { error: "DATASET_NOT_ENABLED" });
+      return;
+    }
     await serveStatic(response, url.pathname);
   } catch (error) {
+    if (response.destroyed) return;
     if (error instanceof AuthError) {
       sendJson(response, error.statusCode, { error: error.code });
       return;
@@ -92,42 +141,33 @@ const server = createServer(async (request, response) => {
 server.listen(port, () => {
   console.log(`HiPass MVP is running at http://localhost:${port}`);
 });
-
-async function routePrivacy(request, response, url) {
-  let principal;
-  try {
-    principal = authenticateRequest(request);
-    requireInternalService(principal);
-  } catch (error) {
-    if (error instanceof AuthError) {
-      throw new PrivacyProcessingError(error.statusCode === 401 ? 401 : 403, "AUTH_REQUIRED", "AUTH_REQUIRED");
-    }
-    throw error;
-  }
-  if (request.method === "GET" && url.pathname === "/internal/privacy/health/ready") {
-    const readiness = await privacyService.readiness();
-    sendJson(response, readiness.status === "READY" ? 200 : 503, readiness);
-    return;
-  }
-  if (request.method === "POST" && url.pathname === "/internal/privacy/text-inspections") {
-    const contentType = String(request.headers["content-type"] ?? "").split(";", 1)[0].trim().toLowerCase();
-    if (contentType !== "application/json") {
-      throw new PrivacyProcessingError(415, "UNSUPPORTED_MEDIA_TYPE", "UNSUPPORTED_MEDIA_TYPE");
-    }
-    const body = await readJson(request, { maxBytes: 40 * 1024, strictUtf8: true });
-    sendJson(response, 200, await privacyService.inspect(body, principal));
-    return;
-  }
-  sendError(response, 404, "Privacy route not found");
-}
+server.on('close',()=>{patientGrantRuntime?.close().catch(()=>console.warn('PATIENT_AUTHORITY_CLOSE_FAILED'));});
 
 async function routeApi(request, response, url) {
   const segments = url.pathname.split("/").filter(Boolean);
   const method = request.method;
 
+  if (url.pathname === "/api/capstone-demo/login") {
+    if (!capstoneMockIdp) return sendJson(response, 404, { error: "DEMO_IDP_NOT_ENABLED" });
+    if (method !== "POST") return sendJson(response, 405, { error: "METHOD_NOT_ALLOWED" });
+    const meta = requestMeta(request);
+    if (!meta.ingressTrusted) return sendJson(response, 403, { error: "TRUSTED_INGRESS_REQUIRED" });
+    const body = await readJson(request, { maxBytes: 2048, strictUtf8: true });
+    const result = capstoneMockIdp({ key: body.key, ip: meta.ipAddress, patientProfile: body.patientProfile, phantomRegistered: isPhantomCatalogCommitted(store) });
+    await service.writeAudit({ actorType: "SYSTEM", actorId: "synthetic-capstone-presenter", action: result.status === 200 ? "LOGIN_SUCCESS" : "LOGIN_FAILURE", result: result.status === 200 ? "SUCCESS" : "FAIL", reason: "CAPSTONE_MOCK_IDP_ONLY", ipAddress: meta.ipAddress });
+    await store.save(); // No signed credentials are released if audit persistence fails.
+    response.setHeader("cache-control", "no-store");
+    return sendJson(response, result.status, result.body);
+  }
+
   if (method === "GET" && url.pathname === "/api/health") {
     const health = await getHealth();
     sendJson(response, health.status === "UP" ? 200 : 503, health);
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/security/proof-policy") {
+    sendJson(response, 200, { supported: Boolean(process.env.HIPASS_INGRESS_SECRET), required: process.env.HIPASS_DPOP_REQUIRED === "1", replayScope: service.dpopReplayStore.scope });
     return;
   }
 
@@ -156,65 +196,62 @@ async function routeApi(request, response, url) {
     return;
   }
 
+  if (await routePatientGrant(request,response,url)) return;
+  const principal = authenticateRequest(request);
+
+  if (method === "POST" && url.pathname === "/api/capstone-demo/phantom-catalog") {
+    response.setHeader("cache-control", "no-store");
+    try {
+      const input = await readJson(request, { maxBytes: 2048, strictUtf8: true });
+      const result = await registerPhantomCatalog({ service, principal, input, env: process.env, meta: requestMeta(request, principal) });
+      return sendJson(response, 200, result);
+    } catch (error) {
+      if (process.env.HIPASS_CAPSTONE_PHANTOM_CATALOG === '1') {
+        const meta = requestMeta(request, principal);
+        await service.writeAudit({ actorType: principal.role, actorId: meta.actorId, hospitalId: principal.hospitalId, action: 'SYNTHETIC_CATALOG_REGISTRATION_DENIED', result: 'FAIL', reasonCode: error instanceof AuthError || error instanceof ServiceValidationError ? error.code : 'CATALOG_REGISTRATION_UNAVAILABLE', ipAddress: meta.ipAddress });
+        if (store.appendOnlyChanges?.() === null) throw new AuthError(503, 'CATALOG_DENIAL_AUDIT_UNAVAILABLE');
+        await store.save();
+      }
+      if (error instanceof ServiceValidationError) return sendJson(response, error.statusCode, { error: error.code });
+      throw error;
+    }
+  }
+
   if (url.pathname.startsWith("/api/v1/mobile/")) {
-    if (url.pathname === "/api/v1/mobile/device") {
+    assertPatientPrincipal(principal, principal.patientId);
+    response.setHeader("cache-control", "no-store");
+    if (method === "GET" && url.pathname === "/api/v1/mobile/device") {
       sendJson(response, 200, {
-        deviceId: "dev_p1001_android_sec",
-        patientId: "P-1001",
-        platform: "ANDROID_TEE",
+        deviceId: null,
+        patientId: principal.patientId,
+        platform: "WEB_PWA_SIMULATOR",
         appVersion: "v3.0.0-mobile-core",
-        status: "ACTIVE",
-        attestation: "HARDWARE_ATTESTED",
-        keyEnclave: "TEE_SECURE_KEYSTORE",
-        riskLevel: "LOW",
-        enrolledAt: "2026-09-01T00:00:00.000Z",
+        status: "NOT_ENROLLED",
+        attestation: "NOT VERIFIED",
+        keyEnclave: "NOT VERIFIED",
+        riskLevel: "NOT VERIFIED",
+        simulation: true,
       });
       return;
     }
-    if (url.pathname === "/api/v1/mobile/vault") {
+    if (method === "GET" && url.pathname === "/api/v1/mobile/vault") {
       sendJson(response, 200, {
-        vaultStatus: "STORED_ON_DEVICE",
-        storageType: "CIPHERTEXT_ONLY_SECURE_STORAGE",
-        plaintextDicomBytes: 0,
-        encryptionAlgorithm: "AES-256-GCM",
-        packages: [
-          {
-            packageId: "pkg_mri_20260620_001",
-            description: "Brain MRI (A병원)",
-            status: "STORED_ON_DEVICE",
-            chunkCount: 2,
-            encryptedBytes: 169200000,
-            integrityHash: "sha256:7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069",
-            plainDicomExposed: false,
-            expiresAt: "2026-12-31T23:59:59.000Z",
-          },
-          {
-            packageId: "pkg_cr_20070207_001",
-            description: "Chest PA X-ray (흉부단순촬영)",
-            status: "STORED_ON_DEVICE",
-            chunkCount: 1,
-            encryptedBytes: 13129286,
-            integrityHash: "sha256:3a4b91657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d8888",
-            plainDicomExposed: false,
-            expiresAt: "2026-12-31T23:59:59.000Z",
-          },
-        ],
+        patientId: principal.patientId,
+        vaultStatus: "NOT CONNECTED",
+        storageType: "NOT VERIFIED",
+        simulation: true,
+        packages: [],
       });
       return;
     }
     if (method === "POST" && url.pathname === "/api/v1/mobile/vault/erase") {
-      sendJson(response, 200, {
-        action: "CRYPTO_ERASE_COMPLETED",
-        erasedPackageCount: 2,
-        zeroizedKeyCount: 2,
-        receipt: `receipt_erase_${Date.now()}`,
-        status: "ZEROIZED",
-      });
+      sendJson(response, 501, { error: "VAULT_NOT_CONNECTED", status: "NOT VERIFIED", simulation: true });
       return;
     }
     if (method === "POST" && url.pathname === "/api/v1/mobile/auth/login") {
       const body = await readJson(request);
-      const patientId = String(body.patientId || "P-1001");
+      const patientId = body.patientId ?? principal.patientId;
+      assertPatientPrincipal(principal, patientId);
       const authMethod = String(body.method || "BIO");
       await service.writeAudit({
         actorType: "PATIENT",
@@ -223,9 +260,8 @@ async function routeApi(request, response, url) {
         result: "SUCCESS",
         details: {
           method: authMethod,
-          authEnclave: "TEE_SECURE_ENCLAVE",
-          fido2Level: "FIDO2_L3_ATTESTED",
-          riskScore: 0,
+          simulation: true,
+          hardwareAttestation: "NOT VERIFIED",
         },
         ipAddress: request.socket.remoteAddress,
         userAgent: request.headers["user-agent"],
@@ -234,15 +270,17 @@ async function routeApi(request, response, url) {
       sendJson(response, 200, {
         authenticated: true,
         patientId,
-        authMethod,
-        fido2Attested: true,
-        enclaveVerified: true,
+        authMethod: principal.authMethod,
+        simulation: true,
+        fido2Attested: false,
+        enclaveVerified: false,
       });
       return;
     }
     if (method === "POST" && url.pathname === "/api/v1/mobile/auth/lock") {
       const body = await readJson(request);
-      const patientId = String(body.patientId || "P-1001");
+      const patientId = body.patientId ?? principal.patientId;
+      assertPatientPrincipal(principal, patientId);
       await service.writeAudit({
         actorType: "PATIENT",
         actorId: patientId,
@@ -259,8 +297,6 @@ async function routeApi(request, response, url) {
       return;
     }
   }
-
-  const principal = authenticateRequest(request);
 
   if (method === "POST" && url.pathname === "/api/consents") {
     const body = await readJson(request);
@@ -279,7 +315,7 @@ async function routeApi(request, response, url) {
     return;
   }
 
-  if (method === "GET" && segments[1] === "consents" && segments[2]) {
+  if (method === "GET" && segments[1] === "consents" && segments[2] && segments.length === 3) {
     const candidate = service.getConsent(segments[2]);
     if (!candidate) return sendError(response, 404, "Consent not found");
     authorizeConsentRead(principal, candidate);
@@ -312,6 +348,19 @@ async function routeApi(request, response, url) {
     if (!consent) return sendError(response, 404, "Consent not found");
     sendJson(response, 200, consent);
     return;
+  }
+
+  if (method === "GET" && segments[1] === "consents" && segments[2] && segments[3] === "handoff-tickets" && segments[4] && segments.length === 5) {
+    assertPatientPrincipal(principal, principal.patientId);
+    response.setHeader("Cache-Control", "no-store");
+    try {
+      const result = await service.viewPatientTicketStatus(segments[2], segments[4], principal.patientId, requestMeta(request, principal));
+      if (!result) return sendError(response, 404, "Ticket status unavailable");
+      return sendJson(response, 200, result);
+    } catch (error) {
+      if (error instanceof ServiceValidationError) return sendJson(response, error.statusCode, { error: error.code });
+      throw error;
+    }
   }
 
   if (method === "POST" && segments[1] === "consents" && segments[2] && segments[3] === "handoff-ticket") {
@@ -398,7 +447,7 @@ async function routeApi(request, response, url) {
       hospitalId: principal.hospitalId,
     });
     const result = await service.redeemViewerHandoff(body.nonce, principal, requestMeta(request, principal));
-    sendJson(response, result.decision === "ALLOWED" ? 200 : 403, result);
+    sendJson(response, result.statusCode ?? (result.decision === "ALLOWED" ? 200 : 403), result);
     return;
   }
 
@@ -409,7 +458,7 @@ async function routeApi(request, response, url) {
       hospitalId: body.requestingHospitalId,
     });
     const result = await service.redeemTransferTicket(body.nonce, body, requestMeta(request, principal));
-    sendJson(response, result.decision === "ALLOWED" ? 200 : 403, result);
+    sendJson(response, result.statusCode ?? (result.decision === "ALLOWED" ? 200 : 403), result);
     return;
   }
 
@@ -429,9 +478,10 @@ async function routeApi(request, response, url) {
   }
 
   if (method === "GET" && url.pathname === "/api/imaging-studies") {
-    const patientId = url.searchParams.get("patientId");
-    if (patientId) assertPatientPrincipal(principal, patientId);
-    sendJson(response, 200, service.listStudies(url.searchParams.get("patientId"), {
+    const patientId = url.searchParams.get("patientId") ?? principal.patientId;
+    if (principal.role === PrincipalRole.PATIENT) assertPatientPrincipal(principal, patientId);
+    else requireRoles(principal, [PrincipalRole.SECURITY_ADMIN, PrincipalRole.PLATFORM_ADMIN]);
+    sendJson(response, 200, service.listStudies(patientId, {
       includeSeries: url.searchParams.get("includeSeries") === "true",
     }));
     return;
@@ -439,17 +489,25 @@ async function routeApi(request, response, url) {
 
   if (method === "POST" && url.pathname === "/api/dicom-access/request") {
     const body = await readJson(request);
-    assertDoctorPrincipal(principal, {
+    await assertDoctorPrincipalAudited(principal, {
       doctorId: body.doctorId,
       hospitalId: body.requestingHospitalId,
+      consentId: body.consentId,
+    }, async (denial) => {
+      const meta = requestMeta(request, principal);
+      await service.writeAudit({ ...denial, ipAddress: meta.ipAddress });
+      await store.save();
     });
     const result = await service.requestDicomAccessToken(body, requestMeta(request, principal));
-    sendJson(response, result.decision === "ALLOWED" ? 200 : 403, result);
+    sendJson(response, result.statusCode ?? (result.decision === "ALLOWED" ? 200 : 403), result);
     return;
   }
 
   if (method === "POST" && url.pathname === "/api/transfers/pacs-import") {
     const body = await readJson(request);
+    if (body.destDir !== undefined || body.baseDestDir !== undefined) {
+      return sendJson(response, 400, { error: "CLIENT_STORAGE_PATH_NOT_ALLOWED" });
+    }
     const validation = requireFields(body, ["studyInstanceUid"]);
     if (validation) return sendError(response, 400, validation);
     assertDoctorPrincipal(principal, {
@@ -470,7 +528,12 @@ async function routeApi(request, response, url) {
   }
 
   if (method === "GET" && (url.pathname === "/api/hospitals/HOSP-B/pacs-archive" || url.pathname === "/api/transfers/pacs-archive")) {
-    sendJson(response, 200, service.listHospitalBPacsArchive());
+    requireRoles(principal, [PrincipalRole.DOCTOR, PrincipalRole.HOSPITAL_ADMIN]);
+    if (principal.hospitalId !== "HOSP-B") throw new AuthError(403, "HOSPITAL_IDENTITY_MISMATCH");
+    sendJson(response, 200, service.listHospitalBPacsArchive().map(({ keyEnvelope, destinationPath, instances, ...archive }) => ({
+      ...archive,
+      instances: (instances ?? []).map(({ storedPath, nonce, tag, ...instance }) => instance),
+    })));
     return;
   }
 
@@ -549,7 +612,7 @@ async function routeApi(request, response, url) {
   }
 
   if (method === "POST" && url.pathname === "/api/audit-logs") {
-    requireInternalService(principal);
+    requireInternalServiceScope(principal, "audit:write");
     const body = await readJson(request);
     await service.writeAudit({
       ...body,
@@ -751,12 +814,13 @@ function sendPhrProblem(response, error, correlationId) {
 }
 
 async function routeDicomweb(request, response, url) {
+  // All gateway paths receive the same authenticated ingress and proof context.
+  const meta = requestMeta(request);
   const segments = url.pathname.split("/").filter(Boolean);
 
   if (request.method === "GET" && url.pathname === "/dicomweb/studies") {
     const result = await service.gatewayListStudies(getBearerToken(request), {
-      ipAddress: request.socket.remoteAddress,
-      userAgent: request.headers["user-agent"],
+      ...meta,
     });
     sendJson(response, result.status, result.body);
     return;
@@ -764,8 +828,7 @@ async function routeDicomweb(request, response, url) {
 
   if (request.method === "GET" && segments[0] === "dicomweb" && segments[1] === "studies" && segments[2] && !segments[3]) {
     const result = await service.gatewayListSeries(getBearerToken(request), segments[2], {
-      ipAddress: request.socket.remoteAddress,
-      userAgent: request.headers["user-agent"],
+      ...meta,
     });
     sendJson(response, result.status, result.body);
     return;
@@ -773,8 +836,7 @@ async function routeDicomweb(request, response, url) {
 
   if (request.method === "GET" && segments[0] === "dicomweb" && segments[1] === "studies" && segments[2] && segments[3] === "series" && !segments[4]) {
     const result = await service.gatewayListSeries(getBearerToken(request), segments[2], {
-      ipAddress: request.socket.remoteAddress,
-      userAgent: request.headers["user-agent"],
+      ...meta,
     });
     sendJson(response, result.status, result.body);
     return;
@@ -782,8 +844,7 @@ async function routeDicomweb(request, response, url) {
 
   if (request.method === "GET" && segments[0] === "dicomweb" && segments[1] === "studies" && segments[2] && segments[3] === "series" && segments[4] && !segments[5]) {
     const result = await service.gatewayListInstances(getBearerToken(request), segments[2], segments[4], {
-      ipAddress: request.socket.remoteAddress,
-      userAgent: request.headers["user-agent"],
+      ...meta,
     });
     sendJson(response, result.status, result.body);
     return;
@@ -793,16 +854,14 @@ async function routeDicomweb(request, response, url) {
     const sopInstanceUid = segments[6] ?? null;
     if (!sopInstanceUid) {
       const result = await service.gatewayListInstances(getBearerToken(request), segments[2], segments[4], {
-        ipAddress: request.socket.remoteAddress,
-        userAgent: request.headers["user-agent"],
+        ...meta,
       });
       sendJson(response, result.status, result.body);
       return;
     }
     if (segments[7] === "rendered") {
       const result = await service.gatewayRetrieveRenderedInstance(getBearerToken(request), segments[2], segments[4], sopInstanceUid, {
-        ipAddress: request.socket.remoteAddress,
-        userAgent: request.headers["user-agent"],
+        ...meta,
       });
       if (result.contentType === "application/json") {
         sendJson(response, result.status, result.body);
@@ -818,8 +877,7 @@ async function routeDicomweb(request, response, url) {
     }
     const isDownload = segments[7] === "download";
     const result = await (isDownload ? service.gatewayDownloadInstance : service.gatewayRetrieveInstance).call(service, getBearerToken(request), segments[2], segments[4], sopInstanceUid, {
-      ipAddress: request.socket.remoteAddress,
-      userAgent: request.headers["user-agent"],
+      ...meta,
     });
     if (result.contentType === "application/json") {
       sendJson(response, result.status, result.body);
@@ -839,8 +897,35 @@ async function routeDicomweb(request, response, url) {
 
 async function routeGateway(request, response, url) {
   const principal = authenticateRequest(request);
+  if(['/gateway/patient-self-view/authorize','/gateway/patient-self-view/ready'].includes(url.pathname)){
+    if(!patientGrantRuntime){request.resume();sendJson(response,503,{active:false,reason:'PATIENT_GRANT_DISABLED'});return;}
+    requireInternalServiceScope(principal,'gateway:patient-self-view-authorize');
+    if(request.method!=='POST' || url.search){request.resume();sendJson(response,400,{active:false,reason:'INVALID_REQUEST'});return;}
+    const input=await readJson(request,{maxBytes:32768,strictUtf8:true});
+    const result=await (url.pathname.endsWith('/ready')?patientGrantRuntime.authorizer.ready(input,principal):patientGrantRuntime.authorizer.authorize(input,principal));
+    sendJson(response,result.statusCode,result);return;
+  }
+  if (keyReleasePaths.includes(url.pathname)) {
+    if (!routeKeyRelease) { response.setHeader("cache-control", "no-store"); sendJson(response, 503, { error: "KEY_RELEASE_NOT_ENABLED" }); return; }
+    await routeKeyRelease(request, response, url, principal);
+    return;
+  }
+  if (request.method === "POST" && ["/gateway/data-plane/authorize", "/gateway/data-plane/ready"].includes(url.pathname)) {
+    requireInternalServiceScope(principal, "gateway:data-plane-authorize");
+    const operation = url.pathname.endsWith("/ready") ? recordDataPlaneReady : authorizeDataPlane;
+    const result = await operation(service, await readJson(request, { maxBytes: 32768, strictUtf8: true }), {
+      sourceHospitalId: process.env.HIPASS_DATA_PLANE_SOURCE_HOSPITAL_ID,
+      publicBaseUrl: process.env.HIPASS_DATA_PLANE_PUBLIC_BASE_URL,
+    });
+    response.setHeader("cache-control", "no-store");
+    sendJson(response, result.status, result.body);
+    return;
+  }
   if (request.method === "POST" && url.pathname === "/gateway/token/introspect") {
     requireRoles(principal, [PrincipalRole.INTERNAL_SERVICE, PrincipalRole.SECURITY_ADMIN, PrincipalRole.PLATFORM_ADMIN]);
+    if (principal.role === PrincipalRole.INTERNAL_SERVICE || principal.roles?.includes(PrincipalRole.INTERNAL_SERVICE)) {
+      requireInternalServiceScope(principal, "gateway:introspect");
+    }
     const body = await readJson(request);
     const rawToken = body.token ?? getBearerToken(request);
     if (!rawToken) return sendError(response, 400, "Missing required field(s): token");
@@ -848,12 +933,12 @@ async function routeGateway(request, response, url) {
       ipAddress: request.socket.remoteAddress,
       userAgent: request.headers["user-agent"],
     });
-    sendJson(response, 200, sanitizeTokenIntrospection(result));
+    sendJson(response, result.statusCode ?? 200, sanitizeTokenIntrospection(result));
     return;
   }
 
   if (request.method === "POST" && url.pathname === "/gateway/audit") {
-    requireInternalService(principal);
+    requireInternalServiceScope(principal, "audit:write");
     const body = await readJson(request);
     const validation = requireFields(body, ["actorType", "actorId", "action", "result"]);
     if (validation) return sendError(response, 400, validation);
@@ -887,13 +972,17 @@ function requireFields(body, fields) {
 }
 
 function requestMeta(request, principal) {
-  const forwarded = request.headers["x-forwarded-for"];
-  const ipAddress = forwarded ? String(forwarded).split(",")[0].trim() : request.socket.remoteAddress;
+  const ingress = ingressMeta(request, process.env.HIPASS_INGRESS_SECRET);
+  const ipAddress = ingress.ipAddress;
   const userAgent = request.headers["user-agent"] || null;
-  const ja3Fingerprint = request.headers["x-ja3-fingerprint"] || request.headers["x-ja4-fingerprint"] || null;
+  const ja3Fingerprint = ingress.ja3Fingerprint;
   const clientAttestationToken = request.headers["x-client-attestation"] || null;
-  const dpopProof = request.headers["dpop"] || request.headers["x-dpop"] || null;
+  const dpopProof = request.headers["dpop"] || null;
   return {
+    ingressTrusted: ingress.ingressTrusted,
+    method: request.method,
+    externalUrl: new URL(request.url, service.publicBaseUrl).href,
+    authorizationScheme: String(request.headers.authorization ?? "").split(" ")[0],
     actorId: principalActorId(principal),
     actorType: principal?.actorType,
     hospitalId: principal?.hospitalId ?? null,

@@ -13,7 +13,7 @@
     "recipientRef": { "type": "string", "minLength": 1 },
     "sourceOrganizationId": { "type": "string", "minLength": 1 },
     "sourceArtifactRef": { "type": "string", "minLength": 1 },
-    "sourceArtifactVersion": { "type": ["integer", "string"] },
+    "sourceArtifactVersion": { "type": ["integer", "string"], "minLength": 1 },
     "context": {
       "type": "object",
       "additionalProperties": false,

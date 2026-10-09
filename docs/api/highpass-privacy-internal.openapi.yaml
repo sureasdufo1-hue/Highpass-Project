@@ -2,7 +2,16 @@ openapi: 3.1.0
 info:
   title: Highpass Privacy Internal API
   version: 1.0.0
-  description: PF-1 internal preview API. A successful inspection is never a release approval.
+  description: >-
+    PF-1 internal preview API. A successful inspection is never a release approval.
+    No external Staging URL is configured. The public edge does not route these paths.
+    HIPASS_PRIVACY_SERVICE_TOKEN enables a privacy-service identity with only privacy:inspect.
+    When enabled, the shared internal service token loses Privacy permission.
+    Dedicated identity requires a matching server-side approved-use requester binding.
+    Privacy requests share a total 30000ms budget from handler entry, configurable
+    with HIPASS_PRIVACY_REQUEST_TIMEOUT_MS (1..60000ms). Body receipt, queue wait,
+    token count and detection consume the same budget. Client disconnect aborts work.
+    No automatic retry; a timeout or preview success never authorizes release.
 paths:
   /internal/privacy/health/ready:
     get:
@@ -10,8 +19,19 @@ paths:
       security:
         - internalServiceToken: []
       responses:
-        '200': { description: Ready }
-        '503': { description: Model unavailable }
+        '200':
+          description: Ready
+          content:
+            application/json:
+              schema: { $ref: '../../schemas/privacy-responses.schema.json#/$defs/readiness' }
+        '503':
+          description: Model unavailable; NOT_READY readiness object, not an error envelope
+          content:
+            application/json:
+              schema: { $ref: '../../schemas/privacy-responses.schema.json#/$defs/readiness' }
+        '401': { $ref: '#/components/responses/AuthenticationRequired' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '504': { $ref: '#/components/responses/ModelTimeout' }
   /internal/privacy/text-inspections:
     post:
       summary: Inspect synthetic or otherwise authorized text inside the A-side trust boundary
@@ -24,18 +44,72 @@ paths:
             schema:
               $ref: ../../schemas/privacy-text-inspection.schema.json
       responses:
-        '200': { description: Preview generated; policyDecision remains REVIEW_REQUIRED }
-        '401': { description: AUTH_REQUIRED }
-        '403': { description: POLICY_DENIED }
-        '413': { description: INPUT_TOO_LARGE }
-        '415': { description: UNSUPPORTED_MEDIA_TYPE }
-        '422': { description: OFFSET_MISMATCH or INVALID_CONTENT }
-        '429': { description: QUEUE_FULL }
-        '503': { description: MODEL_UNAVAILABLE }
-        '504': { description: MODEL_TIMEOUT }
+        '200':
+          description: Preview generated; review required and release forbidden
+          content:
+            application/json:
+              schema: { $ref: '../../schemas/privacy-responses.schema.json#/$defs/inspection' }
+        '401': { $ref: '#/components/responses/AuthenticationRequired' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413': { $ref: '#/components/responses/InputTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/InvalidContent' }
+        '429': { $ref: '#/components/responses/QueueFull' }
+        '502': { $ref: '#/components/responses/InvalidModelOutput' }
+        '503': { $ref: '#/components/responses/ModelUnavailable' }
+        '504': { $ref: '#/components/responses/ModelTimeout' }
 components:
+  responses:
+    AuthenticationRequired:
+      description: AUTH_REQUIRED
+      content:
+        application/json:
+          schema: { $ref: '../../schemas/privacy-responses.schema.json#/$defs/error' }
+    Forbidden:
+      description: AUTH_REQUIRED for invalid service identity or POLICY_DENIED for use binding
+      content:
+        application/json:
+          schema: { $ref: '../../schemas/privacy-responses.schema.json#/$defs/error' }
+    InputTooLarge:
+      description: INPUT_TOO_LARGE
+      content:
+        application/json:
+          schema: { $ref: '../../schemas/privacy-responses.schema.json#/$defs/error' }
+    UnsupportedMediaType:
+      description: UNSUPPORTED_MEDIA_TYPE
+      content:
+        application/json:
+          schema: { $ref: '../../schemas/privacy-responses.schema.json#/$defs/error' }
+    InvalidContent:
+      description: INVALID_CONTENT or OFFSET_MISMATCH
+      content:
+        application/json:
+          schema: { $ref: '../../schemas/privacy-responses.schema.json#/$defs/error' }
+    QueueFull:
+      description: QUEUE_FULL
+      content:
+        application/json:
+          schema: { $ref: '../../schemas/privacy-responses.schema.json#/$defs/error' }
+    InvalidModelOutput:
+      description: MODEL_OUTPUT_INVALID
+      content:
+        application/json:
+          schema: { $ref: '../../schemas/privacy-responses.schema.json#/$defs/error' }
+    ModelUnavailable:
+      description: MODEL_UNAVAILABLE
+      content:
+        application/json:
+          schema: { $ref: '../../schemas/privacy-responses.schema.json#/$defs/error' }
+    ModelTimeout:
+      description: MODEL_TIMEOUT
+      content:
+        application/json:
+          schema: { $ref: '../../schemas/privacy-responses.schema.json#/$defs/error' }
   securitySchemes:
     internalServiceToken:
       type: apiKey
       in: header
       name: X-HiPass-Service-Token
+      description: >-
+        Dedicated Privacy token when configured, otherwise legacy shared internal token.
+        Not OAuth2; no issuer, audience or automatic token TTL. Keep inside the trust boundary.

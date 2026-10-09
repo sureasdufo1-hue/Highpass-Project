@@ -1,0 +1,23 @@
+# Explicit opt-in. Never enables Vault credentials/identity on Control Plane.
+services:
+  key-release-migrate:
+    image: ${HIPASS_APP_IMAGE:?fresh reviewed application image required}
+    command: [scripts/migrate-capstone-key-release.js]
+    environment:
+      CAPSTONE_APP_PASSWORD_FILE: /run/secrets/app-password
+    volumes:
+      - ${HIPASS_CLOUD_SECRET_DIR:?root-protected secrets required}/app-password:/run/secrets/app-password:ro
+    networks: [db_private]
+    depends_on:
+      bootstrap: {condition: service_completed_successfully}
+    restart: 'no'
+  control:
+    environment:
+      HIPASS_CAPSTONE_KEY_RELEASE: '1'
+      HIPASS_KEY_RELEASE_SERVICE_TOKEN_FILE: /run/secrets/b-key-release-secret
+      HIPASS_KEY_RELEASE_RECIPIENT_HOSPITAL_ID: HOSP-B
+      HIPASS_KEY_RELEASE_VAULT_KEY_ID: ${HIPASS_KEY_RELEASE_VAULT_KEY_ID:?fixed versioned B Vault key required}
+    volumes:
+      - ${HIPASS_CLOUD_SECRET_DIR}/b-key-release-secret:/run/secrets/b-key-release-secret:ro
+    depends_on:
+      key-release-migrate: {condition: service_completed_successfully}

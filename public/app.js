@@ -4,16 +4,33 @@
    - Dynamic ABAC Policy Engine & DICOMweb Token Management
    - FHIR R4 PHR, 5-Step Pipeline, Cloud Viewer, PACS Import & Live Receipts
    ========================================================================== */
+import { initializeCapstoneAuth } from "/capstone-auth.js";
+import { initializePatientComponents, renderPatientOverview, createPatientQrController, renderPatientQr } from "/ui/patient.js";
+import { selectConsentForStudy, isRevocationAcknowledged } from "/consent-selection.js";
+import { renderClinicianDetail, clinicianDetailModel, filterClinicalStudies, renderClinicalMetrics, renderClinicalStudyList } from "/ui/clinician.js";
+const capstoneAuth = await initializeCapstoneAuth();
+const patientQrController = createPatientQrController({
+  readStatus: (consentId, ticketId) => fetchJson(`/api/consents/${encodeURIComponent(consentId)}/handoff-tickets/${encodeURIComponent(ticketId)}`, { cache: "no-store", signal: AbortSignal.timeout(10000) }),
+  render: renderPatientQr,
+});
+window.addEventListener("pagehide", () => patientQrController.clear());
 
 const demo = {
-  patientId: "P-1001",
+  patientId: capstoneAuth?.context.patientId ?? "P-1001",
+  patientName: capstoneAuth?.context.patientName ?? "합성 시연 환자",
   doctorId: "DOC-B-01",
   sourceHospitalId: "HOSP-A",
   targetHospitalId: "HOSP-B",
   purpose: "TREATMENT",
   permission: "VIEW_ONLY",
-  studyInstanceUid: "1.2.410.100.1.20260620.001",
+  studyInstanceUid: capstoneAuth?.context.defaultStudyUid ?? "1.2.410.100.1.20260620.001",
 };
+if (capstoneAuth?.context) {
+  const profileName = document.querySelector('#patient-portal-app .profile-copy strong');
+  const avatar = document.querySelector('#patient-portal-app .profile .avatar');
+  if (profileName) profileName.textContent = `${capstoneAuth.context.patientName} (${demo.patientId})`;
+  if (avatar) avatar.textContent = demo.patientId === 'HP-TEST-PHANTOM-001' ? 'TEST' : '1001';
+}
 
 const adminHospitals = [
   { hospitalId: "HOSP-A", name: "가상 병원 A (Virtual Hospital A)", status: "ACTIVE" },
@@ -52,6 +69,12 @@ let lastConsents = [];
 let lastSeries = [];
 let lastInstances = [];
 let patientConsentReady = false;
+let consentViewRevision = 0;
+let consentMutationPending = false;
+let tokenRequestPending = false;
+let dashboardRequestSequence = 0;
+let dashboardAppliedSequence = 0;
+let dashboardLoadsInFlight = 0;
 let isEasyMode = false;
 let isPreflightPassed = false;
 let wwWlPresetIndex = 0;
@@ -138,7 +161,7 @@ function handleIncomingSyncMessage(data) {
       scannedRef.textContent = `${data.ticketId} (모바일 1회용)`;
     }
     if (message) {
-      message.innerHTML = "<strong>모바일 QR 감지:</strong> 환자(P-1001)의 일회용 암호학적 티켓이 수신되었습니다. [원클릭 QR 현장 접수] 버튼을 누르면 즉시 진료실 세션으로 검증 연계됩니다.";
+      message.textContent = "모바일 QR 알림을 받았습니다. 접수 전에 서버에서 환자·동의·티켓을 확인합니다.";
       message.dataset.tone = "info";
     }
     showToast("📱 환자 모바일 앱에서 새 1회용 QR 접수 티켓이 발행되었습니다.");
@@ -196,19 +219,8 @@ function broadcastSync(action) {
 
 // Background Heartbeat Polling (every 2.5s for seamless multi-tab or multi-window live sync)
 setInterval(() => {
-  loadDashboard({ skipPhr: true }).catch(() => {});
+  loadDashboard({ skipPhr: true, background: true }).catch(() => {});
 }, 2500);
-
-// Initialize on DOM Ready
-initNavigation();
-initConsentDateDefaults();
-renderAdminShell();
-bindEvents();
-await loadDashboard();
-
-if (pendingPhrHandoffNonce) {
-  await redeemPhrHandoff(pendingPhrHandoffNonce);
-}
 
 // --------------------------------------------------------------------------
 // Navigation & Persona Routing
@@ -252,6 +264,7 @@ function initNavigation() {
 
 function switchPersona(persona, updateHash = true) {
   currentPersona = persona;
+  document.querySelector('.hp-skip')?.setAttribute('href', persona === 'PATIENT' ? '#patient-main' : '#clinician-main');
   document.querySelectorAll("[data-persona]").forEach((btn) => {
     const isTarget = btn.dataset.persona === persona;
     btn.classList.toggle("active", isTarget);
@@ -306,6 +319,8 @@ function navigatePatientPage(page) {
   });
   patientApp.querySelectorAll("[data-route]").forEach((b) => {
     b.classList.toggle("active", b.dataset.route === page);
+    if (b.dataset.route === page) b.setAttribute("aria-current", "page");
+    else b.removeAttribute("aria-current");
   });
 
   const contextTitle = document.querySelector("#contextTitle");
@@ -326,7 +341,7 @@ function navigateHospitalScreen(screen) {
     exchange: ["Hospital Portal / Exchange", "5단계 교류 파이프라인"],
     studies: ["Hospital Portal / 의료영상", "승인된 의료영상"],
     viewer: ["Hospital Portal / Cloud Viewer", "Cloud DICOM Viewer"],
-    transfer: ["Hospital Portal / PACS Import", "PACS Import (STOW-RS)"],
+    transfer: ["Hospital Portal / Local Archive", "로컬 암호화 보관 시뮬레이터"],
     audit: ["Hospital Portal / 감사·추적", "감사·Provenance 로그"],
     qr: ["P1 / QR Handoff", "QR Medical Image Handoff 현장 접수"],
     admin: ["Operations / Connector", "Connector Operations"],
@@ -336,9 +351,19 @@ function navigateHospitalScreen(screen) {
   hospitalApp.querySelectorAll(".mq-screen").forEach((s) => {
     s.hidden = s.dataset.screen !== screen;
   });
+  hospitalApp.dataset.uiTheme = screen === 'viewer' ? 'diagnostic-dark' : 'clinical-white';
+  hospitalApp.classList.toggle('mq-focus-viewer', screen === 'viewer');
+  const shell = hospitalApp.querySelector('.mq-viewer-shell');
+  const previewHost = document.querySelector('#clinical-preview-host');
+  const viewerScreen = hospitalApp.querySelector('[data-screen="viewer"]');
+  if (shell && previewHost && viewerScreen) {
+    (screen === 'viewer' ? viewerScreen : previewHost).append(shell);
+  }
   hospitalApp.querySelectorAll(".mq-nav").forEach((b) => {
     b.classList.toggle("active", b.dataset.view === screen);
     b.setAttribute("aria-selected", String(b.dataset.view === screen));
+    if (b.dataset.view === screen) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
   });
 
   const breadcrumb = document.querySelector("#mq-breadcrumb");
@@ -385,19 +410,11 @@ function bindEvents() {
   // Patient Actions
   document.querySelector("#patient-consent")?.addEventListener("click", createPatientConsent);
   document.querySelector("#patient-revoke")?.addEventListener("click", revokePatientConsent);
-  document.querySelector("#btn-quick-approve")?.addEventListener("click", async () => {
-    showToast("동의 정책을 생성하는 중입니다...");
-    const res = await createPatientConsent();
-    if (res?.consentId) {
-      showToast("가상 병원 B 진료 의뢰 동의가 승인되었습니다. 병원 SaaS 콘솔에 즉시 동기화됩니다.");
-      broadcastSync("CONSENT_APPROVED");
-    }
-  });
+  document.querySelector("#btn-quick-approve")?.addEventListener("click", () => navigatePatientPage("consent"));
   document.querySelector("#btn-quick-revoke")?.addEventListener("click", async () => {
     showToast("동의를 철회하는 중입니다...");
-    await revokePatientConsent();
-    showToast("가상 병원 B 진료 의뢰 동의가 철회되었습니다. 병원 SaaS 콘솔에 즉시 동기화됩니다.");
-    broadcastSync("CONSENT_REVOKED");
+    const acknowledged = await revokePatientConsent();
+    if (acknowledged) showToast("가상 병원 B 진료 의뢰 동의가 철회되었습니다. 병원 SaaS 콘솔에 즉시 동기화됩니다.");
   });
   sourceHospitalSelect?.addEventListener("change", syncPatientChoices);
   targetHospitalSelect?.addEventListener("change", syncPatientChoices);
@@ -543,12 +560,24 @@ function bindEvents() {
   });
 
   // Doctor Actions
+  document.querySelector('#clinical-open-viewer')?.addEventListener('click', openViewer);
+  document.querySelector('#clinician-search')?.addEventListener('input', () => renderDoctorStudies(lastStudies));
+  document.querySelector('#clinician-filter')?.addEventListener('change', () => renderDoctorStudies(lastStudies));
   document.querySelector("#doctor-request-token")?.addEventListener("click", requestDoctorToken);
   document.querySelector("#doctor-open-series")?.addEventListener("click", openViewer);
   document.querySelector("#load-studies")?.addEventListener("click", async () => {
-    showToast("환자 전송 접수 목록을 새로고침하고 있습니다...");
-    await loadDashboard();
-    showToast("환자 전송 접수 목록이 갱신되었습니다.");
+    const button = document.querySelector('#load-studies');
+    button.disabled = true;
+    button.textContent = '불러오는 중…';
+    try {
+      await loadDashboard();
+      showToast('의료영상 목록이 갱신되었습니다.');
+    } catch {
+      showToast('목록을 갱신하지 못했습니다. 연결을 확인한 후 다시 시도하세요.');
+    } finally {
+      button.disabled = false;
+      button.textContent = 'DICOMweb 목록 새로고침';
+    }
   });
   document.querySelector("#load-instances")?.addEventListener("click", loadInstancesForSelectedSeries);
   downloadButton?.addEventListener("click", downloadSelectedInstance);
@@ -634,26 +663,61 @@ function initConsentDateDefaults() {
 // Core Dashboard Data Loading
 // --------------------------------------------------------------------------
 async function loadDashboard(options = {}) {
+  // Background heartbeat must not stack another seven-request snapshot while
+  // a previous refresh is pending. Explicit post-mutation reads stay fresh.
+  if (options.background && (dashboardLoadsInFlight > 0 || consentMutationPending || tokenRequestPending)) return;
+  dashboardLoadsInFlight++;
+  try {
+    return await fetchDashboardSnapshot(options);
+  } catch (error) {
+    if (typeof document !== "undefined") {
+      const state = document.querySelector("#patient-read-state");
+      if (state) { state.textContent = "최신 정보를 확인하지 못했습니다. 연결을 확인하고 새로고침해 주세요."; state.dataset.state = "error"; }
+    }
+    throw error;
+  } finally {
+    dashboardLoadsInFlight--;
+  }
+}
+
+async function fetchDashboardSnapshot(options = {}) {
+  const requestSequence = ++dashboardRequestSequence;
+  const personaAtRequest = currentPersona;
+  const selectionAtRequest = latestConsentId;
+  const revisionAtRequest = consentViewRevision;
   const auditParams = new URLSearchParams();
   if (auditResultFilter?.value) auditParams.set("result", auditResultFilter.value);
   if (auditActionFilter?.value) auditParams.set("action", auditActionFilter.value);
   const auditQuery = auditParams.toString();
 
-  const [health, studies, consents, logs, usage, anomalies, quarantines] = await Promise.all([
-    fetchJson("/api/health"),
-    fetchJson(`/api/imaging-studies?patientId=${demo.patientId}&includeSeries=true`),
-    fetchJson(`/api/patients/${demo.patientId}/consents`),
-    fetchJson(`/api/audit-logs${auditQuery ? `?${auditQuery}` : ""}`),
-    fetchJson("/api/transfer-usage"),
-    fetchJson("/api/anomaly-alerts"),
-    fetchJson("/api/security/quarantines?all=true"),
-  ]);
+  const [health, studies, consents, logs, usage, anomalies, quarantines] = await fetchDashboardReads([
+    "/api/health",
+    `/api/imaging-studies?patientId=${demo.patientId}&includeSeries=true`,
+    `/api/patients/${demo.patientId}/consents`,
+    ...(currentPersona === "PATIENT" ? [] : [
+      `/api/audit-logs${auditQuery ? `?${auditQuery}` : ""}`,
+      "/api/transfer-usage", "/api/anomaly-alerts", "/api/security/quarantines?all=true",
+    ]),
+  ], options.background === true);
 
+  // A delayed heartbeat must never replace a newer selection or a mutation's
+  // confirmed outcome. Server authorization remains the only access authority.
+  if (requestSequence < dashboardAppliedSequence || selectionAtRequest !== latestConsentId || revisionAtRequest !== consentViewRevision || personaAtRequest !== currentPersona) return;
+  if (!Array.isArray(studies) || !Array.isArray(consents) || health?.error) throw new Error("PATIENT_SNAPSHOT_UNAVAILABLE");
+  dashboardAppliedSequence = requestSequence;
   lastStudies = Array.isArray(studies) ? studies : [];
   lastConsents = Array.isArray(consents) ? consents : [];
   updateConsentState(lastConsents);
   renderPatientStudyOptions(lastStudies);
   renderStudies(lastStudies);
+  renderPatientOverview(lastStudies, { onView: study => openPatientStudyViewer(study.studyInstanceUid), onShare: study => {
+    selectStudy(study.studyInstanceUid, lastStudies);
+    if (sourceHospitalSelect) sourceHospitalSelect.value = study.sourceHospitalId;
+    syncPatientChoices({ preserveConsentState: true });
+    navigatePatientPage("consent");
+  } });
+  const readState = document.querySelector("#patient-read-state");
+  if (readState) { readState.textContent = "서버 정보 확인 · " + new Date().toLocaleTimeString("ko-KR"); readState.dataset.state = "ready"; }
   renderDoctorStudies(lastStudies);
   renderLogs(Array.isArray(logs) ? logs : []);
   renderAuditTable(Array.isArray(logs) ? logs : []);
@@ -664,11 +728,36 @@ async function loadDashboard(options = {}) {
   renderHealth(health);
   renderPatientReceipts(Array.isArray(consents) ? consents : [], Array.isArray(logs) ? logs : []);
   updatePipelineSteps();
-  await loadHospitalBPacsArchive();
+  if (currentPersona !== "PATIENT") await loadHospitalBPacsArchive();
 
   if (!options?.skipPhr) {
     await loadPhrDashboard();
   }
+}
+
+async function fetchDashboardReads(paths, background = false) {
+  if (!background) return Promise.all(paths.map(path => fetchJson(path)));
+  // Leave same-origin browser connection capacity for interactive policy/token
+  // requests. Do not change any request timeout, security delay or credentials.
+  const results = new Array(paths.length);
+  let next = 0;
+  let interrupted = false;
+  let failed = false;
+  let failure;
+  const worker = async () => {
+    while (next < paths.length && !interrupted && !failed) {
+      if (consentMutationPending || tokenRequestPending) { interrupted = true; return; }
+      const index = next++;
+      try { results[index] = await fetchJson(paths[index]); }
+      catch (error) { failed = true; failure = error; throw error; }
+    }
+  };
+  // Drain already-started reads before the wrapper releases its in-flight guard.
+  // Never apply a partial snapshot or turn a failed read into a successful read.
+  await Promise.allSettled(Array.from({ length: Math.min(2, paths.length) }, worker));
+  if (failed) throw failure;
+  if (interrupted) throw new Error("DASHBOARD_BACKGROUND_INTERRUPTED");
+  return results;
 }
 
 // --------------------------------------------------------------------------
@@ -691,7 +780,7 @@ async function loadPhrDashboard() {
     const obsCountEl = document.querySelector("#phr-observation-count");
     const imgCountEl = document.querySelector("#phr-imaging-count");
 
-    if (patientNameEl) patientNameEl.textContent = summary.data.patient?.displayName ?? "가상환자 1001";
+    if (patientNameEl) patientNameEl.textContent = summary.data.patient?.displayName ?? demo.patientName;
     if (encCountEl) encCountEl.textContent = String(summary.data.counts?.encounters ?? 0);
     if (obsCountEl) obsCountEl.textContent = String(summary.data.counts?.observations ?? 0);
     if (imgCountEl) imgCountEl.textContent = String(summary.data.counts?.imagingStudies ?? 0);
@@ -870,14 +959,14 @@ function renderActiveTransferCard(activeConsent) {
         <div class="action-symbol" style="--soft:#dcfce7;--tone:#16a34a;font-size:22px;">✓</div>
         <div style="flex:1;">
           <div style="display:flex;align-items:center;gap:8px;">
-            <h3 style="margin:0;color:#166534;font-size:16px;">현재 활성 전송: ${escapeHtml(studyTitle)}</h3>
-            <span class="status green">전송 완료 (ACTIVE)</span>
+            <h3 style="margin:0;color:#166534;font-size:16px;">현재 공유 동의: ${escapeHtml(studyTitle)}</h3>
+            <span class="status green">동의 유효 (ACTIVE)</span>
           </div>
           <p style="margin:6px 0 0;color:#15803d;font-size:13px;">
-            수신 병원: <strong>가상 병원 B (신경과 DOC-B-01)</strong> · 목적: ${escapeHtml(activeConsent.purpose || demo.purpose)} · 권한: ${escapeHtml(activeConsent.permission || demo.permission)}
+            수신 병원: <strong>${escapeHtml(activeConsent.targetHospitalId)}</strong> · 목적: ${escapeHtml(activeConsent.purpose || demo.purpose)} · 권한: ${escapeHtml(activeConsent.permission || demo.permission)}
           </p>
           <p style="margin:3px 0 0;color:#166534;font-size:12px;">
-            유효기간: ${escapeHtml(formatDate(activeConsent.validUntil))}까지 안전 조회 가능
+            유효기간: ${escapeHtml(formatDate(activeConsent.validUntil))}까지 동의 유효 · 실제 접근 시 권한 확인
           </p>
         </div>
         <div>
@@ -889,15 +978,15 @@ function renderActiveTransferCard(activeConsent) {
     `;
     container.querySelector("#btn-activity-revoke")?.addEventListener("click", async () => {
       showToast("전송 동의를 철회하는 중입니다...");
-      await revokePatientConsent();
-      showToast("의료영상 전송이 즉시 철회되었습니다. 병원 SaaS 조회가 차단됩니다.");
+      const acknowledged = await revokePatientConsent();
+      if (acknowledged) showToast("의료영상 전송이 즉시 철회되었습니다. 병원 SaaS 조회가 차단됩니다.");
     });
   } else {
     container.innerHTML = `
       <div class="action-card" style="border: 1px dashed #cbd5e1; background: #ffffff; padding: 16px; margin-bottom: 20px;">
         <div class="action-symbol" style="--soft:#f1f5f9;--tone:#64748b;font-size:20px;">📋</div>
         <div style="flex:1;">
-          <h3 style="margin:0;color:#475569;font-size:15px;">현재 활성화된 영상 전송이 없습니다.</h3>
+          <h3 style="margin:0;color:#475569;font-size:15px;">선택한 영상의 유효한 공유 동의가 없습니다.</h3>
           <p style="margin:4px 0 0;color:#64748b;font-size:13px;">
             다른 병원으로 영상을 전달해야 하는 경우, [내 의료영상 확인]에서 영상을 선택하여 전송하세요.
           </p>
@@ -912,35 +1001,17 @@ function renderActiveTransferCard(activeConsent) {
 }
 
 function getConsentForStudy(studyUid, consents = lastConsents) {
-  if (!studyUid || !Array.isArray(consents)) return null;
-  const active = consents.find((consent) => (
-    consent.status === "ACTIVE" &&
-    consent.targetHospitalId === demo.targetHospitalId &&
-    Array.isArray(consent.scopes) &&
-    consent.scopes.length > 0 &&
-    consent.scopes.some((scope) => scope.allowed !== false && scope.studyInstanceUid === studyUid)
-  ));
-  if (active) return active;
-  return consents.find((consent) => (
-    consent.targetHospitalId === demo.targetHospitalId &&
-    Array.isArray(consent.scopes) &&
-    consent.scopes.length > 0 &&
-    consent.scopes.some((scope) => scope.allowed !== false && scope.studyInstanceUid === studyUid)
-  )) || null;
+  return selectConsentForStudy(consents, { studyUid, targetHospitalId: demo.targetHospitalId, preferredConsentId: latestConsentId });
 }
 
 function findConsentForStudy(studyUid, consents = lastConsents) {
-  if (!studyUid || !Array.isArray(consents)) return null;
-  return consents.find((consent) => (
-    consent.status === "ACTIVE" &&
-    consent.targetHospitalId === demo.targetHospitalId &&
-    Array.isArray(consent.scopes) &&
-    consent.scopes.length > 0 &&
-    consent.scopes.some((scope) => scope.allowed !== false && scope.studyInstanceUid === studyUid)
-  )) || null;
+  const selected = getConsentForStudy(studyUid, consents);
+  return selected?.status === "ACTIVE" ? selected : null;
 }
 
 function updateConsentState(consents) {
+  if (consentMutationPending) { updateConsentOperationControls(); return; }
+  const selected = getConsentForStudy(selectedStudyUid, consents);
   const active = findConsentForStudy(selectedStudyUid, consents);
 
   const quickApproveBtn = document.querySelector("#btn-quick-approve");
@@ -960,21 +1031,30 @@ function updateConsentState(consents) {
       actionConsentBadge.className = "status green";
     }
     if (actionConsentDesc) {
-      actionConsentDesc.textContent = `가상 병원 B (신경과 DOC-B-01)로 동의 완료 · ${selectedStudy?.description || "선택된 영상"} 열람 허용 중`;
+      actionConsentDesc.textContent = `${active.targetHospitalId} 공유 동의 유효 · 실제 열람 시 권한을 확인합니다.`;
     }
   } else {
     patientConsentReady = false;
-    latestConsentId = null;
-    setPatientStatus("동의 대기");
+    latestConsentId = selected?.consentId ?? null;
+    updateVisitModePacket(null);
+    if (latestToken || latestTicketNonce) {
+      clearCountdownTimer();
+      latestToken = null;
+      latestTokenInfo = null;
+      latestTicketNonce = null;
+      resetViewerData();
+    }
+    const label = selected?.status === "REVOKED" ? "동의 철회됨 (REVOKED)" : selected?.status === "EXPIRED" ? "동의 만료됨 (EXPIRED)" : "동의 대기";
+    setPatientStatus(label);
 
     if (quickApproveBtn) quickApproveBtn.style.display = "inline-flex";
     if (quickRevokeBtn) quickRevokeBtn.style.display = "none";
     if (actionConsentBadge) {
-      actionConsentBadge.textContent = "동의 대기";
-      actionConsentBadge.className = "status teal";
+      actionConsentBadge.textContent = label;
+      actionConsentBadge.className = selected?.status === "REVOKED" ? "status red" : selected?.status === "EXPIRED" ? "status amber" : "status teal";
     }
     if (actionConsentDesc) {
-      actionConsentDesc.textContent = `${selectedStudy?.description || "의료영상"}이 가상 병원 B 신경과로 안전하게 공유될 수 있는 정책 대기`;
+      actionConsentDesc.textContent = `${selectedStudy?.description || "의료영상"}의 받는 병원과 범위를 확인하고 동의해 주세요.`;
     }
   }
 
@@ -1020,7 +1100,8 @@ function updateHospitalSaaSState(activeConsent, consents) {
         </tr>
       `;
     } else {
-      const revokedConsent = consents.find((c) => c.status === "REVOKED");
+      const selected = getConsentForStudy(selectedStudyUid, consents);
+      const revokedConsent = selected?.status === "REVOKED" ? selected : null;
       const statusBadge = revokedConsent
         ? '<span class="mq-badge mq-badge-bad">철회됨 (REVOKED)</span>'
         : '<span class="mq-badge mq-badge-warn">대기 (PENDING)</span>';
@@ -1072,7 +1153,7 @@ function updateHospitalSaaSState(activeConsent, consents) {
         authBadge.className = "mq-badge mq-badge-good";
       }
       if (authDecisionEl) authDecisionEl.textContent = "ALLOWED (ABAC 통과)";
-      if (tokenStatusEl) tokenStatusEl.textContent = `발급 완료 (${latestToken.slice(0, 16)}...)`;
+      if (tokenStatusEl) tokenStatusEl.textContent = "발급 완료 · 단기 접근 권한";
       if (step2Label) step2Label.textContent = "검증 통과 (ALLOWED)";
       if (step3Label) step3Label.textContent = "5분 토큰 발급됨";
       if (doctorTokenNotice) {
@@ -1098,7 +1179,8 @@ function updateHospitalSaaSState(activeConsent, consents) {
       }
     }
   } else {
-    const revoked = consents.find((c) => c.status === "REVOKED");
+    const selected = getConsentForStudy(selectedStudyUid, consents);
+    const revoked = selected?.status === "REVOKED" ? selected : null;
     if (consentBadge) {
       if (revoked) {
         consentBadge.textContent = "REVOKED (철회됨)";
@@ -1139,7 +1221,17 @@ function updateHospitalSaaSState(activeConsent, consents) {
 }
 
 async function createPatientConsent(options = {}) {
+  if (consentMutationPending) return { error: "CONSENT_OPERATION_IN_PROGRESS" };
+  consentMutationPending = true;
+  updateConsentOperationControls();
+  let acknowledgedConsent = null;
+  try {
+  consentViewRevision++;
+  patientConsentReady = false;
+  updateVisitModePacket(null);
+  clearCountdownTimer();
   syncPatientChoices({ preserveConsentState: true });
+  setPatientStatus("동의 생성 중");
   const scope = { studyInstanceUid: selectedStudyUid };
   if (selectedSeriesUid) scope.seriesInstanceUid = selectedSeriesUid;
 
@@ -1152,7 +1244,9 @@ async function createPatientConsent(options = {}) {
     scopes: [scope],
   });
 
+  consentViewRevision++;
   if (result.consentId) {
+    if (result.status === "ACTIVE") acknowledgedConsent = { consentId: result.consentId, status: result.status };
     latestConsentId = result.consentId;
     patientConsentReady = true;
     setPatientStatus("동의 완료 (ACTIVE)");
@@ -1169,8 +1263,8 @@ async function createPatientConsent(options = {}) {
       // Non-fatal if QR ticket issuance is deferred
     }
     broadcastSync("CONSENT_CREATED");
-    navigatePatientPage("activity");
-    showToast("가상 병원 B로 영상 전송 동의가 완료되었습니다! 병원 SaaS 콘솔에서 즉시 조회가 가능합니다.");
+    navigatePatientPage(latestTicketNonce ? "visit" : "consent");
+    showToast(latestTicketNonce ? "공유 동의가 생성되었습니다. 병원에 1회용 QR를 보여주세요." : "동의가 생성되었습니다. QR 발급 결과는 확인이 필요합니다.");
   } else {
     patientConsentReady = false;
     latestTicketNonce = null;
@@ -1182,23 +1276,77 @@ async function createPatientConsent(options = {}) {
   if (!options.silent) renderOutput(result);
   await loadDashboard();
   return result;
+  } catch {
+    patientConsentReady = false;
+    setPatientStatus(acknowledgedConsent ? "동의 생성 확인됨 · 화면 갱신 필요" : "동의 결과 확인 필요");
+    const result = acknowledgedConsent
+      ? { ...acknowledgedConsent, error: "CONSENT_REFRESH_FAILED" }
+      : { error: "CONSENT_REQUEST_FAILED" };
+    renderOutput(result);
+    return result;
+  } finally {
+    consentMutationPending = false;
+    consentViewRevision++;
+    updateConsentOperationControls();
+  }
 }
 
 async function revokePatientConsent() {
-  const result = await postJson(`/api/consents/${latestConsentId}/revoke`, { actorId: demo.patientId });
+  if (consentMutationPending) return false;
+  const requestedConsentId = latestConsentId;
+  updateVisitModePacket(null);
+  if (typeof requestedConsentId !== "string" || !requestedConsentId) {
+    showViewerMessage("철회할 동의를 먼저 선택해 주세요.", "warning");
+    return false;
+  }
+  consentMutationPending = true;
+  updateConsentOperationControls();
+  try {
+  consentViewRevision++;
+  patientConsentReady = false;
+  clearCountdownTimer();
+  latestToken = null;
+  latestTokenInfo = null;
+  latestTicketNonce = null;
+  resetViewerData();
+  setPatientStatus("동의 철회 확인 중");
+  const result = await postJson(`/api/consents/${encodeURIComponent(requestedConsentId)}/revoke`, { actorId: demo.patientId });
+  consentViewRevision++;
   clearCountdownTimer();
   latestToken = null;
   latestTokenInfo = null;
   latestTicketNonce = null;
   patientConsentReady = false;
-  setPatientStatus("동의 철회됨 (REVOKED)");
+  const acknowledged = isRevocationAcknowledged(result, requestedConsentId);
+  setPatientStatus(acknowledged ? "동의 철회됨 (REVOKED)" : "철회 결과 확인 필요");
   if (viewerStatus) viewerStatus.textContent = "토큰 필요";
   resetViewerData();
   updatePipelineSteps();
-  showViewerMessage(result.error ? toFriendlyError(result.error) : "동의가 철회되었습니다. 기존 발급 토큰은 폐기됩니다.", result.error ? "fail" : "warning");
+  showViewerMessage(acknowledged ? "동의가 철회되었습니다. 기존 발급 토큰은 폐기됩니다." : "철회를 확인하지 못했습니다. 서버 동의 상태를 다시 확인해 주세요.", acknowledged ? "warning" : "fail");
   renderOutput(result);
-  broadcastSync("CONSENT_REVOKED");
+  if (acknowledged) broadcastSync("CONSENT_REVOKED");
   await loadDashboard();
+  return acknowledged;
+  } catch {
+    setPatientStatus("철회 결과 확인 필요");
+    showViewerMessage("철회를 확인하지 못했습니다. 서버 상태를 다시 확인해 주세요.", "fail");
+    return false;
+  } finally {
+    consentMutationPending = false;
+    consentViewRevision++;
+    updateConsentOperationControls();
+  }
+}
+
+function updateConsentOperationControls() {
+  for (const control of document.querySelectorAll("#patient-consent, #patient-revoke, #btn-quick-approve, #btn-quick-revoke, #btn-activity-revoke, #patient-study-select, #patient-series-select, #source-hospital-select, #target-hospital-select, #access-purpose-select, #access-mode-select, #consent-valid-from, #consent-valid-until")) control.disabled = consentMutationPending;
+  const tokenButton = document.querySelector("#doctor-request-token");
+  if (tokenButton) tokenButton.disabled = consentMutationPending || tokenRequestPending;
+}
+
+function currentTokenRequestContext() {
+  return JSON.stringify([consentViewRevision, latestConsentId, selectedStudyUid, selectedSeriesUid,
+    demo.doctorId, demo.sourceHospitalId, demo.targetHospitalId, demo.purpose, demo.permission]);
 }
 
 function syncPatientChoices(options = {}) {
@@ -1282,6 +1430,9 @@ function renderConsentHistory(consents) {
 // Doctor Access & Token Operations
 // --------------------------------------------------------------------------
 async function requestDoctorToken() {
+  if (consentMutationPending || tokenRequestPending) {
+    return { decision: "DENIED", reasonCode: "CONSENT_OPERATION_IN_PROGRESS" };
+  }
   if (!patientConsentReady) {
     latestToken = null;
     latestTokenInfo = null;
@@ -1292,6 +1443,10 @@ async function requestDoctorToken() {
     return denied;
   }
 
+  const requestedContext = currentTokenRequestContext();
+  tokenRequestPending = true;
+  updateConsentOperationControls();
+  try {
   const result = await postJson("/api/dicom-access/request", {
     consentId: latestConsentId,
     doctorId: demo.doctorId,
@@ -1302,6 +1457,9 @@ async function requestDoctorToken() {
     requestedAction: "VIEW",
   });
 
+  if (consentMutationPending || !patientConsentReady || requestedContext !== currentTokenRequestContext()) {
+    return { decision: "DENIED", reasonCode: "VIEW_CONTEXT_CHANGED" };
+  }
   if (result.decision === "ALLOWED") {
     latestToken = result.accessToken;
     latestTokenInfo = result;
@@ -1314,7 +1472,9 @@ async function requestDoctorToken() {
     broadcastSync("TOKEN_ISSUED");
 
     await loadGatewayStudies();
+    if (consentMutationPending || requestedContext !== currentTokenRequestContext() || latestToken !== result.accessToken) return { decision: "DENIED", reasonCode: "VIEW_CONTEXT_CHANGED" };
     await loadSeriesForActiveToken();
+    if (consentMutationPending || latestToken !== result.accessToken) return { decision: "DENIED", reasonCode: "VIEW_CONTEXT_CHANGED" };
     if (lastSeries.length > 0) {
       await loadInstancesForSelectedSeries();
     }
@@ -1328,6 +1488,18 @@ async function requestDoctorToken() {
   renderOutput(result);
   await loadDashboard();
   return result;
+  } catch {
+    if (requestedContext === currentTokenRequestContext()) {
+      latestToken = null;
+      latestTokenInfo = null;
+      resetViewerData();
+    }
+    showViewerMessage("접근 요청을 완료하지 못했습니다. 서버 상태와 동의를 확인해 주세요.", "fail");
+    return { decision: "DENIED", reasonCode: "TOKEN_REQUEST_FAILED" };
+  } finally {
+    tokenRequestPending = false;
+    updateConsentOperationControls();
+  }
 }
 
 async function openViewer() {
@@ -1377,7 +1549,7 @@ async function loadInstancesForSelectedSeries() {
     const firstUid = dicomValue(lastSeries[0], "0020000E");
     if (firstUid) {
       selectedSeriesUid = firstUid;
-      showSeriesImage(resolvePreviewForSelectedSeries(), "대표 이미지");
+      hideSeriesImage();
     }
   }
   if (!selectedSeriesUid) {
@@ -1432,13 +1604,16 @@ function updateSliceControlsUi() {
   if (hudStudy) {
     const desc = selectedStudy?.description || "Study";
     const mod = selectedStudy?.modality || "DICOM";
-    hudStudy.textContent = `P-1001 · ${desc} (${mod})`;
+    hudStudy.textContent = `${demo.patientId} · ${desc} (${mod})`;
   }
   if (btnPrev) btnPrev.disabled = totalSlices <= 1;
   if (btnNext) btnNext.disabled = totalSlices <= 1;
 }
 
 async function displaySlice(index, options = {}) {
+  if (consentMutationPending || !latestToken) return;
+  const requestedToken = latestToken;
+  const requestedContext = currentTokenRequestContext();
   if (!lastInstances || lastInstances.length === 0) return;
   if (index < 0 || index >= lastInstances.length) return;
 
@@ -1468,12 +1643,13 @@ async function displaySlice(index, options = {}) {
   if (!latestToken) return;
   try {
     const renderedUrl = `/dicomweb/studies/${selectedStudyUid}/series/${selectedSeriesUid}/instances/${sopInstanceUid}/rendered`;
-    const response = await fetch(renderedUrl, {
+    const response = await proofFetch(renderedUrl, {
       headers: { authorization: `Bearer ${latestToken}` },
     });
 
     if (response.ok) {
       const blob = await response.blob();
+      if (consentMutationPending || latestToken !== requestedToken || requestedContext !== currentTokenRequestContext()) return;
       const blobUrl = URL.createObjectURL(blob);
       if (sliceBlobCache.size >= 40) {
         const oldestKey = sliceBlobCache.keys().next().value;
@@ -1487,10 +1663,16 @@ async function displaySlice(index, options = {}) {
         showSeriesImage(blobUrl, `Slice ${index + 1}`);
       }
     } else {
-      showSeriesImage(resolvePreviewForSelectedSeries(), `Slice ${index + 1}`);
+      clearSliceBlobCache();
+      hideSeriesImage();
+      showViewerMessage("영상 접근을 확인할 수 없습니다. 예제 이미지로 대체하지 않습니다.", "fail");
+      return;
     }
   } catch {
-    showSeriesImage(resolvePreviewForSelectedSeries(), `Slice ${index + 1}`);
+    clearSliceBlobCache();
+    hideSeriesImage();
+    showViewerMessage("영상 조회에 실패했습니다. 승인된 연결을 다시 확인해 주세요.", "fail");
+    return;
   }
 
   if (!options.isCine) {
@@ -1509,6 +1691,8 @@ function stepSlice(delta) {
 let prefetching = false;
 async function prefetchAdjacentSlices(currentIndex) {
   if (prefetching || !latestToken || totalSlices <= 1) return;
+  const requestedToken = latestToken;
+  const requestedContext = currentTokenRequestContext();
   prefetching = true;
   try {
     const targets = [currentIndex + 1, currentIndex + 2, currentIndex - 1].filter(
@@ -1520,11 +1704,12 @@ async function prefetchAdjacentSlices(currentIndex) {
       const sop = dicomValue(inst, "00080018");
       if (!sop || sliceBlobCache.has(sop)) continue;
 
-      const res = await fetch(`/dicomweb/studies/${selectedStudyUid}/series/${selectedSeriesUid}/instances/${sop}/rendered`, {
+      const res = await proofFetch(`/dicomweb/studies/${selectedStudyUid}/series/${selectedSeriesUid}/instances/${sop}/rendered`, {
         headers: { authorization: `Bearer ${latestToken}` },
       });
       if (res.ok) {
         const blob = await res.blob();
+        if (consentMutationPending || latestToken !== requestedToken || requestedContext !== currentTokenRequestContext()) return;
         const url = URL.createObjectURL(blob);
         if (sliceBlobCache.size >= 40) {
           const oldestKey = sliceBlobCache.keys().next().value;
@@ -1616,7 +1801,7 @@ async function loadInstancePixels(sopInstanceUid) {
 
 async function downloadSelectedInstance() {
   if (!requireToken() || !selectedSopUid) return;
-  const response = await fetch(`/dicomweb/studies/${selectedStudyUid}/series/${selectedSeriesUid}/instances/${selectedSopUid}/download`, {
+  const response = await proofFetch(`/dicomweb/studies/${selectedStudyUid}/series/${selectedSeriesUid}/instances/${selectedSopUid}/download`, {
     headers: { authorization: `Bearer ${latestToken}` },
   });
 
@@ -1651,10 +1836,11 @@ function renderSeries(seriesRows) {
     const seriesUid = dicomValue(series, "0020000E");
     const description = dicomValue(series, "0008103E") || "Series";
     return `
-      <div class="mq-thumb ${index === 0 ? "selected" : ""}" data-viewer-series-uid="${escapeHtml(seriesUid)}">
+      <button type="button" class="mq-thumb ${index === 0 ? "selected" : ""}" data-viewer-series-uid="${escapeHtml(seriesUid)}">
+        <img class="hp-series-preview" alt="승인된 Series 단면 미리보기" hidden>
         <strong>${index + 1}. ${escapeHtml(description)}</strong>
         <div style="font-size:10px;color:#94a3b8;">${escapeHtml(seriesUid.slice(0, 18))}...</div>
-      </div>
+      </button>
     `;
   }).join("");
 
@@ -1664,7 +1850,7 @@ function renderSeries(seriesRows) {
       thumb.classList.add("selected");
       selectedSeriesUid = thumb.dataset.viewerSeriesUid;
       selectedSopUid = "";
-      showSeriesImage(resolvePreviewForSelectedSeries(), `Series ${index + 1}`);
+      hideSeriesImage();
       await loadInstancesForSelectedSeries();
     });
   });
@@ -1672,7 +1858,7 @@ function renderSeries(seriesRows) {
   const firstUid = seriesRows[0] ? dicomValue(seriesRows[0], "0020000E") : "";
   if (firstUid) {
     selectedSeriesUid = firstUid;
-    showSeriesImage(resolvePreviewForSelectedSeries(), "대표 이미지");
+    hideSeriesImage();
   } else {
     hideSeriesImage();
   }
@@ -1749,9 +1935,7 @@ function renderStudies(studies) {
             <p style="margin:4px 0 0;color:#64748b;font-size:13px;">
               출처: <strong>${escapeHtml(study.sourceHospitalId)}</strong> · 검사일자: ${escapeHtml(study.studyDate)} · Series: ${study.series?.length || 1}개
             </p>
-            <div style="font-size:11px;color:#94a3b8;font-family:monospace;margin-top:3px;">
-              UID: ${escapeHtml(study.studyInstanceUid)}
-            </div>
+            <div class="hp-study-caption">합성 검사 데이터 · 실제 진료용이 아닙니다</div>
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
@@ -1792,101 +1976,37 @@ function renderStudies(studies) {
 function renderDoctorStudies(studies) {
   const container = document.querySelector("#doctor-studies");
   if (!container) return;
+  const selectedTitle = document.querySelector('#clinical-selected-title');
+  if (selectedTitle) selectedTitle.textContent = studies.find(study => study.studyInstanceUid === selectedStudyUid)?.description || '검사를 선택하세요';
+  renderClinicianDetail(document.querySelector('#clinician-study-detail'),
+    studies.find(study => study.studyInstanceUid === selectedStudyUid),
+    getConsentForStudy(selectedStudyUid, lastConsents));
+  const allStudies = studies;
+  const consentForStudy = uid => getConsentForStudy(uid, lastConsents);
+  renderClinicalMetrics(document.querySelector('#clinician-metrics'), allStudies, consentForStudy);
+  studies = filterClinicalStudies(allStudies, document.querySelector('#clinician-search')?.value,
+    document.querySelector('#clinician-filter')?.value || 'all', consentForStudy);
+  const resultCount = document.querySelector('#clinician-result-count');
+  if (resultCount) resultCount.textContent = `${allStudies.length}건 중 ${studies.length}건`;
 
   if (!studies.length) {
-    container.innerHTML = '<div class="notice">조회 가능한 의료영상이 없습니다.</div>';
+    container.innerHTML = '<div class="notice">검색 조건에 맞는 의료영상이 없습니다. 검색어와 동의 필터를 확인하세요.</div>';
     return;
   }
 
-  container.innerHTML = `
-    <div class="mq-table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>환자 ID</th>
-            <th>검사명 (Study)</th>
-            <th>Modality</th>
-            <th>검사 일자</th>
-            <th>출처 병원</th>
-            <th>동의 상태</th>
-            <th>작업</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${studies.map((s) => {
-            const isTarget = s.studyInstanceUid === selectedStudyUid;
-            const latestConsent = getConsentForStudy(s.studyInstanceUid, lastConsents);
-            let consentBadge;
-            let canView = false;
-            if (latestConsent?.status === "ACTIVE") {
-              consentBadge = '<span class="mq-badge mq-badge-good">동의 완료 (ACTIVE)</span>';
-              canView = true;
-            } else if (latestConsent?.status === "REVOKED") {
-              consentBadge = '<span class="mq-badge mq-badge-fail" style="background:#fee2e2;color:#991b1b;border:1px solid #f87171;">철회됨 (REVOKED)</span>';
-            } else if (latestConsent?.status === "EXPIRED") {
-              consentBadge = '<span class="mq-badge mq-badge-warn">만료됨 (EXPIRED)</span>';
-            } else {
-              consentBadge = '<span class="mq-badge mq-badge-warn">대기 (동의 필요)</span>';
-            }
+  renderClinicalStudyList(container, studies, selectedStudyUid, consentForStudy);
 
-            const actionBtn = canView
-              ? `<button class="mq-btn small mq-btn-primary" type="button" data-doctor-view="${escapeHtml(s.studyInstanceUid)}">
-                  선택 및 뷰어 열기
-                </button>`
-              : `<button class="mq-btn small" type="button" data-doctor-view="${escapeHtml(s.studyInstanceUid)}" style="opacity:0.65;background:#64748b;color:#fff;cursor:not-allowed;" title="환자의 전송 동의가 접수되지 않았습니다 (Fail-Closed)">
-                  동의 대기 (조회 불가)
-                </button>`;
 
-            return `
-              <tr style="${isTarget ? 'background:rgba(11,99,143,0.06);' : ''}">
-                <td><strong>${escapeHtml(demo.patientId)}</strong></td>
-                <td>
-                  <strong>${escapeHtml(s.description)}</strong>
-                  <div style="font-size:11px;color:#94a3b8;font-family:monospace;">${escapeHtml(s.studyInstanceUid.slice(0, 24))}...</div>
-                </td>
-                <td><span class="mq-badge">${escapeHtml(s.modality || "DICOM")}</span></td>
-                <td>${escapeHtml(s.studyDate || "-")}</td>
-                <td>${escapeHtml(s.sourceHospitalId || "HOSP-A")}</td>
-                <td>${consentBadge}</td>
-                <td style="white-space:nowrap;">
-                  ${actionBtn}
-                  <button class="mq-btn small" type="button" data-doctor-select="${escapeHtml(s.studyInstanceUid)}" data-doctor-pipeline="${escapeHtml(s.studyInstanceUid)}" style="margin-left:4px;">
-                    파이프라인
-                  </button>
-                </td>
-              </tr>
-            `;
-          }).join("")}
-        </tbody>
-      </table>
-    </div>
-  `;
-
-  container.querySelectorAll("[data-doctor-view]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const uid = btn.dataset.doctorView;
-      const targetStudy = studies.find((s) => s.studyInstanceUid === uid);
-      const studyConsent = findConsentForStudy(uid, lastConsents);
-      if (!studyConsent) {
-        const latestConsent = getConsentForStudy(uid, lastConsents);
-        const reason = latestConsent?.status === "REVOKED"
-          ? "환자가 전송 동의를 철회하여"
-          : "환자의 전송 동의가 접수되지 않아";
-        showToast(`'${targetStudy?.description || "선택된 영상"}'은 ${reason} 조회가 차단되었습니다 (Fail-Closed). 환자 포털에서 가상 병원 B로 전송 동의를 먼저 진행해 주세요.`);
-        return;
-      }
-      await selectStudy(uid, studies);
-      await openViewer();
+  container.querySelectorAll('[data-doctor-detail]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      await selectStudy(button.dataset.doctorDetail, allStudies);
+      renderDoctorStudies(allStudies);
+      const selectedButton = [...container.querySelectorAll('[data-doctor-detail]')]
+        .find(item => item.dataset.doctorDetail === selectedStudyUid);
+      selectedButton?.focus();
     });
   });
 
-  container.querySelectorAll("[data-doctor-select]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const uid = btn.dataset.doctorSelect || btn.dataset.doctorPipeline;
-      selectStudy(uid, studies);
-      navigateHospitalScreen("exchange");
-    });
-  });
 }
 
 async function selectStudy(studyUid, studies = lastStudies) {
@@ -1942,6 +2062,15 @@ function requireToken() {
 }
 
 function showSeriesImage(imageUrl, label) {
+  // Only locally created URLs from authorized pixel responses may enter the viewport.
+  if (!imageUrl?.startsWith('blob:')) { hideSeriesImage(); return; }
+  document.querySelectorAll('[data-viewer-series-uid]').forEach((item) => {
+    const preview = item.querySelector('.hp-series-preview');
+    if (preview && item.dataset.viewerSeriesUid === selectedSeriesUid) {
+      preview.src = imageUrl;
+      preview.hidden = false;
+    }
+  });
   if (viewerImage) {
     viewerImage.src = imageUrl;
     viewerImage.alt = label;
@@ -1951,6 +2080,9 @@ function showSeriesImage(imageUrl, label) {
 }
 
 function hideSeriesImage() {
+  document.querySelectorAll('.hp-series-preview').forEach((image) => {
+    image.removeAttribute('src'); image.hidden = true;
+  });
   if (viewerImage) {
     viewerImage.removeAttribute("src");
     viewerImage.hidden = true;
@@ -1960,18 +2092,6 @@ function hideSeriesImage() {
     instanceDetail.hidden = true;
     instanceDetail.textContent = "";
   }
-}
-
-function resolvePreviewForSelectedSeries() {
-  const localSeries = selectedStudy?.series?.find((series) => series.seriesInstanceUid === selectedSeriesUid)
-    || selectedStudy?.series?.[0];
-  if (localSeries?.previewImageUrl) return localSeries.previewImageUrl;
-  const label = `${localSeries?.description ?? selectedStudy?.description ?? ""} ${selectedStudy?.bodyPart ?? ""}`.toUpperCase();
-  if (label.includes("CR") || label.includes("X-RAY")) return "/assets/clinical/cr_chest.jpg";
-  if (label.includes("CT") || label.includes("CHEST") || label.includes("LUNG")) return "/assets/demo-ct.png";
-  if (label.includes("ES") || label.includes("ERCP")) return "/assets/clinical/es_ercp.jpg";
-  if (label.includes("US") || label.includes("ULTRASOUND")) return "/assets/clinical/us_abdomen.jpg";
-  return "/assets/demo-mri.png";
 }
 
 function showViewerMessage(message, tone = "info") {
@@ -2244,13 +2364,13 @@ function runPreflightCheck() {
 
   isPreflightPassed = true;
   if (pill) {
-    pill.textContent = "Preflight 4/4 검증 통과";
+    pill.textContent = "로컬 사전확인 · 운영 Preflight 미검증";
     pill.className = "mq-badge mq-badge-good";
   }
-  if (integrityStatus) integrityStatus.textContent = "SHA-256 사전 해시 준비됨";
-  if (destStatus) destStatus.textContent = "Hospital B STOW-RS 준비 완료 (200 OK)";
+  if (integrityStatus) integrityStatus.textContent = "보관 작업 후 해시 계산";
+  if (destStatus) destStatus.textContent = "실제 수신 PACS 등록: NOT VERIFIED";
   if (log) {
-    log.innerHTML = "<strong>Preflight 통과:</strong> 출처 Orthanc Gateway, 환자 동의 범위, 수신 병원 B STOW-RS 수용성이 확인되었습니다. [PACS 전송 실행] 버튼을 눌러 전송을 시작하세요.";
+    log.textContent = "선택된 동의로 로컬 암호화 보관을 요청합니다. 서버가 권한·범위를 재검증합니다. 실제 수신 PACS/STOW-RS 연결은 미구현이며 별도 키 설정이 필요합니다.";
     log.dataset.tone = "success";
   }
   if (runBtn) runBtn.disabled = false;
@@ -2269,7 +2389,7 @@ async function runPacsImport() {
     pill.className = "mq-badge mq-badge-warn";
   }
   if (log) {
-    log.textContent = "출처 WADO-RS에서 Instance를 수신하여 수신 병원 B STOW-RS로 안전하게 전송하고 있습니다...";
+    log.textContent = "로컬 암호화 보관 작업을 요청하고 있습니다. 실제 STOW-RS 전송이 아닙니다.";
     log.dataset.tone = "loading";
   }
 
@@ -2284,15 +2404,15 @@ async function runPacsImport() {
     const gotoBtn = document.querySelector("#btn-goto-pacs-archive");
     if (gotoBtn) gotoBtn.style.display = "block";
     if (integrityStatus) integrityStatus.innerHTML = `<span style="color:#15803d;font-weight:700;">${escapeHtml(result.sha256)} (일치)</span>`;
-    if (destStatus) destStatus.innerHTML = `<span style="color:#15803d;font-weight:700;">수신 확인됨 (STOW-RS 200 OK)</span>`;
+    if (destStatus) destStatus.textContent = "로컬 보관 완료 · 실제 PACS 등록 NOT VERIFIED";
     if (transferStatus) transferStatus.innerHTML = `<span style="color:#15803d;font-weight:700;">성공 (${result.instancesTransferred}건 인스턴스)</span>`;
     if (pill) {
-      pill.textContent = "PACS 전송 완료";
+      pill.textContent = "로컬 보관 시뮬레이션 완료";
       pill.className = "mq-badge mq-badge-good";
     }
     if (log) {
       const bytesFmt = result.transferredBytes ? `(${(result.transferredBytes / 1024).toFixed(1)} KB)` : "";
-      log.innerHTML = `<strong>PACS Import 성공:</strong> 원본 DICOM 바이너리 ${result.instancesTransferred}건 ${bytesFmt}이 B병원 영구 PACS 저장소(<code>${escapeHtml(result.destinationPath || "data/hospital-b-pacs")}</code>)에 직접 아카이빙되었습니다. SHA-256 무결성 검증 완료 및 감사세션 <code>${escapeHtml(result.auditSessionId)}</code>로 영구 보존되었습니다.`;
+      log.textContent = `로컬 보관 시뮬레이터: ${result.instancesTransferred}건 ${bytesFmt}. 실제 수신 PACS 등록·원본 동일성은 별도 검증 대상입니다. 감사세션: ${result.auditSessionId}`;
       log.dataset.tone = "success";
     }
     updatePipelineSteps();
@@ -2487,7 +2607,7 @@ function showArchiveManifestModal(archive) {
         </div>
         <div class="mq-state-card">
           <small style="color:#64748b;">임포트 일시 / 방법</small>
-          <strong>${formatDate(archive.importedAt)} · ${escapeHtml(archive.transferMethod || "STOW_RS_DIRECT_ARCHIVE")}</strong>
+          <strong>${formatDate(archive.importedAt)} · ${escapeHtml(archive.transferMethod || "NOT VERIFIED")}</strong>
         </div>
       </div>
 
@@ -2656,9 +2776,9 @@ async function redeemScannedNonce(nonce) {
       statusPill.className = "mq-badge mq-badge-good";
     }
     if (scannedRef) scannedRef.textContent = `${result.ticketId || "TICKET-VERIFIED"} (소진됨)`;
-    if (scannedPatient) scannedPatient.textContent = `${demo.patientId} (가상환자 1001)`;
+    if (scannedPatient) scannedPatient.textContent = `${demo.patientName} (${demo.patientId})`;
     if (scannedConsent) scannedConsent.textContent = `ACTIVE (${result.viewerContext?.permission || "VIEW_ONLY"})`;
-    if (scannedToken) scannedToken.textContent = `발급 완료 (${result.accessToken.slice(0, 16)}...)`;
+    if (scannedToken) scannedToken.textContent = "발급 완료 · 단기 접근 권한";
     if (message) {
       message.innerHTML = "<strong>QR 바인딩 성공:</strong> 환자 일회용 암호학적 티켓이 검증되어 Viewer 세션과 단기 토큰이 생성되었습니다.";
       message.dataset.tone = "success";
@@ -2760,77 +2880,30 @@ function resetQrScan() {
 }
 
 function updateVisitModePacket(handoff) {
-  const expiryEl = document.querySelector("#visit-packet-expiry");
-  const qrMeta = document.querySelector(".qr-meta");
-  if (expiryEl && handoff?.qr?.expiresAt) {
-    expiryEl.textContent = `${formatExpiry(handoff.qr.expiresAt)}까지 유효 (1회용)`;
-  }
-  if (qrMeta && handoff?.qr?.payload) {
-    qrMeta.textContent = handoff.qr.payload;
-  }
+  if (!handoff) { patientQrController.clear(); return; }
+  patientQrController.set(handoff, latestConsentId);
 }
 
 // --------------------------------------------------------------------------
 // Patient Access Receipts (SPEC-02)
 // --------------------------------------------------------------------------
 function renderPatientReceipts(consents, logs) {
-  const receiptsList = document.querySelector("#patient-receipts-list");
-  if (!receiptsList) return;
-
-  const relevantActions = [
-    "IMAGE_VIEWED",
-    "TOKEN_ISSUED",
-    "IMAGE_TRANSFER",
-    "IMAGE_DOWNLOADED",
-    "CONSENT_CREATED",
-    "TICKET_REDEEMED",
-    "ACCESS_ALLOWED",
-  ];
-
-  const accessLogs = logs.filter((log) => relevantActions.includes(log.action));
-
-  if (!accessLogs.length && !consents.length) {
-    receiptsList.innerHTML = `<div class="notice">발급된 접근 영수증 내역이 없습니다.</div>`;
-    return;
+  const container = document.querySelector("#patient-receipts-list");
+  if (!container) return;
+  container.replaceChildren();
+  if (!consents.length) {
+    const empty = document.createElement("p"); empty.className = "hp-empty";
+    empty.textContent = "아직 공유 동의 기록이 없습니다. 내 의료영상에서 공유할 검사를 선택하세요.";
+    container.append(empty); return;
   }
-
-  receiptsList.innerHTML = accessLogs.slice(0, 10).map((log, index) => {
-    let actionLabel = "접근 확인";
-    let tagClass = "view";
-    if (log.action === "IMAGE_VIEWED") { actionLabel = "영상 열람"; tagClass = "view"; }
-    else if (log.action === "IMAGE_TRANSFER") { actionLabel = "PACS 원본 전송"; tagClass = "transfer"; }
-    else if (log.action === "IMAGE_DOWNLOADED") { actionLabel = "영상 다운로드"; tagClass = "download"; }
-    else if (log.action === "TOKEN_ISSUED") { actionLabel = "접근 토큰 발급"; tagClass = "token"; }
-    else if (log.action === "TICKET_REDEEMED") { actionLabel = "QR 티켓 현장 접수"; tagClass = "qr"; }
-    else if (log.action === "CONSENT_CREATED") { actionLabel = "동의 생성"; tagClass = "consent"; }
-
-    const timeStr = log.createdAt ? formatDate(log.createdAt) : (log.timestamp ? formatDate(log.timestamp) : "최근");
-    const actorStr = log.actorId || "의료진 B-01";
-    const hospitalStr = log.targetHospitalId || log.hospitalId || demo.targetHospitalId;
-    const studyDesc = selectedStudy?.description || "Brain MRI (두부 검사)";
-    const rcptId = log.auditId ? `RCPT-${log.auditId.slice(0, 8).toUpperCase()}` : `RCPT-HP-${1000 + index}`;
-
-    return `
-      <div class="receipt-card">
-        <div class="receipt-header">
-          <div>
-            <span class="receipt-doc">${escapeHtml(actorStr)}</span>
-            <small style="color: #64748b;">(소속: ${escapeHtml(hospitalStr)})</small>
-          </div>
-          <span class="receipt-tag ${tagClass}">${escapeHtml(actionLabel)}</span>
-        </div>
-        <div class="receipt-meta-grid">
-          <div><strong>열람 일시:</strong> ${escapeHtml(timeStr)}</div>
-          <div><strong>열람 대상:</strong> ${escapeHtml(studyDesc)}</div>
-          <div><strong>접근 목적:</strong> 진료 및 협진 (${escapeHtml(demo.purpose)})</div>
-          <div><strong>보안 검증:</strong> <span style="color: #166534; font-weight: 700;">Fail-Closed ABAC 통과</span></div>
-        </div>
-        <div style="margin-top: 8px; font-size: 0.75rem; color: #94a3b8; font-family: monospace;">
-          영수증 검증 고유 ID: ${escapeHtml(rcptId)} · 감사세션: ${escapeHtml(log.auditSessionId ? log.auditSessionId.slice(0, 16) : "AUDIT-CHAIN-OK")}
-        </div>
-      </div>
-    `;
-  }).join("");
+  for (const consent of consents) {
+    const card = document.createElement("article"); card.className = "hp-card";
+    const title = document.createElement("strong");
+    title.textContent = `${consent.targetHospitalId} · ${consent.status}`;
+    const details = document.createElement("p");
+    details.textContent = `목적: ${consent.purpose} · 권한: ${consent.permission} · 동의 기한: ${formatDate(consent.validUntil)}`;
+    card.append(title, details); container.append(card);
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -3061,7 +3134,14 @@ function renderInto(selector, rows) {
 }
 
 function renderOutput(value) {
-  if (output) output.textContent = JSON.stringify(value, null, 2);
+  if (output) output.textContent = JSON.stringify(value, (key, item) => {
+    if (/^(accessToken|token|nonce|authorization|privateKey|dek|keyEnvelope|encryptedDek)$/i.test(key)) return "[REDACTED]";
+    if (typeof item !== "string") return item;
+    for (const secret of [latestToken, latestTicketNonce]) {
+      if (secret) item = item.replaceAll(secret, "[REDACTED]");
+    }
+    return item;
+  }, 2);
 }
 
 // --------------------------------------------------------------------------
@@ -3108,11 +3188,56 @@ async function getJson(path, token) {
 
 async function fetchJson(path, options = {}) {
   const headers = new Headers(options.headers ?? {});
-  for (const [key, value] of Object.entries(developmentPrincipalHeaders(path))) {
+  const development = developmentPrincipalHeaders(path);
+  const principalHeaders = capstoneAuth
+    ? (development["x-hipass-role"] && !headers.has("authorization") ? capstoneAuth.headers(development["x-hipass-role"]) : {})
+    : development;
+  for (const [key, value] of Object.entries(principalHeaders)) {
     if (!headers.has(key)) headers.set(key, value);
   }
-  const response = await fetch(path, { ...options, headers });
+  const response = await proofFetch(path, { ...options, headers });
   return safeJson(response);
+}
+
+let proofKeyPromise;
+let proofPolicyPromise;
+function proofBase64(bytes) {
+  return btoa(String.fromCharCode(...new Uint8Array(bytes))).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+}
+
+async function proofFetch(path, options = {}) {
+  const headers = new Headers(options.headers ?? {});
+  const url = new URL(path, location.origin);
+  const token = headers.get("authorization")?.split(" ")[1];
+  let bound = false;
+  if (token) {
+    try { bound = Boolean(JSON.parse(atob(token.split(".")[1].replaceAll("-", "+").replaceAll("_", "/"))).cnf?.jkt); } catch {}
+  }
+  const issuance = options.method === "POST" && ["/api/dicom-access/request", "/api/transfers/tickets/redeem-viewer", "/api/transfers/tickets/redeem"].includes(url.pathname);
+  let bindIssuance = false;
+  if (issuance) {
+    proofPolicyPromise ??= fetch("/api/security/proof-policy", { signal: AbortSignal.timeout(10000) }).then(async (response) => {
+      if (!response.ok) throw new Error("접근 증명 정책을 확인하지 못했습니다.");
+      return response.json();
+    }).catch((error) => { proofPolicyPromise = undefined; throw error; });
+    bindIssuance = (await proofPolicyPromise).supported;
+  }
+  if (bound || bindIssuance) {
+    if (url.origin !== location.origin || url.protocol !== "https:" || !crypto.subtle) throw new Error("보안 연결에서 접근 증명을 다시 발급해 주세요.");
+    proofKeyPromise ??= crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"]);
+    const key = await proofKeyPromise;
+    const jwk = await crypto.subtle.exportKey("jwk", key.publicKey);
+    const payload = { jti: crypto.randomUUID(), htm: options.method ?? "GET", htu: `${url.origin}${url.pathname}`, iat: Math.floor(Date.now() / 1000) };
+    if (bound) {
+      payload.ath = proofBase64(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token)));
+      headers.set("authorization", `DPoP ${token}`);
+    }
+    const input = `${proofBase64(new TextEncoder().encode(JSON.stringify({ typ: "dpop+jwt", alg: "ES256", jwk })))}.${proofBase64(new TextEncoder().encode(JSON.stringify(payload)))}`;
+    const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key.privateKey, new TextEncoder().encode(input));
+    headers.set("dpop", `${input}.${proofBase64(signature)}`);
+  }
+  const imageDeadline = document.documentElement.dataset.capstone === "1" && url.pathname.startsWith("/dicomweb/") && url.pathname.includes("/instances/") && !url.pathname.endsWith("/metadata");
+  return fetch(path, { ...options, headers, signal: options.signal ?? AbortSignal.timeout(imageDeadline ? 35000 : 20000) });
 }
 
 function developmentPrincipalHeaders(path) {
@@ -3281,7 +3406,7 @@ function escapeHtml(value) {
 const patientViewerState = {
   study: null,
   currentSlice: 1,
-  totalSlices: 50,
+  totalSlices: 1,
   isPlaying: false,
   timer: null,
   preset: "DEFAULT",
@@ -3393,12 +3518,14 @@ async function openPatientStudyViewer(studyUid) {
   try {
     await postJson(`/api/patients/${demo.patientId}/studies/${encodeURIComponent(studyUid)}/self-view`, {});
   } catch (err) {
-    console.warn("Self-view audit log deferred:", err);
+    showToast("열람 승인을 확인하지 못했습니다. 다시 로그인한 뒤 시도하세요.");
+    return;
   }
 
   // 2. Setup state
   patientViewerState.study = study;
-  patientViewerState.totalSlices = study.modality === "CR" ? 1 : (study.series?.[0]?.instances?.length || 50);
+  // This canvas is a single illustrative frame, not retrieved DICOM Instances.
+  patientViewerState.totalSlices = 1;
   patientViewerState.currentSlice = 1;
   patientViewerState.isPlaying = false;
   patientViewerState.preset = "DEFAULT";
@@ -3416,7 +3543,7 @@ async function openPatientStudyViewer(studyUid) {
   const btnNext = document.querySelector("#pv-btn-next");
   const btnCine = document.querySelector("#pv-btn-cine");
 
-  if (title) title.textContent = `${study.description}`;
+  if (title) title.textContent = `[모의 미리보기 · 실제 DICOM 아님] ${study.description}`;
   if (sub) sub.innerHTML = `출처: <strong>${escapeHtml(study.sourceHospitalId)}</strong> · 검사일자: ${escapeHtml(study.studyDate)} · <span class="badge">${escapeHtml(study.modality)}</span>`;
   if (modBadge) modBadge.textContent = study.modality || "DICOM";
 
@@ -3445,6 +3572,7 @@ async function openPatientStudyViewer(studyUid) {
     } else {
       findingDesc.innerHTML = "<strong>관절 연골 및 골격 소견:</strong> 골절 소견 없음. 연부조직 부종 미미함.";
     }
+    findingDesc.textContent = "시연용 예시 설명입니다. 실제 영상 판독이나 진단 결과가 아닙니다.";
   }
 
   if (modal) {
@@ -3452,7 +3580,7 @@ async function openPatientStudyViewer(studyUid) {
   }
 
   updatePatientViewerControls();
-  showToast(`[${study.description}] 영상을 환자 안심 뷰어로 열었습니다.`);
+  showToast(`[${study.description}] 모의 미리보기입니다. 환자 본인 실제 영상 연결은 아직 미구현입니다.`);
 }
 
 function updatePatientViewerControls() {
@@ -3461,11 +3589,12 @@ function updatePatientViewerControls() {
   const badge = document.querySelector("#pv-slice-badge");
   if (badge) badge.textContent = `${patientViewerState.currentSlice} / ${patientViewerState.totalSlices}`;
   const hudSlice = document.querySelector("#pv-hud-slice");
-  if (hudSlice) hudSlice.textContent = `Slice ${patientViewerState.currentSlice} / ${patientViewerState.totalSlices}`;
+  if (hudSlice) hudSlice.textContent = `모의 프레임 ${patientViewerState.currentSlice} / ${patientViewerState.totalSlices}`;
   drawPatientViewerFrame();
 }
 
 function togglePatientCinePlayback() {
+  if (patientViewerState.totalSlices <= 1) return;
   const btnCine = document.querySelector("#pv-btn-cine");
   if (patientViewerState.isPlaying) {
     if (patientViewerState.timer) clearInterval(patientViewerState.timer);
@@ -3523,7 +3652,7 @@ function drawPatientViewerFrame() {
   ctx.fillStyle = preset === "INVERT" ? "rgba(0,0,0,0.22)" : "rgba(255,255,255,0.22)";
   ctx.font = "bold 11px ui-monospace, monospace";
   ctx.textAlign = "center";
-  ctx.fillText("HOSP-A · P-1001 · PATIENT SELF-VIEW · VIEW_ONLY", w / 2, h - 14);
+  ctx.fillText(`${patientViewerState.study?.sourceHospitalId ?? "출처 미확인"} · ${demo.patientId} · 모의 그림 (DICOM 아님)`, w / 2, h - 14);
   ctx.restore();
 }
 
@@ -3636,3 +3765,15 @@ function drawSyntheticBodyCt(ctx, w, h, progress, preset) {
   }
 }
 
+// Initialize only after every module-level state binding is initialized.
+// Event handlers and heartbeat callbacks may run while the initial dashboard
+// awaits network I/O; they must not encounter uninitialized proof/viewer state.
+initializePatientComponents();
+initNavigation();
+initConsentDateDefaults();
+renderAdminShell();
+bindEvents();
+await loadDashboard().catch(() => {});
+if (pendingPhrHandoffNonce) {
+  await redeemPhrHandoff(pendingPhrHandoffNonce);
+}

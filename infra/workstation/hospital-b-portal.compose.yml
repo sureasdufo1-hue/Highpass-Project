@@ -1,0 +1,20 @@
+# Existing portal + scoped Gateway Viewer paths; no clinical storage or signer key.
+services:
+  portal:
+    image: ${HIPASS_APP_IMAGE:?exact reviewed application image required}
+    command: [scripts/start-capstone-b-portal.js]
+    environment:
+      CAPSTONE_B_TLS_CERT_FILE: /run/secrets/b-server.crt
+      CAPSTONE_B_TLS_KEY_FILE: /run/secrets/b-server.key
+      CAPSTONE_B_CA_FILE: /run/secrets/ca.crt
+    volumes:
+      - ${HIPASS_B_PORTAL_SECRET_DIR:?root-protected B-local directory}/b-server.crt:/run/secrets/b-server.crt:ro
+      - ${HIPASS_B_PORTAL_SECRET_DIR}/b-server.key:/run/secrets/b-server.key:ro
+      - ${HIPASS_B_PORTAL_SECRET_DIR}/ca.crt:/run/secrets/ca.crt:ro
+    ports: ['192.168.111.149:9443:8443']
+    healthcheck:
+      test: [CMD, /nodejs/bin/node, -e, "const s=require('node:net').connect(8443,'127.0.0.1',()=>{s.end();process.exit(0)});s.setTimeout(2000,()=>process.exit(1));s.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),2500)"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+    restart: unless-stopped

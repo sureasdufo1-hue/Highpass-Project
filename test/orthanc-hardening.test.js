@@ -5,6 +5,12 @@ import test from "node:test";
 const dockerfile = readFileSync("Dockerfile.orthanc", "utf8");
 const compose = readFileSync("docker-compose.yml", "utf8");
 
+test("Orthanc explicitly loads the retained DICOMweb plugin with custom configuration", () => {
+  const configuration = JSON.parse(readFileSync("orthanc/hospital-a.json", "utf8"));
+  assert.deepEqual(configuration.Plugins, ["/usr/local/share/orthanc/plugins/libOrthancDicomWeb.so"]);
+  assert.equal(configuration.DicomWeb.Enable, true);
+});
+
 test("Orthanc runtime images are digest pinned", () => {
   assert.match(dockerfile, /^FROM busybox:1\.37\.0-musl@sha256:[a-f0-9]{64} AS healthcheck$/m);
   assert.match(dockerfile, /^FROM jodogne\/orthanc-plugins:1\.12\.11@sha256:[a-f0-9]{64}$/m);

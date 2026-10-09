@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import http from "node:http";
 import https from "node:https";
+import { signIngress, validateIngressConfig } from "../src/ingress.js";
+
+validateIngressConfig(process.env);
 
 const httpPort = Number(process.env.EDGE_HTTP_PORT ?? 8080);
 const httpsPort = Number(process.env.EDGE_HTTPS_PORT ?? 8443);
@@ -30,7 +33,7 @@ function routeTarget(pathname) {
   const url = new URL(pathname, "https://localhost");
   if (url.pathname === "/hipass/") return new URL("/", apiOrigin);
   if (/^\/t\/[A-Za-z0-9_-]{22,128}$/.test(url.pathname)) return new URL(url.pathname, apiOrigin);
-  if (["/styles.css", "/app.js"].includes(url.pathname) || url.pathname.startsWith("/images/") || isPlatformAsset(url.pathname)) {
+  if (["/styles.css", "/app.js", "/qrcode.js", "/jsqr.js", "/mobile"].includes(url.pathname) || url.pathname.startsWith("/mobile/") || url.pathname.startsWith("/images/") || isPlatformAsset(url.pathname)) {
     return new URL(`${url.pathname}${url.search}`, apiOrigin);
   }
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/dicomweb/") || url.pathname === "/dicomweb/studies" || url.pathname.startsWith("/gateway/")) {
@@ -49,7 +52,18 @@ function isPlatformAsset(pathname) {
 
 function proxy(incoming, outgoing, targetUrl) {
   const transport = targetUrl.protocol === "https:" ? https : http;
-  const headers = { ...incoming.headers, host: targetUrl.host, "x-forwarded-proto": "https" };
+  const headers = { ...incoming.headers, host: targetUrl.host, "x-forwarded-proto": "https", "x-forwarded-for": incoming.socket.remoteAddress };
+  delete headers["x-ja3-fingerprint"];
+  delete headers["x-ja4-fingerprint"];
+  delete headers["forwarded"];
+  delete headers["x-forwarded-host"];
+  delete headers["x-hipass-ingress-time"];
+  delete headers["x-hipass-ingress-signature"];
+  if (process.env.HIPASS_INGRESS_SECRET) {
+    const envelope = signIngress({ method: incoming.method, url: `${targetUrl.pathname}${targetUrl.search}`, headers }, incoming.socket.remoteAddress, process.env.HIPASS_INGRESS_SECRET);
+    headers["x-hipass-ingress-time"] = envelope.timestamp;
+    headers["x-hipass-ingress-signature"] = envelope.signature;
+  }
   const request = transport.request({
     method: incoming.method,
     protocol: targetUrl.protocol,
@@ -70,9 +84,17 @@ function proxy(incoming, outgoing, targetUrl) {
     upstream.pipe(outgoing);
   });
   request.on("error", () => {
+    if (outgoing.headersSent || outgoing.destroyed) { outgoing.destroy(); return; }
     outgoing.writeHead(502, { "content-type": "application/json" });
     outgoing.end(JSON.stringify({ error: "UPSTREAM_UNAVAILABLE" }));
   });
+  // Allow the bounded legacy DB write (30s) plus security tarpit (<=5s)
+  // and transport margin. Authentication/proof checks are not weakened.
+  request.setTimeout(40000, () => request.destroy(new Error("UPSTREAM_TIMEOUT")));
+  const deadline = setTimeout(() => request.destroy(new Error("UPSTREAM_TIMEOUT")), 50000);
+  deadline.unref();
+  outgoing.on("close", () => { clearTimeout(deadline); request.destroy(); });
+  outgoing.on("finish", () => clearTimeout(deadline));
   incoming.pipe(request);
 }
 

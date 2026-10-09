@@ -1,0 +1,5 @@
+# Explicit synthetic-only metadata registration opt-in. No credentials or data.
+services:
+  control:
+    environment:
+      HIPASS_CAPSTONE_PHANTOM_CATALOG: '1'

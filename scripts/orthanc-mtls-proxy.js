@@ -11,7 +11,7 @@ if (Boolean(allowedClientSan) === Boolean(allowedClientSubjectCn)) {
   throw new Error("exactly one client certificate identity policy is required");
 }
 
-https.createServer({
+const server = https.createServer({
   cert: readFileSync(requiredEnv("ORTHANC_MTLS_CERT_FILE")),
   key: readFileSync(requiredEnv("ORTHANC_MTLS_KEY_FILE")),
   ca: readFileSync(requiredEnv("ORTHANC_MTLS_CA_FILE")),
@@ -37,6 +37,15 @@ https.createServer({
 }).listen(port, () => {
   console.log(`Orthanc mTLS proxy listening on ${port}`);
 });
+// Record only typed TLS reason and connection tuple; never certificates/keys.
+const connectionTuples = new WeakMap();
+server.on("connection", (socket) => {
+  connectionTuples.set(socket, { remoteAddress: socket.remoteAddress, remotePort: socket.remotePort });
+});
+server.on("tlsClientError", (error, socket) => {
+  const tuple = connectionTuples.get(socket) ?? connectionTuples.get(socket._parent) ?? { remoteAddress: socket.remoteAddress, remotePort: socket.remotePort };
+  console.log(JSON.stringify({ event: "TLS_CLIENT_REJECTED", code: error.code ?? "TLS_HANDSHAKE_ERROR", authorizationError: socket.authorizationError ?? null, ...tuple }));
+});
 
 function proxyToOrthanc(incoming, outgoing) {
   const targetUrl = new URL(incoming.url ?? "/", upstreamOrigin);
@@ -51,9 +60,14 @@ function proxyToOrthanc(incoming, outgoing) {
     upstream.pipe(outgoing);
   });
   request.on("error", () => {
+    if (outgoing.headersSent || outgoing.destroyed) return;
     outgoing.writeHead(502, { "content-type": "application/json" });
     outgoing.end(JSON.stringify({ error: "ORTHANC_UNAVAILABLE" }));
   });
+  request.setTimeout(10000, () => request.destroy(new Error("UPSTREAM_TIMEOUT")));
+  const deadline = setTimeout(() => request.destroy(new Error("UPSTREAM_TIMEOUT")), 15000);
+  outgoing.on("close", () => { clearTimeout(deadline); request.destroy(); });
+  outgoing.on("finish", () => clearTimeout(deadline));
   incoming.pipe(request);
 }
 

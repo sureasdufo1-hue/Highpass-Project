@@ -1,0 +1,103 @@
+/* Shared design tokens adapted to the existing clinical controller. */
+#hospital-saas-app.mq-focus-viewer :is(.mq-sidebar,.mq-header,.mq-testbar) { display:none; }
+#hospital-saas-app.mq-focus-viewer .mq-shell-grid { grid-template-columns:minmax(0,1fr); }
+#hospital-saas-app.mq-focus-viewer .mq-main { min-height:100dvh; padding:20px 28px; }
+#hospital-saas-app.mq-focus-viewer .mq-viewer-back { margin-bottom:20px; }
+#hospital-saas-app.mq-focus-viewer .mq-title h2 { color:var(--hp-color-text); }
+#hospital-saas-app.mq-focus-viewer :is(.mq-btn,.mq-tool) { background:var(--hp-color-surface); border:1px solid var(--hp-color-border-subtle); color:var(--hp-color-text); }
+#hospital-saas-app.mq-focus-viewer .mq-viewer-shell { border:1px solid var(--hp-color-border-subtle); border-radius:12px; overflow:hidden; }
+#hospital-saas-app.mq-focus-viewer :is(.mq-viewer-side,.mq-viewer-head,.mq-viewer-tools) { background:var(--hp-color-surface); }
+#hospital-saas-app.mq-focus-viewer .mq-viewer-grid { grid-template-columns:160px minmax(0,1fr) 260px; }
+#hospital-saas-app.mq-focus-viewer .mq-viewport { min-height:440px; height:calc(100dvh - 330px); }
+#hospital-saas-app.mq-focus-viewer .mq-viewer-tools { display:flex; flex-wrap:wrap; gap:8px; padding:12px; }
+@media(max-width:1100px) {
+  #hospital-saas-app.mq-focus-viewer .mq-viewer-grid { grid-template-columns:140px minmax(0,1fr); }
+  #hospital-saas-app.mq-focus-viewer .mq-viewer-side.right { grid-column:1/-1; }
+}
+@media(max-width:767px) {
+  #hospital-saas-app.mq-focus-viewer .mq-main { padding:12px; }
+  #hospital-saas-app.mq-focus-viewer .mq-viewer-grid { display:block; }
+  #hospital-saas-app.mq-focus-viewer .mq-viewport { min-height:300px; height:50dvh; }
+}
+.mq-clinical-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin-bottom:20px; }
+.mq-clinical-metrics section { display:grid; gap:8px; padding:18px 22px; background:var(--hp-color-surface); border:1px solid var(--hp-color-border-subtle); border-radius:10px; border-top:3px solid var(--hp-color-primary); }
+.mq-clinical-metrics strong { font-size:24px; color:var(--hp-color-text); }
+.mq-clinical-metrics :is(span,small) { color:var(--hp-color-text-muted); font-size:12px; }
+.mq-clinical-filters { display:flex; flex-wrap:wrap; gap:12px; align-items:end; margin:14px 0; }
+.mq-clinical-filters label { display:grid; gap:6px; font-size:12px; }
+.mq-clinical-filters label:first-child { flex:1; min-width:180px; }
+.mq-clinical-filters :is(input,select) { min-height:44px; border:1px solid var(--hp-color-border-subtle); border-radius:8px; padding:10px; background:white; color:var(--hp-color-text); font:inherit; }
+#clinician-result-count { font-size:12px; padding:12px 0; color:var(--hp-color-text-muted); }
+#doctor-studies .mq-table-wrap { max-height:330px; }
+#doctor-studies thead { position:sticky; top:0; z-index:1; }
+#clinician-inline-viewer { margin-top:20px; }
+#hospital-saas-app #clinician-inline-viewer .mq-title h2 { font-size:18px; }
+#hospital-saas-app #clinician-inline-viewer .mq-title p { font-size:12px; }
+#hospital-saas-app #clinician-inline-viewer .mq-viewer-grid { grid-template-columns:145px minmax(0,1fr); }
+#hospital-saas-app #clinician-inline-viewer .mq-viewer-side.right { grid-column:1/-1; display:flex; flex-wrap:wrap; align-items:center; gap:16px; }
+#hospital-saas-app #clinician-inline-viewer .mq-viewport { min-height:300px; height:340px; }
+#hospital-saas-app .mq-tool { min-height:44px; }
+.mq-clinical-guide details { margin-top:16px; font-size:13px; }
+.mq-clinical-guide summary { cursor:pointer; padding:10px 0; }
+@media(max-width:767px) { .mq-clinical-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } #hospital-saas-app #clinician-inline-viewer .mq-viewer-grid { display:block; } }
+.mq-clinical-workspace { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:20px; align-items:start; }
+.mq-clinical-list { min-width:0; }
+#doctor-studies :is(th,td):is(:nth-child(1),:nth-child(3),:nth-child(4),:nth-child(5)) { white-space:nowrap; }
+.mq-detail-item:last-child { grid-column:1/-1; }
+.mq-clinical-detail { background:var(--hp-color-surface); border-left:1px solid var(--hp-color-border-subtle); padding:20px; }
+.mq-clinical-note,.mq-detail-item p,.mq-clinical-guide p { color:var(--hp-color-text-muted); font-size:12px; line-height:1.7; }
+#clinician-study-detail { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.mq-detail-item { padding:14px; border:1px solid var(--hp-color-border-subtle); border-radius:8px; overflow-wrap:anywhere; }
+.mq-detail-item h4 { margin:0 0 14px; font-size:13px; }
+.mq-detail-item strong { font-size:13px; color:var(--hp-color-primary-active); }
+.mq-clinical-guide { margin-top:20px; padding:20px; background:var(--hp-color-selected); border-radius:8px; }
+.mq-clinical-guide ol { display:flex; flex-wrap:wrap; gap:12px 32px; padding-left:20px; font-size:13px; }
+@media(max-width:1279px) { .mq-clinical-workspace { grid-template-columns:minmax(0,1fr); } .mq-clinical-detail { border-left:0; } }
+#hospital-saas-app { --mq-bg:var(--hp-color-canvas); --mq-shell:var(--hp-color-surface); --mq-primary:var(--hp-color-primary); --mq-text:var(--hp-color-text); font-family:var(--hp-font); color:var(--hp-color-text); }
+#hospital-saas-app .mq-window { border:0; border-radius:0; box-shadow:none; }
+#hospital-saas-app .mq-header { gap:20px; flex-wrap:wrap; background:var(--hp-color-surface); }
+#hospital-saas-app .mq-mark { background:var(--hp-color-primary); }
+#hospital-saas-app .mq-brand-name { color:var(--hp-color-primary-active); }
+#hospital-saas-app .mq-shell-grid { grid-template-columns:224px minmax(0,1fr); }
+#hospital-saas-app .mq-sidebar { background:var(--hp-color-surface); border-right:1px solid var(--hp-color-border-subtle); }
+#hospital-saas-app .mq-main { min-width:0; padding:24px; background:var(--hp-color-canvas); }
+#hospital-saas-app .mq-title h2 { font-size:26px; letter-spacing:-.035em; }
+#hospital-saas-app .mq-title p { max-width:75ch; line-height:1.7; color:var(--hp-color-text-muted); }
+#hospital-saas-app .mq-nav { min-height:48px; border-radius:var(--hp-radius-control); color:var(--hp-color-text-muted); }
+#hospital-saas-app .mq-nav.active { background:var(--hp-color-selected); color:var(--hp-color-primary-active); }
+#hospital-saas-app .mq-card { background:var(--hp-card-bg); border:1px solid var(--hp-card-border); border-radius:var(--hp-radius-card); box-shadow:var(--hp-shadow-card); }
+#hospital-saas-app .mq-btn, #hospital-saas-app .mq-btn.small { min-height:44px; border-radius:var(--hp-radius-control); font:600 13px var(--hp-font); padding:10px 14px; }
+#hospital-saas-app .mq-btn-primary { background:var(--hp-button-primary-bg); color:var(--hp-button-primary-fg); border-color:var(--hp-button-primary-bg); }
+#hospital-saas-app .mq-btn-primary:hover { background:var(--hp-color-primary-hover); }
+#hospital-saas-app button:disabled { opacity:.55; cursor:not-allowed; }
+#hospital-saas-app :is(button,a,input,select):focus-visible { outline:3px solid var(--hp-color-focus); outline-offset:3px; }
+#hospital-saas-app .mq-badge-good { background:var(--hp-color-success-bg); color:var(--hp-color-success); }
+#hospital-saas-app .mq-badge-warn { background:var(--hp-color-warning-bg); color:var(--hp-color-warning); }
+#hospital-saas-app .mq-badge-fail { background:var(--hp-color-danger-bg); color:var(--hp-color-danger); }
+#hospital-saas-app .mq-table-wrap { overflow:auto; }
+#hospital-saas-app th { background:var(--hp-color-canvas); color:var(--hp-color-text-muted); }
+#hospital-saas-app td { padding:16px 12px; }
+#hospital-saas-app .mq-viewer-shell { background:#111827; color:#f8fafc; }
+#hospital-saas-app .mq-thumb { width:100%; text-align:left; min-height:64px; color:#f8fafc; }
+.hp-series-preview { display:block; width:100%; height:112px; object-fit:contain; background:#020617; margin-bottom:8px; }
+.hp-series-preview[hidden] { display:none; }
+#hospital-saas-app .mq-viewer-grid > * { min-width:0; }
+@media(max-width:1100px) {
+  #hospital-saas-app .mq-shell-grid { grid-template-columns:180px minmax(0,1fr); }
+  #hospital-saas-app .mq-header { display:flex; }
+  #hospital-saas-app .mq-context { flex-wrap:wrap; }
+  #hospital-saas-app .mq-viewer-grid { grid-template-columns:140px minmax(0,1fr); }
+  #hospital-saas-app .mq-viewer-side.right { grid-column:1/-1; }
+}
+@media(max-width:767px) {
+  #hospital-saas-app .mq-shell-grid { display:block; }
+  #hospital-saas-app .mq-sidebar { position:static; width:auto; display:block; }
+  #hospital-saas-app .mq-nav-group { display:flex; flex-wrap:wrap; gap:4px; }
+  #hospital-saas-app .mq-nav-label { width:100%; }
+  #hospital-saas-app .mq-nav { width:auto; flex:0 0 auto; }
+  #hospital-saas-app .mq-main { padding:16px; }
+  #hospital-saas-app .mq-toolbar { flex-wrap:wrap; }
+  #hospital-saas-app .mq-viewer-grid { display:block; }
+  #hospital-saas-app .mq-title h2 { font-size:22px; }
+}
+@media(prefers-reduced-motion:reduce) { #hospital-saas-app * { animation:none!important; transition:none!important; } }

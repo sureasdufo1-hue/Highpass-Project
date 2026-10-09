@@ -1,9 +1,25 @@
 # Highpass v3 Architecture Alignment
 
+## Lifecycle clarification — 2026-10-08
+
+[Dependency contract](../api/highpass-v3-lifecycle-dependency-contract.md) separates
+confirmed invariants from proposed directed transitions (D1..D6). INVITED is not
+recipient clinical membership; patient approval, institutional acceptance and local
+Mapping review remain separate proofs. A source-owned PENDING approval preparation
+breaks the identity/consent circular dependency without disclosing clinical metadata.
+This is a proposal, not activated architecture or approved patient consent policy.
+New access denial must not wait for cascade delivery acknowledgement.
+
 문서 버전: `v3.0-DRAFT-ALIGNMENT`
 기준일: 2026-09-12
 상태: **DOCUMENT COMPLETE / ARCHITECTURE REVIEW REQUIRED**
 범위: `CAPSTONE-P0`, 문서·계약 정렬만 수행
+
+2026-10-07 후속 구현 정렬: 내부 Session create/read 및 격리 DB migration의
+`requestedActions`는 불변 요청 의도만 보관한다. Session 생성/메타데이터 조회는
+환자 동의나 임상 접근 권한이 아니다. Consent/Grant는 요청 action 및 유효한 동의의
+범위를 넘을 수 없으며, 기존 빈 action은 NOT CAPTURED로 유지하고 권한을 추정하지 않는다.
+공개 route 활성화·수신 기관 승인·영상 접근·상태 전이는 별도 후속 gate이다.
 
 입력 기준:
 
@@ -312,3 +328,12 @@ No migration is executed in this phase.
 | Architecture Review | PENDING | product/medical/security approval required |
 
 최종 판정: **ARCHITECTURE / ERD / API ALIGNMENT DOCUMENT COMPLETE — REVIEW PENDING / IMPLEMENTATION NOT STARTED**
+
+## 2026-10-08 최초 동의 artifact 구현 후속
+
+위 표와 최종 판정은 작성 당시 설계 gate 기록이다. 이후
+[026·내부 최초 결정 service](../governance/highpass-v3-patient-decision-execution-2026-10-08.md)를
+owned PG에서 검증했다. contentVersion과 eventSequence, 동의와 임상 authority를
+분리하며 초기 PENDING→ACTIVE/REJECTED만 물리 구현한다. Session·Mapping·수신
+참여·AuthorizationDecision·Grant를 활성화하지 않는다. 전체 구조 구현 및 실제
+운영 준비는 미완료이며 새 증적은 DRAFT / UNASSIGNED다.

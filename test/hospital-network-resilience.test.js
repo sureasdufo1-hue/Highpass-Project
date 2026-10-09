@@ -278,8 +278,9 @@ test("Emergency Break-Glass Protocol: Quarantined doctor activates emergency byp
   }
 });
 
-test("Break-Glass REST API: POST /api/security/quarantines/break-glass validates parameters and doctor identity", async () => {
-  const baseUrl = "http://localhost:3000";
+test("Break-Glass REST API: POST /api/security/quarantines/break-glass validates parameters and doctor identity", { timeout: 20000 }, async (t) => {
+  const { startIsolatedServer, boundedFetch: fetch } = await import("../scripts/test-support/isolated-server.js");
+  const baseUrl = await startIsolatedServer(t);
 
   // 1. Missing fields rejection
   const badReqRes = await fetch(`${baseUrl}/api/security/quarantines/break-glass`, {

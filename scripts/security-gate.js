@@ -5,7 +5,7 @@ import { probePnpmRuntime, runPnpm } from "../src/pnpm-runtime.js";
 const pnpmRuntime = probePnpmRuntime();
 
 const commands = [
-  { name: "unit-tests", command: process.execPath, args: ["--test"] },
+  { name: "unit-tests", command: process.execPath, args: ["--test", "--test-concurrency=4"] },
   { name: "secret-scan", command: process.execPath, args: ["scripts/security-secret-scan.js"] },
   { name: "dependency-audit", packageManagerCommand: true, args: ["audit", "--prod", "--audit-level", "critical"] },
 ];

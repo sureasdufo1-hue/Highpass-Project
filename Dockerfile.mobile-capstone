@@ -1,0 +1,5 @@
+# B-only overlay: retain the previously scanned runtime and every web/crypto asset.
+ARG CAPSTONE_BASE_IMAGE
+FROM ${CAPSTONE_BASE_IMAGE}
+COPY src/capstone-b-portal.js /app/src/capstone-b-portal.js
+COPY public/mobile/app.js public/mobile/index.html public/mobile/sw.js /app/public/mobile/

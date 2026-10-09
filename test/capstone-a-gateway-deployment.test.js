@@ -1,0 +1,56 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+
+test("A authorized Gateway attaches to existing PACS, publishes only overlay TLS and stores no images", () => {
+  const env = { ...process.env, HIPASS_APP_IMAGE: "highpass:local", HIPASS_A_GATEWAY_SECRET_DIR: "/opt/highpass/a-gateway" };
+  const config = JSON.parse(execFileSync("docker", ["compose", "-f", "infra/workstation/hospital-a-gateway.compose.yml", "config", "--format", "json"], { env, timeout: 15000, windowsHide: true, encoding: "utf8", stdio: "pipe" }));
+  assert.deepEqual(Object.keys(config.services), ["gateway"]);
+  assert.equal(config.services.gateway.ports.length, 1);
+  assert.equal(config.services.gateway.ports[0].host_ip, "10.90.88.2");
+  assert.equal(config.services.gateway.ports[0].published, "9443");
+  assert.equal(config.networks.pacs_private.external, true);
+  assert.equal(config.networks.pacs_private.name, "hp-capstone-hospital-a_pacs_private");
+  assert.equal(config.services.gateway.environment.DATA_PLANE_CONTROL_ORIGIN, "https://10.90.88.1");
+  assert.equal(config.services.gateway.environment.DATA_PLANE_ORTHANC_SERVERNAME, "hospital-a-orthanc-mtls");
+  assert.ok(config.services.gateway.volumes.every(mount => mount.read_only && mount.type === "bind"));
+  assert.equal(config.volumes, undefined);
+});
+test("A deployment transfers only scoped Gateway credential via pinned encrypted privileged SFTP", () => {
+  const runner = readFileSync("scripts/capstone-a-gateway-ops.py", "utf8");
+  assert.match(runner, /LATEST_SECURITY_SCAN_REQUIRED/u);
+  assert.match(runner, /paramiko\.RejectPolicy/u);
+  assert.match(runner, /source\.open\("\/opt\/highpass\/capstone-control-secrets\/data-plane-secret"/u);
+  assert.doesNotMatch(runner, /source\.open\([^\n]*(?:app-password|test-auth-secret|token-secret|admin-password)|\.put\([^\n]*ca\.key|--insecure/u);
+  assert.match(runner, /ROOT_PREPARATION_FAILED/u);
+  assert.match(runner, /LOADED_IMAGE_ID_MISMATCH/u);
+  assert.match(runner, /--pull never/u);
+  assert.match(runner, /sport = :9443/u);
+  const probe = readFileSync("scripts/capstone-a-gateway-probe.js", "utf8");
+  assert.match(probe, /GATEWAY_REAL_PACS_MTLS_SYNTHETIC_QIDO/u);
+  assert.match(probe, /authorizedViewerE2E: "NOT VERIFIED"/u);
+  assert.doesNotMatch(probe, /console\.(?:log|error)\([^)]*(?:serviceToken|rows|pacs\.body)/u);
+});
+test("distributed protocol uses real signed actor policy calls, fresh consent and ephemeral root-protected fixtures, never image writes", () => {
+  const cloud = readFileSync("scripts/capstone-protocol-cloud.js", "utf8");
+  assert.match(cloud, /createHmac\("sha256", authSecret\)/u);
+  assert.match(cloud, /"POST", "\/api\/consents"/u);
+  assert.match(cloud, /"POST", "\/api\/dicom-access\/request"/u);
+  assert.match(cloud, /scopes: \[\{ studyInstanceUid: study, seriesInstanceUid: series \}\]/u);
+  assert.match(cloud, /mode: 0o600/u);
+  assert.match(cloud, /Date\.parse\(claims.expiresAt\)/u);
+  assert.match(cloud, /!Number.isFinite\(expiresAt\)/u);
+  assert.doesNotMatch(cloud, /claims\.exp(?:\s|\)|\.)/u);
+  assert.match(cloud, /rows.*consentId === fixture.consentId/u);
+  assert.doesNotMatch(cloud, /writeFileSync\([^\n]*(?:authSecret|doctor|patient\(\))|console\.log\([^\n]*(?:issued\.body|token|privateKey)/u);
+  const b = readFileSync("scripts/capstone-protocol-b.js", "utf8");
+  assert.match(b, /REAL_MTLS_WADO_SYNTHETIC_DICOM/u);
+  assert.match(b, /REAL_PERSISTENT_DPOP_REPLAY_DENY/u);
+  assert.doesNotMatch(b, /writeFileSync|--insecure|rejectUnauthorized: false/u);
+  const orchestrator = readFileSync("scripts/capstone-protocol-ops.py", "utf8");
+  assert.match(orchestrator, /docker run -i --rm --pull never/u);
+  assert.match(orchestrator, /FAILED_RUN_CONSENT_REVOKE_AND_AUDIT/u);
+  assert.match(orchestrator, /fixture = None/u);
+  assert.ok(orchestrator.indexOf('run_protocol("C", "audit")') > orchestrator.indexOf('run_protocol("B", "revoked")'));
+});

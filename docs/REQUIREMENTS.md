@@ -1,7 +1,7 @@
 # Highpass 요구사항 기준 문서
 
-상태: **v3 Architecture / ERD / API 문서 정렬 완료 / 통합 검토 대기**
-기준일: 2026-09-12
+상태: **v3 통합 기술 검토·수용기준·P0 구현계획 작성 / 현행 보안 공백 수정 진행**
+기준일: 2026-10-07
 
 ## Highpass v3 목표 기준선
 
@@ -20,7 +20,7 @@
 - [Highpass v3 Logical ERD](data/highpass-v3-erd.md)
 - [Highpass v3 API Alignment](api/HIGHPASS-V3-API-ALIGNMENT.md) / [Target OpenAPI](api/highpass-v3.openapi.yaml)
 
-위 v3 정렬 산출물은 목표 계약을 문서 수준에서 일치시킨 것이다. 실행 DB migration, 서버 endpoint, UI adapter와 DICOM data plane은 아직 변경하지 않았고 `NOT VERIFIED`다. 다음 단계는 이 산출물의 Architecture/Data/API/Security 검토 후 Acceptance Criteria를 확정하는 것이다.
+목표 v3 서버 endpoint와 DB migration은 아직 구현되지 않았다. 2026-10-07 [통합 기술 검토](governance/highpass-v3-integrated-review-2026-10-07.md), [Acceptance Criteria](acceptance/highpass-v3-acceptance-criteria.md), [P0 Master Plan](implementation/highpass-v3-p0-master-plan.md)을 작성했다. 사용자의 순차 진행 지시에 따라 현행 인증·권한·시뮬레이션 판정 공백부터 수정한다. 정식 사람 검토 서명은 별도이며 기존 승인 기록을 재사용하지 않는다.
 
 핵심 흐름은 `Identity → Exchange Session → Consent/Authorization → Imaging Package → Route → Access/Transfer → Provenance → Audit`다. Source Hospital PACS가 Source of Record이고, Cloud는 Temporary Exchange Copy를 처리하는 Medical Imaging Exchange Broker다.
 

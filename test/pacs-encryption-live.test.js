@@ -18,12 +18,13 @@ async function createService() {
   const store = new JsonStore(path.join(dir, "db.json"));
   await store.load();
   const destDir = path.join(dir, "hospital-b-pacs");
-  const service = new HipassService(store, () => new Date().toISOString(), { tokenSecret: "test-secret" });
-  return { dir, destDir, store, service };
+  const kek = crypto.randomBytes(32);
+  const service = new HipassService(store, () => new Date().toISOString(), { tokenSecret: "test-secret", hospitalArchiveKek: kek, allowSyntheticArchive: true });
+  return { dir, destDir, store, service, kek };
 }
 
 test("PACS At-Rest Encryption: AES-256-GCM Envelope Encryption and On-Demand Decryption", async () => {
-  const { dir, destDir, service } = await createService();
+  const { dir, destDir, service, kek } = await createService();
   try {
     // 1. Consent with DOWNLOAD_ALLOWED
     const consent = await service.createConsent({
@@ -77,6 +78,7 @@ test("PACS At-Rest Encryption: AES-256-GCM Envelope Encryption and On-Demand Dec
       seriesInstanceUid: inst.seriesInstanceUid,
       sopInstanceUid: inst.sopInstanceUid,
       baseDestDir: destDir,
+      kek,
     });
 
     assert.ok(Buffer.isBuffer(plainBuffer));
@@ -98,6 +100,7 @@ test("PACS At-Rest Encryption: AES-256-GCM Envelope Encryption and On-Demand Dec
           seriesInstanceUid: inst.seriesInstanceUid,
           sopInstanceUid: inst.sopInstanceUid,
           baseDestDir: destDir,
+          kek,
         });
       },
       (err) => {

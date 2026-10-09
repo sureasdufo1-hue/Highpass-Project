@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { randomBytes } from "node:crypto";
 import { JsonStore } from "../src/store.js";
 import { HipassService, ServiceValidationError } from "../src/services.js";
 import { Permission, ConsentStatus } from "../src/domain.js";
@@ -17,11 +18,11 @@ async function createService(options = {}) {
   const store = new JsonStore(path.join(dir, "db.json"));
   await store.load();
   const destDir = path.join(dir, "hospital-b-pacs");
-  const service = new HipassService(store, () => new Date().toISOString(), { tokenSecret: "test-secret", ...options });
+  const service = new HipassService(store, () => new Date().toISOString(), { tokenSecret: "test-secret", hospitalArchiveKek: randomBytes(32), allowSyntheticArchive: true, ...options });
   return { dir, destDir, store, service };
 }
 
-test("PACS Import Engine: Real DICOM binary transfer to Hospital B PACS archive", async () => {
+test("Local archive simulator: encrypted synthetic DICOM transfer (not STOW-RS)", async () => {
   const { dir, destDir, service, store } = await createService();
   try {
     // 1. Create patient consent with DOWNLOAD_ALLOWED
@@ -49,14 +50,15 @@ test("PACS Import Engine: Real DICOM binary transfer to Hospital B PACS archive"
 
     // 3. Verify transfer receipt
     assert.equal(importResult.status, "COMPLETED");
-    assert.equal(importResult.transferMethod, "STOW_RS_DIRECT_ARCHIVE");
+    assert.equal(importResult.transferMethod, "LOCAL_ENCRYPTED_ARCHIVE_SIMULATOR");
     assert.equal(importResult.studyInstanceUid, STUDY_CT);
     assert.equal(importResult.sourceHospitalId, "HOSP-A");
     assert.equal(importResult.targetHospitalId, "HOSP-B");
     assert.ok(importResult.instancesTransferred > 0);
     assert.ok(importResult.transferredBytes > 0);
     assert.match(importResult.sha256, /^[a-f0-9]{64}$/);
-    assert.equal(importResult.destinationVerification, true);
+    assert.equal(importResult.destinationVerification, false);
+    assert.equal(importResult.simulation, true);
 
     // 4. Verify physical files exist on disk in Hospital B archive
     const studyDir = path.join(destDir, STUDY_CT);

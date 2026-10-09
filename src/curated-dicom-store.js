@@ -11,7 +11,7 @@ export function getCuratedDicomStore(curatedDir = path.resolve("data/curated-dic
   const seriesMap = new Map();
   const instancesMap = new Map();
 
-  if (fs.existsSync(curatedDir)) {
+  if (process.env.HIPASS_ENABLE_CURATED_DICOM === "1" && fs.existsSync(curatedDir)) {
     const seriesFolders = fs.readdirSync(curatedDir).sort();
 
   for (const folder of seriesFolders) {

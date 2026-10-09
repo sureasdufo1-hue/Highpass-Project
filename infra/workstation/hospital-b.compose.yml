@@ -1,0 +1,17 @@
+# Viewer foundation ONLY, no unauthenticated externally published Viewer.
+# Authenticated TLS ingress and dedicated Data Plane Gateway still required.
+services:
+  viewer:
+    image: ${HIPASS_VIEWER_IMAGE:?reviewed Viewer image required}
+    volumes:
+      - ./ohif/app-config.js:/app/viewer/app-config.js:ro
+    networks: [viewer_private]
+    healthcheck:
+      test: [CMD, /nodejs/bin/node, -e, "fetch('http://127.0.0.1:8080/',{signal:AbortSignal.timeout(3000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+networks:
+  viewer_private:
+    internal: true

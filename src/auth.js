@@ -37,19 +37,40 @@ export class AuthenticationProvider {
 
 export class InternalServiceProvider extends AuthenticationProvider {
   authenticate(request) {
+    validatePrivacyServiceConfiguration(this.env);
     const serviceToken = request.headers["x-hipass-service-token"];
-    if (!this.env.HIPASS_INTERNAL_SERVICE_TOKEN || serviceToken !== this.env.HIPASS_INTERNAL_SERVICE_TOKEN) return null;
+    if (serviceToken === undefined) return null;
+    const privacy = this.env.HIPASS_PRIVACY_SERVICE_TOKEN;
+    const dataPlane = this.env.HIPASS_DATA_PLANE_SERVICE_TOKEN;
+    const keyRelease = this.env.HIPASS_KEY_RELEASE_SERVICE_TOKEN;
+    const patientView = this.env.HIPASS_PATIENT_SELF_VIEW_SERVICE_TOKEN;
+    const isPatientView = typeof serviceToken === 'string' && patientView && safeEqual(serviceToken,patientView);
+    if(isPatientView && (Buffer.byteLength(patientView)<32 || [keyRelease,dataPlane,privacy,this.env.HIPASS_INTERNAL_SERVICE_TOKEN].includes(patientView)
+      || !/^[A-Za-z0-9_-]{1,128}$/.test(this.env.HIPASS_DATA_PLANE_SOURCE_HOSPITAL_ID??'')))throw new AuthError(503,'PATIENT_VIEW_SERVICE_CONFIGURATION_INVALID');
+    const isKeyRelease = typeof serviceToken === "string" && keyRelease && safeEqual(serviceToken, keyRelease);
+    if ((isKeyRelease || (keyRelease && [dataPlane, privacy, this.env.HIPASS_INTERNAL_SERVICE_TOKEN].includes(keyRelease)))
+      && (Buffer.byteLength(keyRelease) < 32 || [dataPlane, privacy, this.env.HIPASS_INTERNAL_SERVICE_TOKEN].includes(keyRelease)
+        || !/^[A-Za-z0-9_-]{1,128}$/u.test(this.env.HIPASS_KEY_RELEASE_RECIPIENT_HOSPITAL_ID ?? "")
+        || this.env.HIPASS_KEY_RELEASE_RECIPIENT_HOSPITAL_ID === this.env.HIPASS_DATA_PLANE_SOURCE_HOSPITAL_ID)) throw new AuthError(503, "KEY_RELEASE_SERVICE_CONFIGURATION_INVALID");
+    const isDataPlane = typeof serviceToken === "string" && dataPlane && safeEqual(serviceToken, dataPlane);
+    if (isDataPlane && (Buffer.byteLength(dataPlane) < 32 || dataPlane === privacy || dataPlane === this.env.HIPASS_INTERNAL_SERVICE_TOKEN)) throw new AuthError(503, "DATA_PLANE_SERVICE_CONFIGURATION_INVALID");
+    const isPrivacy = typeof serviceToken === "string" && privacy && safeEqual(serviceToken, privacy);
+    const isInternal = typeof serviceToken === "string" && this.env.HIPASS_INTERNAL_SERVICE_TOKEN
+      && safeEqual(serviceToken, this.env.HIPASS_INTERNAL_SERVICE_TOKEN);
+    if (!isPrivacy && !isInternal && !isDataPlane && !isKeyRelease && !isPatientView) throw new AuthError(401, "INTERNAL_SERVICE_TOKEN_INVALID");
+    const identity = isPatientView ? 'patient-self-view-gateway' : isKeyRelease ? "key-release-gateway" : isDataPlane ? "data-plane-gateway" : isPrivacy ? "privacy-service" : "internal-service";
     return normalizePrincipal({
-      subject: "internal-service",
-      userId: "internal-service",
+      subject: identity,
+      userId: identity,
       actorType: PrincipalRole.INTERNAL_SERVICE,
       role: PrincipalRole.INTERNAL_SERVICE,
       roles: [PrincipalRole.INTERNAL_SERVICE],
-      scopes: ["audit:write", "gateway:introspect", "privacy:inspect"],
-      hospitalId: null,
+      scopes: isPatientView ? ['gateway:patient-self-view-authorize'] : isKeyRelease ? ["gateway:package-key-release"] : isDataPlane ? ["gateway:data-plane-authorize"] : isPrivacy ? ["privacy:inspect"]
+        : ["audit:write", "gateway:introspect", ...(!privacy ? ["privacy:inspect"] : [])],
+      hospitalId: isPatientView ? this.env.HIPASS_DATA_PLANE_SOURCE_HOSPITAL_ID : isKeyRelease ? this.env.HIPASS_KEY_RELEASE_RECIPIENT_HOSPITAL_ID : null,
       patientId: null,
       doctorId: null,
-      sessionId: request.headers["x-hipass-session-id"] ?? "internal-service",
+      sessionId: identity,
       authenticatedAt: new Date().toISOString(),
       authMethod: "INTERNAL_SERVICE_TOKEN",
       authMode: "INTERNAL_SERVICE_TOKEN",
@@ -110,6 +131,7 @@ export class OidcProvider extends AuthenticationProvider {
 }
 
 export function validateAuthConfiguration(env = process.env) {
+  validatePrivacyServiceConfiguration(env);
   const nodeEnv = String(env.NODE_ENV ?? "development").toLowerCase();
   const authMode = env.AUTH_MODE ?? (nodeEnv === "test" ? AuthMode.TEST : null);
   if (!authMode) throw new AuthError(500, "AUTH_MODE_REQUIRED", "AUTH_MODE is required");
@@ -179,6 +201,47 @@ export function requireInternalService(principal) {
   requireRoles(principal, [PrincipalRole.INTERNAL_SERVICE]);
 }
 
+// Preserve the existing identity assertion; persist only authenticated identity
+// and a bounded attempted consent reference, never the caller's credentials/body.
+export async function assertDoctorPrincipalAudited(principal, input, recordDenial) {
+  try {
+    assertDoctorPrincipal(principal, input);
+  } catch (error) {
+    if (!(error instanceof AuthError)) throw error;
+    try {
+      await recordDenial({
+        actorType: principal?.role ?? "SYSTEM",
+        actorId: principal?.doctorId ?? principal?.patientId ?? principal?.userId ?? "UNKNOWN",
+        hospitalId: principal?.hospitalId ?? null,
+        consentId: typeof input.consentId === "string" && /^consent_[a-f0-9]{16}$/.test(input.consentId) ? input.consentId : null,
+        action: "TOKEN_DENIED", result: "FAIL", reasonCode: error.code,
+      });
+    } catch {
+      throw new AuthError(503, "AUTHORIZATION_AUDIT_UNAVAILABLE");
+    }
+    throw error;
+  }
+}
+
+export function requireInternalServiceScope(principal, scope) {
+  requireInternalService(principal);
+  if (!Array.isArray(principal.scopes) || !principal.scopes.includes(scope)) {
+    throw new AuthError(403, "SERVICE_SCOPE_REQUIRED");
+  }
+}
+
+function validatePrivacyServiceConfiguration(env) {
+  const privacy = env.HIPASS_PRIVACY_SERVICE_TOKEN;
+  if (privacy === undefined) return;
+  if (typeof privacy !== "string" || !/^[A-Za-z0-9_-]{43,128}$/.test(privacy)
+    || new Set(privacy).size < 8 || /replace|change.?me|example/i.test(privacy)) {
+    throw new AuthError(500, "PRIVACY_SERVICE_TOKEN_INVALID_CONFIGURATION");
+  }
+  if (env.HIPASS_INTERNAL_SERVICE_TOKEN && safeEqual(privacy, env.HIPASS_INTERNAL_SERVICE_TOKEN)) {
+    throw new AuthError(500, "SERVICE_TOKEN_COLLISION");
+  }
+}
+
 export function isPrivilegedAdmin(principal) {
   return [PrincipalRole.SECURITY_ADMIN, PrincipalRole.PLATFORM_ADMIN].includes(principal?.role);
 }
@@ -221,6 +284,9 @@ function principalFromClaims(claims, authMethod, authMode) {
     doctorId: claims.doctorId ?? null,
     sessionId: claims.sid ?? claims.jti ?? claims.sub,
     authenticatedAt: new Date().toISOString(),
+    issuer: claims.iss,
+    audience: claims.aud,
+    expiresAtMs: claims.exp * 1000,
     authMethod,
     authMode,
   });
@@ -248,7 +314,12 @@ function validatePrincipalShape(principal) {
 
 function validateRegisteredClaims(claims, options) {
   const now = Math.floor(Date.now() / 1000);
-  if (!claims.sub) throw new AuthError(401, "JWT_SUB_REQUIRED", "JWT sub is required");
+  if (typeof claims.sub !== "string" || !claims.sub) throw new AuthError(401, "JWT_SUB_REQUIRED", "JWT sub is required");
+  if (typeof claims.exp !== "number" || !Number.isFinite(claims.exp)
+    || ["iat", "nbf"].some((key) => claims[key] !== undefined
+      && (typeof claims[key] !== "number" || !Number.isFinite(claims[key])))) {
+    throw new AuthError(401, "JWT_REGISTERED_CLAIMS_INVALID", "JWT timestamps must be finite NumericDate values");
+  }
   if (options.issuer && claims.iss !== options.issuer) throw new AuthError(401, "JWT_ISSUER_INVALID", "JWT issuer is invalid");
   const expectedAudience = options.audience;
   const actualAudiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];

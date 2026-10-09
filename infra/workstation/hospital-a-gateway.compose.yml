@@ -1,0 +1,39 @@
+# Authorized Data Plane only; attaches to the existing A-local PACS network.
+services:
+  gateway:
+    image: ${HIPASS_APP_IMAGE:?exact reviewed application image required}
+    command: [scripts/data-plane-gateway.js]
+    environment:
+      DATA_PLANE_PORT: 8443
+      DATA_PLANE_PUBLIC_BASE_URL: https://192.168.111.149:9443
+      DATA_PLANE_CONTROL_ORIGIN: https://10.90.88.1
+      DATA_PLANE_ORTHANC_ORIGIN: https://orthanc-mtls:8443
+      DATA_PLANE_ORTHANC_SERVERNAME: hospital-a-orthanc-mtls
+      DATA_PLANE_SERVICE_TOKEN_FILE: /run/secrets/data-plane-secret
+      DATA_PLANE_CONTROL_CA_FILE: /run/secrets/ca.crt
+      DATA_PLANE_ORTHANC_CA_FILE: /run/secrets/ca.crt
+      DATA_PLANE_ORTHANC_CERT_FILE: /run/secrets/gateway-client.crt
+      DATA_PLANE_ORTHANC_KEY_FILE: /run/secrets/gateway-client.key
+      DATA_PLANE_TLS_CERT_FILE: /run/secrets/gateway-server.crt
+      DATA_PLANE_TLS_KEY_FILE: /run/secrets/gateway-server.key
+    volumes:
+      - ${HIPASS_A_GATEWAY_SECRET_DIR:?root-protected A-local directory required}/data-plane-secret:/run/secrets/data-plane-secret:ro
+      - ${HIPASS_A_GATEWAY_SECRET_DIR}/ca.crt:/run/secrets/ca.crt:ro
+      - ${HIPASS_A_GATEWAY_SECRET_DIR}/gateway-client.crt:/run/secrets/gateway-client.crt:ro
+      - ${HIPASS_A_GATEWAY_SECRET_DIR}/gateway-client.key:/run/secrets/gateway-client.key:ro
+      - ${HIPASS_A_GATEWAY_SECRET_DIR}/gateway-server.crt:/run/secrets/gateway-server.crt:ro
+      - ${HIPASS_A_GATEWAY_SECRET_DIR}/gateway-server.key:/run/secrets/gateway-server.key:ro
+    ports: ['10.90.88.2:9443:8443']
+    networks: [pacs_private, gateway_transport]
+    healthcheck:
+      # Listener only; strict TLS/cloud/PACS probes are a separate deployment gate.
+      test: [CMD, /nodejs/bin/node, -e, "const s=require('node:net').connect(8443,'127.0.0.1',()=>{s.end();process.exit(0)});s.setTimeout(2000,()=>process.exit(1));s.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),2500)"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+    restart: unless-stopped
+networks:
+  pacs_private:
+    external: true
+    name: hp-capstone-hospital-a_pacs_private
+  gateway_transport: {}

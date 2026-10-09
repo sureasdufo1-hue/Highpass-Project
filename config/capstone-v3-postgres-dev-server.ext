@@ -1,0 +1,4 @@
+subjectAltName=DNS:highpass-v3-postgres.invalid,DNS:localhost,IP:127.0.0.1
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth

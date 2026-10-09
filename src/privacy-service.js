@@ -19,6 +19,7 @@ import {
   normalizeModelFindings,
 } from "./privacy-rules.js";
 import { normalizeForDetection } from "./privacy-unicode.js";
+import { PrivacyRequestBudget } from "./privacy-request-budget.js";
 
 export class PrivacyTextInspectionService {
   constructor(options) {
@@ -27,10 +28,17 @@ export class PrivacyTextInspectionService {
     this.approvedUses = options.approvedUses ?? ApprovedUseRegistry.fromFile();
     this.rules = options.rules ?? PrivacyRuleRegistry.fromFile();
     this.clock = options.clock ?? (() => new Date());
+    this.requestTimeoutMs = options.requestTimeoutMs ?? 30000;
   }
 
-  async readiness() {
-    const model = await this.adapter.readiness();
+  async readiness(options = {}) {
+    const budget = options.budget ?? new PrivacyRequestBudget(this.requestTimeoutMs);
+    try { return await budget.run(() => this.#readiness(budget)); }
+    finally { if (!options.budget) budget.dispose(); }
+  }
+
+  async #readiness(budget) {
+    const model = await budget.run(() => this.adapter.readiness({ signal: budget.signal }));
     return {
       status: model.ready ? "READY" : "NOT_READY",
       model,
@@ -40,7 +48,13 @@ export class PrivacyTextInspectionService {
     };
   }
 
-  async inspect(input, principal) {
+  async inspect(input, principal, options = {}) {
+    const budget = options.budget ?? new PrivacyRequestBudget(this.requestTimeoutMs);
+    try { return await budget.run(() => this.#inspect(input, principal, budget)); }
+    finally { if (!options.budget) budget.dispose(); }
+  }
+
+  async #inspect(input, principal, budget) {
     assertInternalPrincipal(principal);
     validateInput(input);
     const approvedUse = this.approvedUses.resolve(input, "privacy:inspect", principal.userId ?? principal.subject);
@@ -48,11 +62,11 @@ export class PrivacyTextInspectionService {
     const byteLength = Buffer.byteLength(input.content, "utf8");
     if (byteLength > PRIVACY_SYNC_MAX_BYTES) throw tooLarge();
 
-    const tokenCount = await this.adapter.countTokens(input.content);
+    const tokenCount = await budget.run(() => this.adapter.countTokens(input.content, { signal: budget.signal }));
     if (tokenCount > PRIVACY_SYNC_MAX_TOKENS) throw tooLarge();
 
     const mappedView = normalizeForDetection(input.content, { normalization: "NFC" });
-    const detection = await this.adapter.detect(mappedView.detectionText);
+    const detection = await budget.run(() => this.adapter.detect(mappedView.detectionText, { signal: budget.signal }));
     const modelFindings = normalizeModelFindings(mappedView.detectionText, detection.findings, mappedView);
     const ruleFindings = detectRequiredRuleFindings(input.content, input.context, profile);
     const merged = mergePrivacyFindings(input.content, [...modelFindings, ...ruleFindings]);
@@ -124,6 +138,11 @@ export class PrivacyTextInspectionService {
 
 function validateInput(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw invalid();
+  const allowedFields = new Set([
+    "mediaType", "content", "approvedUseRef", "purpose", "recipientRef",
+    "sourceOrganizationId", "sourceArtifactRef", "sourceArtifactVersion", "context",
+  ]);
+  if (Object.keys(input).some((field) => !allowedFields.has(field))) throw invalid();
   if (input.mediaType !== "text/plain") {
     throw new PrivacyProcessingError(415, PrivacyErrorCode.UNSUPPORTED_MEDIA_TYPE, PrivacyErrorCode.UNSUPPORTED_MEDIA_TYPE);
   }
@@ -137,6 +156,13 @@ function validateInput(input) {
     && !Number.isInteger(input.sourceArtifactVersion)) throw invalid();
   if (Buffer.byteLength(input.content, "utf8") > PRIVACY_SYNC_MAX_BYTES) throw tooLarge();
   if (input.context !== undefined && (!input.context || typeof input.context !== "object" || Array.isArray(input.context))) throw invalid();
+  if (input.context !== undefined) {
+    const contextFields = new Set(["personNames", "fieldContexts"]);
+    for (const [field, values] of Object.entries(input.context)) {
+      if (!contextFields.has(field) || !Array.isArray(values)
+        || values.some((value) => typeof value !== "string")) throw invalid();
+    }
+  }
 }
 
 function assertInternalPrincipal(principal) {

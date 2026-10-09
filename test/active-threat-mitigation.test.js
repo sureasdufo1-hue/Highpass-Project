@@ -294,8 +294,9 @@ test("Automatic Expiration & Manual Admin Release Lifecycle", async () => {
   }
 });
 
-test("Security Admin REST API: /api/security/quarantines endpoints enforce RBAC and life-cycle", async () => {
-  const baseUrl = "http://localhost:3000";
+test("Security Admin REST API: /api/security/quarantines endpoints enforce RBAC and life-cycle", { timeout: 20000 }, async (t) => {
+  const { startIsolatedServer, boundedFetch: fetch } = await import("../scripts/test-support/isolated-server.js");
+  const baseUrl = await startIsolatedServer(t);
 
   // 1. Unauthorized attempt (patient cannot read admin quarantines)
   const unauthRes = await fetch(`${baseUrl}/api/security/quarantines`, {
@@ -348,4 +349,3 @@ test("Security Admin REST API: /api/security/quarantines endpoints enforce RBAC 
   assert.equal(releasedRecord.status, "RELEASED");
   assert.equal(releasedRecord.releaseReason, "CLEARED_BY_TEST");
 });
-

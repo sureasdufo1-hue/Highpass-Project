@@ -22,12 +22,9 @@ export function getHospitalMasterKek(hospitalId = "HOSP-B") {
     if (envVal.length === 64 && /^[0-9a-fA-F]{64}$/.test(envVal)) {
       return Buffer.from(envVal, "hex");
     }
-    return createHash("sha256").update(envVal).digest();
+    throw new PacsCryptoError("INVALID_KEK_CONFIGURATION", "Hospital KEK must be exactly 32 bytes encoded as 64 hexadecimal characters");
   }
-  // Standard synthetic key for development / MVP test
-  return createHash("sha256")
-    .update(`HIPASS-SYNTHETIC-${hospitalId}-KEK-v1-SECURE-MASTER-SEED`)
-    .digest();
+  throw new PacsCryptoError("KEK_NOT_CONFIGURED", "Hospital archive encryption key is not configured");
 }
 
 /**

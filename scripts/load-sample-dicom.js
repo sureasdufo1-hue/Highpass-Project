@@ -50,6 +50,7 @@ const samples = [
 for (const sample of samples) {
   const response = await fetch(`${orthancUrl}/instances`, {
     method: "POST",
+    signal: AbortSignal.timeout(10000),
     headers: { "content-type": "application/dicom" },
     body: createDicom(sample),
   });

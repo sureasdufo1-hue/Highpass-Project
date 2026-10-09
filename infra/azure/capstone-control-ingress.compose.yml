@@ -1,0 +1,23 @@
+# Overlay-only TLS publication. Never bind Azure public IP or all host interfaces.
+services:
+  ingress:
+    image: ${HIPASS_APP_IMAGE:?reviewed latest application image required}
+    command: [scripts/start-capstone-control-ingress.js]
+    environment:
+      HIPASS_INGRESS_SECRET_FILE: /run/secrets/ingress-secret
+      EDGE_TLS_CERT_FILE: /run/secrets/cloud-server.crt
+      EDGE_TLS_KEY_FILE: /run/secrets/cloud-server.key
+    volumes:
+      - ${HIPASS_CLOUD_SECRET_DIR}/ingress-secret:/run/secrets/ingress-secret:ro
+      - ${HIPASS_CLOUD_SECRET_DIR}/cloud-server.crt:/run/secrets/cloud-server.crt:ro
+      - ${HIPASS_CLOUD_SECRET_DIR}/cloud-server.key:/run/secrets/cloud-server.key:ro
+    ports:
+      - '10.90.88.1:443:8443'
+    networks: [api_private, edge_transport]
+    depends_on:
+      control: {condition: service_healthy}
+    restart: unless-stopped
+networks:
+  # A published TLS socket needs a host-facing bridge. Only ingress joins it;
+  # database/Control API remain on internal networks with no published ports.
+  edge_transport: {}

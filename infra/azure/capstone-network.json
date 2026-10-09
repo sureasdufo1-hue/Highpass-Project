@@ -1,0 +1,70 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "type": "string", "defaultValue": "japaneast", "allowedValues": ["japaneast"] },
+    "vaultName": { "type": "string", "defaultValue": "kv-hp-demo-4869edd9" },
+    "vnetName": { "type": "string", "defaultValue": "vnet-highpass-capstone" }
+  },
+  "variables": {
+    "endpointName": "pe-highpass-keyvault",
+    "dnsZone": "privatelink.vaultcore.azure.net",
+    "tags": { "project": "Highpass", "environment": "capstone-synthetic", "review": "DRAFT-UNASSIGNED", "demoDate": "2026-10-15" }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2024-05-01",
+      "name": "[parameters('vnetName')]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "properties": {
+        "addressSpace": { "addressPrefixes": ["10.89.0.0/16"] },
+        "subnets": [
+          { "name": "cloud-services", "properties": { "addressPrefix": "10.89.0.0/24" } },
+          { "name": "private-endpoints", "properties": { "addressPrefix": "10.89.1.0/24", "privateEndpointNetworkPolicies": "Disabled" } }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/privateDnsZones",
+      "apiVersion": "2024-06-01",
+      "name": "[variables('dnsZone')]",
+      "location": "global",
+      "tags": "[variables('tags')]",
+      "properties": {}
+    },
+    {
+      "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+      "apiVersion": "2024-06-01",
+      "name": "[concat(variables('dnsZone'), '/highpass-capstone')]",
+      "location": "global",
+      "dependsOn": ["[resourceId('Microsoft.Network/privateDnsZones', variables('dnsZone'))]", "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"],
+      "properties": { "registrationEnabled": false, "virtualNetwork": { "id": "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]" } }
+    },
+    {
+      "type": "Microsoft.Network/privateEndpoints",
+      "apiVersion": "2024-05-01",
+      "name": "[variables('endpointName')]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "dependsOn": ["[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"],
+      "properties": {
+        "subnet": { "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), 'private-endpoints')]" },
+        "privateLinkServiceConnections": [{ "name": "highpass-keyvault", "properties": { "privateLinkServiceId": "[resourceId('Microsoft.KeyVault/vaults', parameters('vaultName'))]", "groupIds": ["vault"] } }]
+      }
+    },
+    {
+      "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+      "apiVersion": "2024-05-01",
+      "name": "[concat(variables('endpointName'), '/default')]",
+      "dependsOn": ["[resourceId('Microsoft.Network/privateEndpoints', variables('endpointName'))]", "[resourceId('Microsoft.Network/privateDnsZones', variables('dnsZone'))]"],
+      "properties": { "privateDnsZoneConfigs": [{ "name": "keyvault", "properties": { "privateDnsZoneId": "[resourceId('Microsoft.Network/privateDnsZones', variables('dnsZone'))]" } }] }
+    }
+  ],
+  "outputs": {
+    "vnetId": { "type": "string", "value": "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]" },
+    "vaultHostname": { "type": "string", "value": "[concat(parameters('vaultName'), '.vault.azure.net')]" },
+    "scope": { "type": "string", "value": "NETWORK FOUNDATION ONLY; VM/VPN/DNS forwarding and real key operations remain NOT VERIFIED" }
+  }
+}

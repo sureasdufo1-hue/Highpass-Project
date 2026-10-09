@@ -6,6 +6,52 @@ info:
 servers:
   - url: https://localhost:3443
 paths:
+  /api/patients/{patientId}/studies/{studyUid}/self-view-grants:
+    post:
+      operationId: issueCapstonePatientSelfViewGrant
+      description: Default-off capstone TEST JWT and authenticated ingress only. Current explicit account/ref ownership and persistent DPoP replay are required. Returns a patient-only VIEW_ONLY capability after atomic ledger/audit commit; not an interhospital consent or a production identity claim.
+      security: [{patientCapstoneJwt: []}]
+      parameters:
+        - {name: patientId, in: path, required: true, schema: {type: string}}
+        - {name: studyUid, in: path, required: true, schema: {type: string, maxLength: 64}}
+        - {name: DPoP, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [seriesInstanceUids]
+              properties:
+                seriesInstanceUids:
+                  type: array
+                  minItems: 1
+                  maxItems: 1
+                  items: {type: string, maxLength: 64}
+      responses:
+        '201':
+          description: RAM-only patient DPoP token, maximum300 seconds and no longer than authenticated session. Cache-Control no-store, Referrer-Policy no-referrer; never redirect token in URL.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [accessToken, tokenType, expiresAt, permission, auditSessionId]
+                properties:
+                  accessToken: {type: string, description: Sensitive response value; RAM only and never log or persist.}
+                  tokenType: {type: string, const: DPoP}
+                  expiresAt: {type: string, format: date-time}
+                  permission: {type: string, const: VIEW_ONLY}
+                  auditSessionId: {type: string, format: uuid}
+        '400': {description: Invalid input or query parameters.}
+        '401': {description: Missing or invalid authentication.}
+        '403': {description: Identity, ownership, ingress or DPoP policy denial.}
+        '404': {description: Feature not enabled.}
+        '408': {description: Request body timeout.}
+        '413': {description: Request body exceeds2048 bytes.}
+        '422': {description: Invalid JSON or UTF-8.}
+        '503': {description: Database, audit, replay, signer or deadline unavailable; no token returned.}
   /api/v1/me/phr/summary:
     get:
       operationId: getMyPhrSummary
@@ -79,6 +125,36 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/SafeError'}
         default: {$ref: '#/components/responses/Problem'}
+  /api/consents/{consentId}/handoff-tickets/{ticketId}:
+    get:
+      operationId: getMyConsentHandoffTicketStatus
+      description: Patient-owned status only, no nonce or DICOM scope. Server time and consent override stale stored ticket state. Cache-Control no-store.
+      security: [{patientOidc: [phr:read]}]
+      parameters:
+        - {$ref: '#/components/parameters/ConsentId'}
+        - name: ticketId
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Current effective ticket status; creates TICKET_STATUS_VIEWED audit.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [consentId, ticketId, status, expiresAt]
+                properties:
+                  consentId: {type: string}
+                  ticketId: {type: string}
+                  status: {type: string, enum: [ISSUED, USED, REVOKED, EXPIRED]}
+                  expiresAt: {type: string, format: date-time}
+        '404':
+          description: Missing, mismatched or non-owned ticket; indistinguishable response.
+        '409':
+          description: Stored status or expiry is invalid; never treated as successful receipt.
+        default: {$ref: '#/components/responses/Problem'}
   /api/transfers/tickets/redeem-viewer:
     post:
       operationId: redeemViewerHandoff
@@ -108,6 +184,11 @@ paths:
         default: {$ref: '#/components/responses/Problem'}
 components:
   securitySchemes:
+    patientCapstoneJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Capstone TEST JWT only; verified synthetic issuer/audience/expiry and exact patient subject. Not production OIDC. DPoP is additionally mandatory for issuance.
     patientOidc:
       type: oauth2
       flows:

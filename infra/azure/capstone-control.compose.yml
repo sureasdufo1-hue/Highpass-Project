@@ -1,0 +1,76 @@
+# Private metadata-only capstone API; not production approval or real IdP.
+services:
+  postgres:
+    image: ${HIPASS_POSTGRES_IMAGE:?reviewed PostgreSQL image required}
+    environment:
+      POSTGRES_DB: hipass
+      POSTGRES_USER: hipass_bootstrap
+      POSTGRES_PASSWORD_FILE: /run/secrets/admin-password
+    volumes:
+      - capstone-control-db:/var/lib/postgresql/data
+      - ${HIPASS_CLOUD_SECRET_DIR:?absolute root-protected path required}/admin-password:/run/secrets/admin-password:ro
+    networks: [db_private]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U hipass_bootstrap -d hipass -t 3']
+      interval: 5s
+      timeout: 4s
+      retries: 18
+      start_period: 30s
+    restart: unless-stopped
+  bootstrap:
+    image: ${HIPASS_APP_IMAGE:?reviewed latest application image required}
+    command: [scripts/bootstrap-capstone-postgres.js]
+    environment:
+      CAPSTONE_ADMIN_PASSWORD_FILE: /run/secrets/admin-password
+      CAPSTONE_APP_PASSWORD_FILE: /run/secrets/app-password
+    volumes:
+      - ${HIPASS_CLOUD_SECRET_DIR}/admin-password:/run/secrets/admin-password:ro
+      - ${HIPASS_CLOUD_SECRET_DIR}/app-password:/run/secrets/app-password:ro
+    networks: [db_private]
+    depends_on:
+      postgres: {condition: service_healthy}
+    restart: 'no'
+  control:
+    image: ${HIPASS_APP_IMAGE}
+    command: [scripts/start-capstone-control.js]
+    environment:
+      NODE_ENV: production
+      AUTH_MODE: TEST
+      HIPASS_STORE: postgres
+      PORT: 3000
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: hipass
+      POSTGRES_USER: hipass_app
+      POSTGRES_PASSWORD_FILE: /run/secrets/app-password
+      DICOM_TOKEN_SECRET_FILE: /run/secrets/token-secret
+      TEST_JWT_SECRET_FILE: /run/secrets/test-auth-secret
+      HIPASS_INGRESS_SECRET_FILE: /run/secrets/ingress-secret
+      HIPASS_DATA_PLANE_SERVICE_TOKEN_FILE: /run/secrets/data-plane-secret
+      HIPASS_CONTROL_PLANE_ONLY: '1'
+      HIPASS_DPOP_REQUIRED: '1'
+      HIPASS_PUBLIC_BASE_URL: ${HIPASS_CAPSTONE_PUBLIC_ORIGIN:?B same-origin presentation URL required}
+      HIPASS_DATA_PLANE_PUBLIC_BASE_URL: ${HIPASS_CAPSTONE_PUBLIC_ORIGIN}
+      HIPASS_DATA_PLANE_SOURCE_HOSPITAL_ID: HOSP-A
+      HIPASS_ENABLE_CURATED_DICOM: '0'
+      JWT_ISSUER: highpass-capstone-test-idp
+      JWT_AUDIENCE: highpass-capstone-api
+    volumes:
+      - ${HIPASS_CLOUD_SECRET_DIR}/app-password:/run/secrets/app-password:ro
+      - ${HIPASS_CLOUD_SECRET_DIR}/token-secret:/run/secrets/token-secret:ro
+      - ${HIPASS_CLOUD_SECRET_DIR}/test-auth-secret:/run/secrets/test-auth-secret:ro
+      - ${HIPASS_CLOUD_SECRET_DIR}/ingress-secret:/run/secrets/ingress-secret:ro
+      - ${HIPASS_CLOUD_SECRET_DIR}/data-plane-secret:/run/secrets/data-plane-secret:ro
+    networks: [db_private, api_private]
+    depends_on:
+      bootstrap: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, /nodejs/bin/node, -e, "fetch('http://127.0.0.1:3000/api/health',{signal:AbortSignal.timeout(3000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 4s
+      retries: 12
+    restart: unless-stopped
+volumes:
+  capstone-control-db:
+networks:
+  db_private: {internal: true}
+  api_private: {internal: true}

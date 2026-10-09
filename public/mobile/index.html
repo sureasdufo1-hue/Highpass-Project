@@ -2,20 +2,24 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>HiPass MediQ - 환자용 의료영상·마이데이터 모바일</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Medi Q - 환자용 의료영상·마이데이터 모바일</title>
   <link rel="manifest" href="/mobile/manifest.json">
-  <meta name="theme-color" content="#0284c7">
+  <meta name="theme-color" content="#2563eb">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="HiPass MediQ">
+  <meta name="apple-mobile-web-app-title" content="Medi Q">
   <link rel="icon" type="image/svg+xml" href="/mobile/icon.svg">
   <link rel="icon" type="image/png" sizes="192x192" href="/mobile/icon-192.png">
   <link rel="apple-touch-icon" href="/mobile/icon-192.png">
   <link rel="stylesheet" href="/mobile/style.css">
+  <link rel="stylesheet" href="/ui/tokens.css">
+  <link rel="stylesheet" href="/ui/components.css">
+  <link rel="stylesheet" href="/ui/mobile.css">
+  <link rel="stylesheet" href="/ui/brand.css">
   <script src="/qrcode.js"></script>
-  <script src="/mobile/app.js" defer></script>
+  <script src="/mobile/app.js" type="module"></script>
 </head>
 <body>
   <div class="mobile-shell">
@@ -23,18 +27,17 @@
     <header class="mobile-header">
       <div class="header-top">
         <div class="brand">
-          <span>HiPass</span>
-          <span class="brand-badge">MediQ</span>
+          <span class="mediq-logo" role="img" aria-label="Medi Q"></span>
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
-          <span class="security-enclave-pill">🛡️ TEE Enclave</span>
+          <span class="security-enclave-pill">개발용 · 비운영</span>
           <button id="btn-lock-app" class="badge" type="button" title="앱 잠금 (로그아웃)" style="background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;cursor:pointer;padding:4px 8px;border-radius:6px;font-size:11px;">🔒 잠금</button>
           <a href="/" class="saas-switch-btn" title="병원 SaaS 화면으로 전환">🏥 SaaS</a>
         </div>
       </div>
       <div class="header-meta">
         <div class="patient-info">
-          환자: <strong id="header-patient-name">김가상 (P-1001)</strong> · <span id="header-auth-badge" class="badge badge-good" style="font-size:10px;">🟢 FIDO2 본인확인</span>
+          합성 환자: <strong id="header-patient-name">김가상 (P-1001)</strong> · <span id="header-auth-badge" class="badge badge-good" style="font-size:10px;">개발용 인증 · 실제 본인확인 미연동</span>
         </div>
       </div>
     </header>
@@ -47,21 +50,22 @@
           <span class="auth-main-icon" id="auth-main-icon">🔒</span>
         </div>
 
-        <h2 class="auth-title">HiPass 안심 본인인증</h2>
-        <p class="auth-desc">의료영상 및 공유 이력을 안전하게 열람하기 위해<br><strong>1초 간편인증</strong>으로 본인을 확인해 주세요.</p>
+        <div class="mediq-logo" role="img" aria-label="Medi Q"></div>
+        <h2 class="auth-title">Medi Q 개발용 인증</h2>
+        <p class="auth-desc">합성 환자의 의료영상·공유 흐름을 체험합니다.<br><strong>인증 화면 시뮬레이션</strong>이며 실제 본인확인이 아닙니다.</p>
 
         <div class="auth-patient-badge">
           <span style="font-size:11px;color:#64748b;">등록된 사용자</span>
           <strong id="auth-patient-name" style="color:#0f172a;font-size:15px;">김가상 (P-1001)</strong>
-          <span style="font-size:10px;color:#0284c7;font-weight:700;">🛡️ TEE 단말 무결성 검증 (Risk: LOW)</span>
+          <span style="font-size:10px;color:#0284c7;font-weight:700;">🛡️ TEE·단말 무결성·위험도: NOT VERIFIED</span>
         </div>
 
         <!-- 1초 생체인증 버튼 (지문 / Face ID) -->
         <button id="btn-auth-bio" class="auth-btn auth-btn-primary" type="button">
           <span class="auth-btn-icon">👆</span>
           <div class="auth-btn-text">
-            <strong>지문 / Face ID 1초 로그인</strong>
-            <small>FIDO2 Passkey 기반 원터치 생체인증</small>
+            <strong>시연 시작하기</strong>
+            <small>개발용 인증 시뮬레이션 · FIDO2 미연동</small>
           </div>
         </button>
 
@@ -69,15 +73,15 @@
         <div class="auth-grid-options">
           <button id="btn-auth-pass" class="auth-opt-btn" type="button" title="PASS 모바일 신분증">
             <span style="font-size:18px;">📱</span>
-            <span>PASS 인증</span>
+            <span>PASS 화면 체험 (미연동)</span>
           </button>
           <button id="btn-auth-kakao" class="auth-opt-btn" type="button" title="카카오 간편인증">
             <span style="font-size:18px;">💬</span>
-            <span>카카오 인증</span>
+            <span>카카오 화면 체험 (미연동)</span>
           </button>
           <button id="btn-auth-pin" class="auth-opt-btn" type="button" title="간편 PIN 6자리">
             <span style="font-size:18px;">🔢</span>
-            <span>간편 PIN</span>
+            <span>PIN 화면 체험</span>
           </button>
         </div>
 
@@ -88,7 +92,7 @@
             <span class="scan-fingerprint">👆</span>
           </div>
           <div id="auth-verifying-text" class="auth-verifying-text">
-            생체인증 확인 중... (1초)
+            개발용 인증 화면 준비 중...
           </div>
           <div class="auth-progress-bar">
             <div id="auth-progress-fill" class="auth-progress-fill"></div>
@@ -107,7 +111,7 @@
     </div>
 
     <!-- Main Content Tab Panes -->
-    <main class="mobile-content">
+    <main class="mobile-content" id="mobile-main" tabindex="-1">
 
       <!-- ================================================================= -->
       <!-- Tab 1: Home (MediQ HomeScreen)                                     -->
@@ -115,11 +119,11 @@
       <section id="tab-home" class="tab-pane active">
         <!-- MediQ Welcome Hero Banner -->
         <div class="mediq-hero-card">
-          <div class="mediq-hero-tag">나의 모든 의료기록을 담다</div>
-          <h2 class="mediq-hero-title">병원을 옮겨도<br>진료기록은 이어져요</h2>
-          <p class="mediq-hero-desc">CD 발급 없이, 1회용 안심 QR로<br>다른 병원 진료실에 원본 의료영상을 즉시 공유하세요.</p>
+          <div class="mediq-hero-tag">내 영상 · 내 동의 · 내 기록</div>
+          <h2 class="mediq-hero-title">내 의료영상을<br>필요한 병원에 공유해요</h2>
+          <p class="mediq-hero-desc">합성 의료영상과 일회용 QR을 사용해<br>가상 병원 간 동의 기반 공유 흐름을 체험하세요.</p>
           <button id="btn-home-quick-share" class="btn btn-primary mediq-hero-btn" type="button">
-            🚀 1회용 QR 공유 시작하기
+            1회용 QR 공유 시작하기
           </button>
         </div>
 
@@ -154,10 +158,10 @@
         <!-- Recent Records Section (MediQ WhiteRecordCard) -->
         <div class="section-head" style="margin-top:16px;">
           <div class="section-title">
-            <span>최근 보관 기록</span>
+            <span>내 의료영상과 최근 기록</span>
             <button id="btn-refresh-home" class="badge" type="button" style="cursor:pointer;border:none;">새로고침</button>
           </div>
-          <p class="section-sub">A병원 PACS 및 의료 마이데이터에서 연계된 최신 기록입니다.</p>
+          <p class="section-sub">가상 A병원 영상 목록과 시연용 예시 진료기록입니다. 실제 의료 마이데이터는 연계하지 않습니다.</p>
         </div>
 
         <div id="home-recent-list" class="recent-list-wrap">
@@ -166,9 +170,9 @@
 
         <!-- MyData Institution Link Footer Info -->
         <div class="card" style="margin-top:16px;background:#f0f9ff;border:1px dashed #bae6fd;">
-          <div style="font-size:12px;font-weight:700;color:#0284c7;margin-bottom:4px;">🏥 보건복지부 마이데이터 안심 연계</div>
+          <div style="font-size:12px;font-weight:700;color:#0284c7;margin-bottom:4px;">🏥 공공기관 연계 미구현 · 합성 데이터 시연</div>
           <p style="font-size:11px;color:#64748b;line-height:1.5;margin:0;">
-            국민건강보험공단 · 건강보험심사평가원 · 질병관리청 및 참여 의료기관의 전송요구권(의료법 제21조의2)에 따라 암호화 보관됩니다.
+            국민건강보험공단·건강보험심사평가원·질병관리청과 실제 연결하지 않습니다. 법률 적합성·기관 승인 및 모바일 단말 암호화 저장 완료를 주장하지 않습니다.
           </p>
         </div>
       </section>
@@ -182,7 +186,7 @@
             <span>내 영상검사 보관함</span>
             <button id="btn-refresh-studies" class="badge" type="button" style="cursor:pointer;border:none;">새로고침</button>
           </div>
-          <p class="section-sub">A병원 PACS에서 발급받은 CT/MRI/X-ray 원본 영상 목록입니다. 단면 탐색 및 연속 재생(Cine)을 지원합니다.</p>
+          <p class="section-sub">가상 A병원의 시연 영상 목록입니다. 모바일 Cine 화면은 합성 Canvas이며 실제 DICOM 슬라이스 열람은 미구현입니다.</p>
         </div>
 
         <!-- Modality Filter Chips -->
@@ -273,8 +277,8 @@
               <select id="select-target-hospital" class="config-select">
                 <option value="HOSP-B" selected>가상 병원 B (상급종합병원)</option>
                 <option value="HOSP-C">가상 병원 C (전문 클리닉)</option>
-                <option value="HOSP-SNU">서울대학교병원 (데모 연계)</option>
-                <option value="HOSP-SEV">세브란스병원 (데모 연계)</option>
+                <option value="HOSP-SNU">가상 병원 D (시연 식별자 HOSP-SNU)</option>
+                <option value="HOSP-SEV">가상 병원 E (시연 식별자 HOSP-SEV)</option>
               </select>
             </div>
 
@@ -300,7 +304,7 @@
                 <span style="font-size:20px;">📱</span>
                 <div>
                   <strong style="color:#0f172a;">대면 진료 시 1회용 QR 제시</strong>
-                  <small style="color:#64748b;display:block;">진료실 모니터 바코드/웹캠 스캔 시 1초 인식</small>
+                  <small style="color:#64748b;display:block;">가상 수신 병원에서 QR 인계 흐름 검증 · 실제 스캔 성능 미검증</small>
                 </div>
               </div>
             </div>
@@ -337,19 +341,23 @@
                 <span>선택된 항목</span>
                 <strong id="confirm-items-count">1건의 기록</strong>
               </div>
+              <div class="summary-row">
+                <span>동의 유효 기간</span>
+                <strong id="confirm-duration-label">발급 후 24시간</strong>
+              </div>
             </div>
 
             <div class="switch-row card" style="margin-top:12px;display:flex;justify-content:space-between;align-items:center;">
               <div>
-                <strong style="font-size:13px;color:#0f172a;">민감정보 가리기</strong>
-                <p style="font-size:11px;color:#64748b;margin:2px 0 0 0;">주민등록번호 및 상세 주소 마스킹</p>
+                <strong style="font-size:13px;color:#0f172a;">마스킹 설정 예시 (미연동)</strong>
+                <p style="font-size:11px;color:#64748b;margin:2px 0 0 0;">합성 데이터만 사용하며 이 옵션은 실제 마스킹을 실행하지 않습니다.</p>
               </div>
-              <input type="checkbox" id="check-mask-sensitive" checked style="width:18px;height:18px;accent-color:#0284c7;">
+              <input type="checkbox" id="check-mask-sensitive" disabled style="width:18px;height:18px;accent-color:#0284c7;">
             </div>
 
             <div class="card" style="margin-top:10px;background:#f8fafc;border:1px solid #e2e8f0;font-size:11px;color:#64748b;line-height:1.5;">
-              <strong style="color:#0f172a;">보건의료정보 전송요구 및 개인정보 제3자 제공 동의</strong><br>
-              본인은 의료법 제21조의2 및 개인정보보호법 제17조에 따라 선택한 의료영상의 진료 목적 한시적 전송을 요구하며 제3자 열람에 동의합니다.
+              <strong style="color:#0f172a;">캡스톤 합성 데이터 공유 동의</strong><br>
+              선택한 합성 영상의 범위·수신 가상 병원·진료 목적·조회 전용 권한·기간을 확인하고 시연 공유에 동의합니다. 실제 환자의 법적 동의서나 병원 운영 승인이 아닙니다.
             </div>
 
             <div style="display:flex;gap:8px;margin-top:14px;">
@@ -432,15 +440,15 @@
           <div class="section-title">
             <span>단말 암호화 보관함 (Vault)</span>
           </div>
-          <p class="section-sub">모바일 전용 격리 저장소(Secure Enclave)에 보관된 암호화 캡슐 현황입니다.</p>
+          <p class="section-sub">모바일 보관함 미연동입니다. Secure Enclave 저장·파기는 검증하지 않았습니다.</p>
         </div>
 
         <div class="vault-stat-banner">
           <div style="font-weight:700;font-size:14px;color:#0284c7;margin-bottom:8px;">🔒 Security by Design 보관 정책</div>
           <div style="font-size:12px;color:#334155;line-height:1.6;">
-            • 일반 갤러리/다운로드 폴더 파일 노출: <strong style="color:#16a34a;">0건 (완전 차단)</strong><br>
-            • 로컬 평문 DICOM 잔류: <strong style="color:#16a34a;">0 Byte (Zeroization)</strong><br>
-            • 단말 저장 암호화: <strong style="color:#0f172a;">AES-256-GCM (Ciphertext-only)</strong>
+            • 일반 갤러리/다운로드 차단: <strong>NOT VERIFIED (실제 단말 미검증)</strong><br>
+            • 단말 평문 잔류·Zeroization: <strong>NOT VERIFIED</strong><br>
+            • AES-256-GCM: <strong>로컬 도메인 테스트 완료 · 모바일 저장소 미연동</strong>
           </div>
         </div>
 
@@ -464,23 +472,23 @@
           <div style="display:flex;flex-direction:column;gap:10px;font-size:13px;">
             <div style="display:flex;justify-content:space-between;">
               <span style="color:#64748b;">기기 식별자</span>
-              <strong id="dev-id-val" style="font-family:monospace;color:#0f172a;">dev_p1001_android_sec</strong>
+              <strong id="dev-id-val" style="font-family:monospace;color:#0f172a;">NOT ENROLLED</strong>
             </div>
             <div style="display:flex;justify-content:space-between;">
               <span style="color:#64748b;">플랫폼 / OS</span>
-              <strong id="dev-platform-val" style="color:#0f172a;">ANDROID_TEE (v3.0.0)</strong>
+              <strong id="dev-platform-val" style="color:#0f172a;">WEB PWA SIMULATOR</strong>
             </div>
             <div style="display:flex;justify-content:space-between;">
               <span style="color:#64748b;">키 격리 영역</span>
-              <strong id="dev-enclave-val" style="color:#16a34a;">TEE_SECURE_KEYSTORE</strong>
+              <strong id="dev-enclave-val" style="color:#16a34a;">NOT VERIFIED</strong>
             </div>
             <div style="display:flex;justify-content:space-between;">
               <span style="color:#64748b;">하드웨어 증명</span>
-              <strong id="dev-attest-val" style="color:#0284c7;">HARDWARE_ATTESTED</strong>
+              <strong id="dev-attest-val" style="color:#0284c7;">NOT VERIFIED</strong>
             </div>
             <div style="display:flex;justify-content:space-between;">
               <span style="color:#64748b;">보안 위험도</span>
-              <strong id="dev-risk-val" class="badge badge-good">LOW (안전)</strong>
+              <strong id="dev-risk-val" class="badge badge-good">NOT VERIFIED</strong>
             </div>
           </div>
         </article>
@@ -495,9 +503,9 @@
       <div class="cine-modal-content">
         <div class="cine-modal-header">
           <div>
-            <h3 id="cine-title" class="cine-title">Brain MRI Multi-Slice</h3>
+            <h3 id="cine-title" class="cine-title">모의 미리보기 · 실제 DICOM 아님</h3>
             <span id="cine-modality-badge" class="badge badge-modality">MR</span>
-            <span id="cine-slice-badge" class="badge badge-modality">Slice 1 / 50</span>
+            <span id="cine-slice-badge" class="badge badge-modality">모의 프레임 1 / 1</span>
           </div>
           <button id="btn-close-cine" class="cine-close-btn" type="button" title="닫기">✕</button>
         </div>
@@ -523,8 +531,8 @@
         <div class="cine-controls-panel">
           <div class="scrubber-row">
             <span style="font-size:11px;color:#64748b;">1</span>
-            <input type="range" id="cine-slider" min="1" max="50" value="1" class="cine-range">
-            <span id="cine-max-label" style="font-size:11px;color:#64748b;">50</span>
+            <input type="range" id="cine-slider" min="1" max="1" value="1" disabled class="cine-range">
+            <span id="cine-max-label" style="font-size:11px;color:#64748b;">1</span>
           </div>
 
           <div class="playback-btn-row">

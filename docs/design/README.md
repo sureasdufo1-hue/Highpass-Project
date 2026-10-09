@@ -1,4 +1,23 @@
-# HiPass Platform UI / UX 화면설계서 및 디자인 자산 일람
+# Medi Q UI / UX 화면설계서 및 디자인 자산 일람
+
+## Medi Q 웹 화면 설계
+
+- [A/B/C 로컬 디자인 구현 보고](MEDI-Q-ABC-DESIGN-IMPLEMENTATION-REPORT.md): 3열 의료진 화면, 집중 Viewer, 청록 환자 화면, 검증과 미연결 범위.
+
+- **현행 구현 기준:** [A 의료진 기본 / B 집중 Viewer / C 환자 기본 — 화면 설계 v1.0](MEDI-Q-SCREEN-BASELINE-V1.md). 사용자 선택 반영; 이전 시각 배치와 구현 순서를 대체. 구현·보안 승인과 별개.
+
+- [환자·의료진 웹 화면 설계 v0.1](MEDI-Q-WEB-SCREEN-DESIGN-2026-10-09.md): 시안 기반 배치, 화면별 행동, 데이터·보안 경계, 구현 순서와 수용 기준. DRAFT / UNASSIGNED.
+- [Medi Q 브랜드 및 앱 참조 기준](MEDI-Q-BRAND-REFERENCE-2026-10-09.md): 원본 네이비 사각 Q 로고와 표시 이름 적용 범위.
+
+## 2026-10-09 세 시안·현행 코드 정렬 (DRAFT / UNASSIGNED)
+
+- [환자 웹·의료진 웹·모바일 시안 ↔ 기존 기능 매핑표](HIGHPASS-THREE-SCREEN-FUNCTION-MAPPING-2026-10-09.md): 현재 코드 연결, API 공백, 요구사항 기능군, 구현 우선순위, 미검증 게이트.
+- [Highpass 공통 디자인 시스템 명세](HIGHPASS-COMMON-DESIGN-SYSTEM-2026-10-09.md): 첨부 시안 기반 토큰·역할별 shell·컴포넌트·접근성·보안 상태 계약.
+- [공통 UI 및 환자 웹 적용 기록](HIGHPASS-PATIENT-UI-IMPLEMENTATION-2026-10-09.md): 로컬 구현 범위, 48개 선택 회귀 테스트, 브라우저 확인 및 배포 전 미검증 사항.
+- [의료진 공통 UI 및 영상 연결 검증](HIGHPASS-CLINICIAN-UI-IMPLEMENTATION-2026-10-09.md): 승인된 픽셀 썸네일, 합성 DICOM 렌더러 보완, 로컬/VM 검증 범위 구분.
+- [세 화면 로컬 구현 및 모바일 적용](HIGHPASS-LOCAL-THREE-SCREEN-IMPLEMENTATION-2026-10-09.md): 환자→의료진→모바일 순서, 공통 토큰·PWA 캐시 경계 및 58개 선택 회귀 결과.
+
+위 문서는 기존 MediQ 목표 설계를 보존하는 Highpass 구현 정렬 보완안입니다. 문서 존재는 실제 화면·네이티브 앱·API 배포·검증 완료를 의미하지 않습니다.
 
 본 디렉터리는 **메디큐(MediQ) 프로젝트로부터 성공적으로 이관 및 정렬된 화면설계서, 와이어프레임 팩, UI 디자인 시스템 및 컴포넌트 명세서**를 관리합니다.
 

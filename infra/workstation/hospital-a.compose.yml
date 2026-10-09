@@ -1,0 +1,57 @@
+# Foundation only: mTLS transport is not patient/scope authorization.
+# Execute with --project-directory at repository root on the NEW A VM.
+services:
+  orthanc:
+    image: ${HIPASS_ORTHANC_IMAGE:?reviewed Orthanc image required}
+    command: /etc/orthanc
+    volumes:
+      - ./orthanc/hospital-a.json:/etc/orthanc/orthanc.json:ro
+      - hospital-a-data:/var/lib/orthanc/db
+    networks: [pacs_private]
+    healthcheck:
+      test: [CMD, /usr/local/bin/busybox, wget, -T, '3', -q, -O, /dev/null, 'http://127.0.0.1:8042/system']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+  orthanc-mtls:
+    image: ${HIPASS_APP_IMAGE:?reviewed application image required}
+    command: [scripts/orthanc-mtls-proxy.js]
+    environment:
+      ORTHANC_MTLS_PORT: 8443
+      ORTHANC_UPSTREAM_ORIGIN: http://orthanc:8042
+      ORTHANC_MTLS_CA_FILE: /run/secrets/pacs_ca
+      ORTHANC_MTLS_CERT_FILE: /run/secrets/pacs_server_cert
+      ORTHANC_MTLS_KEY_FILE: /run/secrets/pacs_server_key
+      ORTHANC_MTLS_ALLOWED_CLIENT_SAN: URI:spiffe://highpass.local/gateway/hipass-gateway-service
+    volumes:
+      - ${HIPASS_VM_SECRETS_DIR:?absolute VM-local secret directory required}/ca.crt:/run/secrets/pacs_ca:ro
+      - ${HIPASS_VM_SECRETS_DIR:?absolute VM-local secret directory required}/orthanc-server.crt:/run/secrets/pacs_server_cert:ro
+      - ${HIPASS_VM_SECRETS_DIR:?absolute VM-local secret directory required}/orthanc-server.key:/run/secrets/pacs_server_key:ro
+    # Loopback until the authorized A Gateway exists; never expose raw PACS to B/cloud.
+    ports: ['127.0.0.1:18443:8443']
+    networks: [pacs_private]
+    depends_on:
+      orthanc: {condition: service_healthy}
+    healthcheck:
+      # Listener-only check; real mTLS ALLOW/DENY is a separate required gate.
+      test: [CMD, /nodejs/bin/node, -e, "const s=require('node:net').connect(8443,'127.0.0.1',()=>{s.end();process.exit(0)});s.setTimeout(2000,()=>process.exit(1));s.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),2500)"]
+      interval: 10s
+      timeout: 4s
+      retries: 12
+    restart: unless-stopped
+  synthetic-seed:
+    image: ${HIPASS_APP_IMAGE:?reviewed application image required}
+    profiles: [seed]
+    command: [scripts/load-sample-dicom.js]
+    environment:
+      ORTHANC_REST_URL: http://orthanc:8042
+    networks: [pacs_private]
+    depends_on:
+      orthanc: {condition: service_healthy}
+    restart: 'no'
+volumes:
+  hospital-a-data:
+networks:
+  pacs_private:
+    internal: true

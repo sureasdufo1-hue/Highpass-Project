@@ -1,0 +1,33 @@
+# Independent synthetic validation only. Never uses the existing stack's names.
+services:
+  hipass-edge:
+    extends: { file: docker-compose.yml, service: hipass-edge }
+    container_name: ${HIPASS_VALIDATION_PREFIX:?validation prefix required}-edge
+  hipass-control-api:
+    extends: { file: docker-compose.yml, service: hipass-control-api }
+    container_name: ${HIPASS_VALIDATION_PREFIX:?validation prefix required}-api
+    environment:
+      HIPASS_ENABLE_CURATED_DICOM: "0"
+  hospital-a-orthanc-mtls:
+    extends: { file: docker-compose.yml, service: hospital-a-orthanc-mtls }
+    container_name: ${HIPASS_VALIDATION_PREFIX:?validation prefix required}-mtls
+  hospital-a-orthanc:
+    extends: { file: docker-compose.yml, service: hospital-a-orthanc }
+    container_name: ${HIPASS_VALIDATION_PREFIX:?validation prefix required}-pacs
+  hospital-a-orthanc-seed:
+    extends: { file: docker-compose.yml, service: hospital-a-orthanc-seed }
+    container_name: ${HIPASS_VALIDATION_PREFIX:?validation prefix required}-seed
+  hospital-b-viewer:
+    extends: { file: docker-compose.yml, service: hospital-b-viewer }
+    container_name: ${HIPASS_VALIDATION_PREFIX:?validation prefix required}-viewer
+  postgres:
+    extends: { file: docker-compose.yml, service: postgres }
+    container_name: ${HIPASS_VALIDATION_PREFIX:?validation prefix required}-db
+volumes:
+  hipass-postgres-data:
+  hospital-a-orthanc-data:
+networks:
+  frontend_net:
+  db_net: { internal: true }
+  dicom_gateway_net: { internal: true }
+  dicom_private_net: { internal: true }

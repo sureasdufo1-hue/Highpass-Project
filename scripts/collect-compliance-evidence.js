@@ -12,6 +12,9 @@ const runId = generatedAt.toISOString().replace(/[:.]/g, "-");
 const outputRoot = path.join(root, "evidence", "generated", runId);
 const commandTimeoutMs = positiveInteger(process.env.HIPASS_COMPLIANCE_COMMAND_TIMEOUT_MS, 180_000);
 const repositorySha = await gitValue(["rev-parse", "HEAD"]);
+const workingTreeStatus = await gitValue(["status", "--porcelain"]);
+const sourcePaths = ["src/server.js", "src/services.js", "src/pacs-import-engine.js", "src/pacs-crypto-engine.js", "src/orthanc-client.js", "src/curated-dicom-store.js", "public/app.js", "public/mobile/app.js", "scripts/edge-proxy.js", "scripts/security-network-check.js", "scripts/mtls-negative-check.js", "docker-compose.yml"];
+const workingTreeSourceHashes = Object.fromEntries(sourcePaths.map((source) => [source, sha256(path.join(root, source))]));
 const nodeExtraCa = path.join(root, "tmp", "certs", "mtls", "ca.crt");
 const nodeRunner = process.execPath;
 
@@ -44,6 +47,11 @@ const manifest = {
   generatedAt: generatedAt.toISOString(),
   generatedBy: "scripts/collect-compliance-evidence.js",
   repositorySha,
+  workingTreeDirty: workingTreeStatus.length > 0,
+  workingTreeSourceHashes,
+  reviewStatus: "DRAFT",
+  reviewer: "UNASSIGNED",
+  qualifier: "CAPSTONE MVP / TECHNICAL TEST ENVIRONMENT ONLY — NOT A PIPA LEGAL DETERMINATION, ISMS-P CERTIFICATION, HOSPITAL SECURITY APPROVAL, OR PRODUCTION READINESS CLAIM",
   commandTimeoutMs,
   containsPersonalData: false,
   containsSecrets: false,
@@ -130,7 +138,7 @@ function pushEvidence(evidenceId, controlIds, title, environment, sourcePath, re
     sourcePath: path.relative(root, sourcePath).replace(/\\/g, "/"),
     verificationCommand,
     result,
-    validUntil: "2026-09-25",
+    validUntil: null,
     containsPersonalData: false,
     containsSecrets: false,
     sha256: sha256(sourcePath),

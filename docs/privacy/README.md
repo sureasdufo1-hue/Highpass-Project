@@ -14,6 +14,12 @@
 | 2 | [Privacy Filter 구현계획서](highpass-privacy-filter-implementation-plan-v1.0.md) | IMPLEMENTATION PLAN | PF-0~PF-6 작업분해, PF-R01~PF-R15, PF-T01~PF-T20 추적 기준 |
 | 3 | [현재 작업 분류](CURRENT-WORK-CLASSIFICATION.md) | LIVING STATUS | 실제 저장소 대비 구현·검증·차단 상태와 다음 실행 순서 |
 | 4 | [PF-0/PF-1 실행 보고서](PF0-PF1-EXECUTION-REPORT.md) | EXECUTION EVIDENCE | 계약·PF-1 구현, 시험, Docker/model blocker의 실제 결과 |
+| 5 | [비운영 연동 준비·제안 채택 기록](NONPRODUCTION-INTEGRATION-APPROVAL-2026-10-08.md) | PLAN ADOPTION / LIMITED APPROVAL | 김범희 검토·승인, 2026-10-08; 실제 계약 확인 및 새 단위 시험 결과, 모델·Staging 미검증 구분 |
+| 6 | [Privacy API 계약 정렬 결과](API-CONTRACT-ALIGNMENT-2026-10-08.md) | DRAFT / UNASSIGNED | 요청 검증 강화·응답 Schema·OpenAPI 정렬, 24/24 Privacy 및 446/446 Node 회귀 |
+| 7 | [Privacy 최소권한 identity 실행 결과](SERVICE-IDENTITY-EXECUTION-2026-10-08.md) | DRAFT / UNASSIGNED | 전용 token·scope·실제 HTTP 음성 시험, 29/29 scoped 및 451/451 Node 회귀 |
+| 8 | [전체 요청 deadline·abort 실행 결과](REQUEST-DEADLINE-EXECUTION-2026-10-08.md) | DRAFT / UNASSIGNED | body·queue·모델 합산 timeout, 취소·child 종료, 33/33 scoped 및 455/455 Node 회귀 |
+| 9 | [격리 HTTP 통합 검증·증적 결과](ISOLATED-HTTP-EVIDENCE-2026-10-08.md) | DRAFT / UNASSIGNED | 실제 shared handler·fake bridge 31개 필수 시나리오, source closure 44개, 최신 Node 457/457 |
+| 실행 | [Privacy 자격증명 전환 Runbook](PRIVACY-SERVICE-IDENTITY-RUNBOOK.md) | LOCAL RUNBOOK | optional 설정, requester 등록, rollback 권한 영향·Compose 전달 제약 |
 | 참고 | [설계 프롬프트](references/highpass-privacy-filter-design-prompt.md) | NON-NORMATIVE INPUT | 구현계획서 생성에 사용된 작성 지시문 |
 | 참고 | [판정기준 작성 프롬프트](references/highpass-medical-privacy-policy-authoring-prompt.md) | NON-NORMATIVE INPUT | 판정기준 명세서 생성에 사용된 작성 지시문 |
 

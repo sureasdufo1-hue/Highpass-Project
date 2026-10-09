@@ -1,0 +1,4 @@
+# Existing reviewed Cloud runtime only; no dependency, schema or UI replacement.
+ARG CAPSTONE_BASE_IMAGE
+FROM ${CAPSTONE_BASE_IMAGE}
+COPY src/server.js src/auth.js /app/src/

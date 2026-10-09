@@ -1,0 +1,5 @@
+# Metadata catalog overlay; verify the local role-specific base tag ID first.
+ARG CAPSTONE_BASE_IMAGE
+FROM ${CAPSTONE_BASE_IMAGE}
+COPY src/server.js src/capstone-mock-idp.js src/postgres-store.js src/capstone-phantom-catalog.js /app/src/
+COPY scripts/test-support/synthetic-phantom.js /app/scripts/test-support/

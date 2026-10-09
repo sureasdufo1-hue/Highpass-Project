@@ -1,0 +1,12 @@
+# Add the complete presentation UI to an independently verified deployed base.
+# Use a dedicated local tag and attest its role-specific sha256 ID before/after
+# building. BuildKit interprets a bare sha256:<ID> as a registry image name.
+ARG CAPSTONE_BASE_IMAGE
+FROM ${CAPSTONE_BASE_IMAGE}
+COPY public/*.js public/*.css public/index.html /app/public/
+COPY public/ui/ /app/public/ui/
+COPY public/mobile/ /app/public/mobile/
+COPY public/brand/ /app/public/brand/
+COPY public/images/ /app/public/images/
+COPY public/assets/ /app/public/assets/
+# .dockerignore excludes public/assets/clinical; design mockups are not copied.

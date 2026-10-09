@@ -1,0 +1,11 @@
+FROM postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+
+# Retain PostgreSQL16/data directory/official initialization contract. Upgrade
+# signed Alpine packages; remove the unused vulnerable Go-based gosu binary.
+RUN apk upgrade --no-cache \
+    && apk add --no-cache su-exec \
+    && test -x /sbin/su-exec \
+    && grep -q 'exec gosu postgres' /usr/local/bin/docker-entrypoint.sh \
+    && sed -i 's/exec gosu postgres/exec \/sbin\/su-exec postgres/' /usr/local/bin/docker-entrypoint.sh \
+    && rm /usr/local/bin/gosu \
+    && ! grep -q 'exec gosu' /usr/local/bin/docker-entrypoint.sh

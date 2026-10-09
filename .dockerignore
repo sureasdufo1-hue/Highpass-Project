@@ -1,5 +1,10 @@
 data
+artifacts
+evidence/generated
+public/assets/clinical
 node_modules
+__pycache__
+*.pyc
 tmp
 .git
 .agents

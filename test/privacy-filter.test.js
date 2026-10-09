@@ -325,3 +325,88 @@ function hasCode(code) {
     return true;
   };
 }
+
+test("PF request contract denies unknown fields and malformed context before model calls", async () => {
+  const cases = [
+    { actorId: "SYNTHETIC-BODY-ACTOR" },
+    { context: { unexpected: [] } },
+    { context: { personNames: "synthetic" } },
+    { context: { fieldContexts: [null] } },
+    { context: { personNames: [42] } },
+    { context: [] },
+    { sourceArtifactVersion: "" },
+  ];
+  for (const overrides of cases) {
+    const adapter = new FakeAdapter();
+    await assert.rejects(service(adapter).inspect(researchInput("synthetic", overrides), principal),
+      hasCode(PrivacyErrorCode.INVALID_CONTENT));
+    assert.equal(adapter.countCalls, 0);
+    assert.equal(adapter.detectCalls, 0);
+  }
+});
+
+test("PF request contract retains policy denial for unsupported purposes and missing scope", async () => {
+  const adapter = new FakeAdapter();
+  await assert.rejects(service(adapter).inspect(researchInput("synthetic", { purpose: "CLINICAL" }), principal),
+    hasCode(PrivacyErrorCode.POLICY_DENIED));
+  await assert.rejects(service(adapter).inspect(researchInput("synthetic"), { ...principal, scopes: [] }),
+    hasCode(PrivacyErrorCode.AUTH_REQUIRED));
+  assert.equal(adapter.countCalls, 0);
+});
+
+test("PF serialized preview and both readiness shapes match response contract assertions", async () => {
+  const schema = JSON.parse(await readFile(new URL("../schemas/privacy-responses.schema.json", import.meta.url), "utf8"));
+  const results = [
+    await service().inspect(researchInput("synthetic"), principal),
+    await service().inspect(researchInput("연락처 synthetic@example.invalid"), principal),
+    await service(new FakeAdapter({ findings: [{ start: 0, end: 9, text: "synthetic", nativeLabel: "unknown_label" }] }))
+      .inspect(researchInput("synthetic"), principal),
+  ];
+  for (const result of results) {
+    assertSchemaSubset(JSON.parse(JSON.stringify(result)), schema.$defs.inspection, schema);
+    assert.equal(result.releaseEligible, false);
+  }
+  for (const readiness of [
+    await service().readiness(),
+    await service(new FakeAdapter({ readiness: { ready: false, code: "MODEL_UNAVAILABLE", reason: "EXPLICIT_CHECKPOINT_REQUIRED" } })).readiness(),
+  ]) assertSchemaSubset(readiness, schema.$defs.readiness, schema);
+  assertSchemaSubset({ error: "MODEL_OUTPUT_INVALID" }, schema.$defs.error, schema);
+  assert.throws(() => assertSchemaSubset({ ...results[0], releaseEligible: true }, schema.$defs.inspection, schema));
+  assert.throws(() => assertSchemaSubset({ error: "INVALID_CONTENT", rawInput: "synthetic" }, schema.$defs.error, schema));
+});
+
+// Focused assertions for keywords used by these fixtures, not a full JSON Schema validator.
+function assertSchemaSubset(value, spec, root) {
+  if (spec.$ref) {
+    assert.ok(spec.$ref.startsWith("#/$defs/"));
+    return assertSchemaSubset(value, root.$defs[spec.$ref.slice(8)], root);
+  }
+  if (Object.hasOwn(spec, "const")) assert.deepEqual(value, spec.const);
+  if (spec.enum) assert.ok(spec.enum.some((entry) => Object.is(entry, value)));
+  if (spec.type) {
+    const types = Array.isArray(spec.type) ? spec.type : [spec.type];
+    assert.ok(types.some((type) => type === "null" ? value === null
+      : type === "integer" ? Number.isInteger(value)
+      : type === "array" ? Array.isArray(value)
+      : type === "object" ? value !== null && typeof value === "object" && !Array.isArray(value)
+      : typeof value === type));
+  }
+  if (typeof value === "number") {
+    if (spec.minimum !== undefined) assert.ok(value >= spec.minimum);
+    if (spec.maximum !== undefined) assert.ok(value <= spec.maximum);
+  }
+  if (typeof value === "string") {
+    if (spec.pattern) assert.match(value, new RegExp(spec.pattern));
+    if (spec.minLength !== undefined) assert.ok(Array.from(value).length >= spec.minLength);
+    if (spec.format === "date-time") assert.ok(Number.isFinite(Date.parse(value)));
+    if (spec.format === "uuid") assert.match(value, /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/);
+  }
+  if (Array.isArray(value) && spec.items) for (const item of value) assertSchemaSubset(item, spec.items, root);
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    for (const key of spec.required ?? []) assert.ok(Object.hasOwn(value, key), `Missing response field: ${key}`);
+    for (const [key, item] of Object.entries(value)) {
+      if (spec.additionalProperties === false) assert.ok(Object.hasOwn(spec.properties, key), `Unexpected response field: ${key}`);
+      if (spec.properties?.[key]) assertSchemaSubset(item, spec.properties[key], root);
+    }
+  }
+}

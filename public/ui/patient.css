@@ -1,0 +1,102 @@
+/* Scoped adapters preserve the existing clinician and mobile controllers. */
+#patient-portal-app { --teal:var(--hp-color-primary); --teal-soft:var(--hp-color-selected); --ink:var(--hp-color-text); --muted:var(--hp-color-text-muted); --line:var(--hp-color-border-subtle); font-family:var(--hp-font); color:var(--hp-color-text); background:var(--hp-color-canvas); }
+body:has(#patient-portal-app.active) .global-persona-bar { position:relative; background:var(--hp-color-surface); color:var(--hp-color-text); border-bottom:1px solid var(--hp-color-border-subtle); box-shadow:none; min-height:64px; }
+body:has(#patient-portal-app.active) .brand-title { color:var(--hp-color-primary-active); }
+body:has(#patient-portal-app.active) .brand-sub { color:var(--hp-color-text-muted); }
+body:has(#patient-portal-app.active) .btn-refresh { color:var(--hp-color-primary-active); background:var(--hp-color-selected); border-color:var(--hp-color-border-subtle); min-height:44px; }
+body:has(#patient-portal-app.active) .persona-env-pill { color:var(--hp-color-success); background:var(--hp-color-success-bg); border-color:var(--hp-color-border-subtle); }
+body:has(#patient-portal-app.active) .persona-tab { color:var(--hp-color-text-muted); }
+body:has(#patient-portal-app.active) .persona-tab.active { color:var(--hp-color-primary-active); background:var(--hp-color-selected); border-color:var(--hp-color-border-subtle); }
+#patient-portal-app .app-shell { grid-template-columns:224px minmax(0,1fr); min-height:calc(100dvh - 64px); }
+#patient-portal-app .sidebar { position:sticky; top:0; height:100dvh; background:var(--hp-color-surface); color:var(--hp-color-text); border-right:1px solid var(--hp-color-border-subtle); padding:24px 14px; }
+#patient-portal-app .brand-mark { background:var(--hp-color-primary); color:var(--hp-white); border-radius:12px; }
+#patient-portal-app .brand-copy strong { color:var(--hp-color-primary-active); }
+#patient-portal-app .brand-copy small, #patient-portal-app .nav-label { color:var(--hp-color-text-muted); }
+#patient-portal-app .nav-button { min-height:48px; color:var(--hp-color-text-muted); border:1px solid transparent; border-radius:8px; }
+#patient-portal-app .nav-button.active { color:var(--hp-color-primary-active); background:var(--hp-color-selected); border-color:var(--hp-color-selected); }
+#patient-portal-app .nav-button:hover { background:var(--hp-color-canvas); }
+#patient-portal-app .nav-chip { display:none; }
+#patient-portal-app .security-tile { color:var(--hp-color-text-muted); background:var(--hp-color-selected); border-color:var(--hp-color-border-subtle); }
+#patient-portal-app .security-tile strong, #patient-portal-app .security-tile p { color:inherit; }
+#patient-portal-app .topbar { position:relative; top:auto; height:auto; min-height:64px; padding:12px 24px; background:var(--hp-color-surface); flex-wrap:wrap; gap:12px; }
+#patient-portal-app main { width:100%; max-width:1500px; margin:auto; padding:24px; }
+#patient-portal-app .page-head { padding:16px 0 24px; gap:16px; flex-wrap:wrap; }
+#patient-portal-app .page-head h1 { font-size:28px; line-height:1.35; letter-spacing:-.04em; }
+#patient-portal-app .page-head p { max-width:65ch; color:var(--hp-color-text-muted); font-size:15px; }
+#patient-portal-app .eyebrow { color:var(--hp-color-primary-active); letter-spacing:0; text-transform:none; }
+#patient-portal-app .summary-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+#patient-portal-app .summary-card { min-width:0; background:var(--hp-color-surface); border:1px solid var(--hp-color-border-subtle); box-shadow:var(--hp-shadow-card); border-radius:12px; padding:20px; }
+#patient-portal-app .summary-card .value { color:var(--hp-color-text); font-size:26px; font-variant-numeric:tabular-nums; }
+#patient-portal-app .summary-card .label, #patient-portal-app .summary-card .foot { color:var(--hp-color-text-muted); }
+#patient-portal-app .dashboard-grid { grid-template-columns:minmax(0,2.2fr) minmax(260px,1fr); gap:20px; }
+#patient-portal-app .panel, #patient-portal-app .action-card { border-color:var(--hp-color-border-subtle); border-radius:var(--hp-radius-card); box-shadow:var(--hp-shadow-card); }
+#patient-portal-app .panel-pad { padding:24px; }
+#patient-portal-app .panel h2 { font-size:18px; }
+#patient-portal-app .action-card { gap:14px; padding:18px; }
+#patient-portal-app .action-card > div { min-width:0; }
+#patient-portal-app .action-meta > div { flex-wrap:wrap; }
+#patient-portal-app .action-symbol { background:var(--hp-color-selected); color:var(--hp-color-primary); }
+#patient-portal-app .btn, #patient-portal-app .btn.small, #patient-portal-app .mode-button, #patient-portal-app .icon-button { min-height:44px; border-radius:8px; font-size:14px; line-height:1.5; white-space:normal; }
+#patient-portal-app .btn.primary { background:var(--hp-color-primary); border-color:var(--hp-color-primary); color:var(--hp-white); box-shadow:none; }
+#patient-portal-app .btn.primary:hover { background:var(--hp-color-primary-hover); }
+#patient-portal-app .btn:disabled { background:var(--hp-color-canvas); color:var(--hp-color-text-muted); cursor:not-allowed; }
+#patient-portal-app :is(button,a,input,select,[tabindex]):focus-visible { outline:2px solid var(--hp-color-focus); outline-offset:3px; }
+#patient-portal-app .select { min-height:44px; min-width:0; width:100%; font-size:16px; border-color:var(--hp-color-border-control); border-radius:8px; }
+#patient-portal-app .status { font-size:13px; }
+#patient-portal-app .status.teal, #patient-portal-app .status.blue { color:var(--hp-color-primary-active); background:var(--hp-color-selected); }
+#patient-portal-app .status.green { color:var(--hp-color-success); background:var(--hp-color-success-bg); }
+#patient-portal-app .status.red { color:var(--hp-color-danger); background:var(--hp-color-danger-bg); }
+#patient-portal-app .status.amber { color:var(--hp-color-warning); background:var(--hp-color-warning-bg); }
+#patient-portal-app .hp-study-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+#patient-portal-app .hp-study-card { display:flex; flex-direction:column; gap:12px; min-width:0; padding:18px; border:1px solid var(--hp-color-border-subtle); border-radius:12px; background:var(--hp-color-surface); }
+#patient-portal-app .hp-study-card h3 { font-size:17px; margin:0; overflow-wrap:anywhere; }
+#patient-portal-app .hp-study-card p { margin:0; color:var(--hp-color-text-muted); font-size:14px; }
+#patient-portal-app .hp-study-art { display:flex; align-items:center; gap:12px; padding:16px; color:var(--hp-color-primary-active); background:var(--hp-color-selected); border-radius:8px; }
+#patient-portal-app .hp-study-art .hp-icon { width:32px; height:32px; }
+#patient-portal-app .hp-study-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:auto; }
+#patient-portal-app .hp-study-actions > * { flex:1; }
+#patient-portal-app .hp-protection { display:grid; gap:14px; padding:0; list-style:none; color:var(--hp-color-text-muted); }
+#patient-portal-app .hp-protection li { display:flex; gap:10px; align-items:flex-start; }
+#patient-portal-app .hp-protection .hp-icon { color:var(--hp-color-success); }
+#patient-portal-app .hp-read-state { margin:12px 0; color:var(--hp-color-text-muted); font-size:14px; }
+#patient-portal-app .hp-read-state[data-state="error"] { padding:12px; background:var(--hp-color-warning-bg); color:var(--hp-color-warning); border-radius:8px; }
+#patient-portal-app .hp-qr-canvas { display:block; width:240px; max-width:100%; height:auto; margin:16px auto; image-rendering:pixelated; }
+#patient-portal-app .hp-consent-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+#patient-portal-app .hp-consent-grid label { min-width:0; }
+#patient-portal-app .hp-consent-grid label > span { font-size:14px !important; }
+#patient-portal-app .hp-consent-actions { grid-column:1/-1; display:flex; flex-wrap:wrap; gap:12px; }
+#patient-portal-app .hp-consent-actions .btn { flex:1; }
+#patient-portal-app .qr-meta { overflow-wrap:anywhere; }
+#patient-portal-app .hp-study-caption { color:var(--hp-color-text-muted); font-size:13px; margin-top:8px; }
+@media(max-width:1100px) { #patient-portal-app .dashboard-grid { grid-template-columns:minmax(0,1fr); } #patient-portal-app .action-card { flex-wrap:wrap; } }
+@media(max-width:767px) {
+  #patient-portal-app .app-shell { display:block; }
+  #patient-portal-app .sidebar { position:relative; height:auto; padding:12px 16px; border-right:0; border-bottom:1px solid var(--hp-color-border-subtle); }
+  #patient-portal-app .sidebar .brand, #patient-portal-app .nav-label, #patient-portal-app .side-foot { display:none; }
+  #patient-portal-app .nav { display:flex; flex-direction:row; flex-wrap:wrap; gap:4px; }
+  #patient-portal-app .nav-button { width:auto; padding:8px 10px; font-size:13px; }
+  #patient-portal-app .nav-text { display:inline; }
+  #patient-portal-app .nav-icon { display:none; }
+  #patient-portal-app main { padding:16px; }
+  #patient-portal-app .topbar { padding:12px 16px; }
+  #patient-portal-app .profile-copy { display:block; }
+  #patient-portal-app .page-head h1 { font-size:24px; }
+  #patient-portal-app .summary-grid { gap:8px; }
+  #patient-portal-app .summary-card { padding:12px; }
+  #patient-portal-app .summary-card .value { font-size:18px; }
+  #patient-portal-app .summary-card .foot { display:none; }
+  #patient-portal-app .hp-study-grid, #patient-portal-app .hp-consent-grid { grid-template-columns:1fr; }
+  #patient-portal-app .panel-pad { padding:16px; }
+  #patient-portal-app .action-meta { width:100%; align-items:flex-start; }
+  #patient-portal-app .head-actions { width:100%; flex-wrap:wrap; }
+  #patient-portal-app .head-actions > * { flex:1; }
+  body:has(#patient-portal-app.active) .global-persona-bar { padding:12px 16px; }
+  body:has(#patient-portal-app.active) .global-persona-actions { flex-wrap:wrap; }
+  body:has(#patient-portal-app.active) .brand-sub { display:none; }
+  #patient-portal-app .hp-consent-grid > div:not(.hp-consent-actions) { grid-template-columns:minmax(0,1fr) !important; }
+  #patient-portal-app #studies .action-card, #patient-portal-app #studies .easy-mode-card { flex-direction:column; align-items:stretch !important; }
+  #patient-portal-app #studies .action-card > div, #patient-portal-app #studies .easy-mode-card > div { flex-wrap:wrap; min-width:0; }
+  #patient-portal-app #studies { overflow-wrap:anywhere; }
+  #patient-portal-app #studies button { white-space:normal !important; }
+}
+@media(prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } #patient-portal-app *, #patient-portal-app *::before, #patient-portal-app *::after { animation:none !important; transition:none !important; } }

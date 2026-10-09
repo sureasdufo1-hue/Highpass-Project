@@ -1,5 +1,6 @@
 {
   "Name": "HiPass Hospital A Orthanc",
+  "Plugins": ["/usr/local/share/orthanc/plugins/libOrthancDicomWeb.so"],
   "DicomAet": "HOSPITAL_A",
   "StorageDirectory": "/var/lib/orthanc/db",
   "IndexDirectory": "/var/lib/orthanc/db",

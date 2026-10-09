@@ -94,7 +94,19 @@ test("zeroizes a transient key when KMS returns an invalid key or decryption fai
 test("does not expose plaintext in the result or audit events", async () => {
   const built = makePackage();
   const value = decryptor();
+  const rawKeyHex = built.dek.toString('hex');
+  const rawKeyBase64 = built.dek.toString('base64');
   await value.decryptVerifiedPackage({ packageRecord: { packageId: built.envelope.packageId, status: "VERIFIED" }, envelope: built.envelope, chunks: built.chunks, authorization: authorization(built.envelope.packageId), resolveDek: async () => built.dek, onPlaintextChunk: () => {} });
   const serialized = JSON.stringify(value.auditEvents());
-  assert.doesNotMatch(serialized, /synthetic CT payload|plaintext|dek|private|secret/iu);
+  // A randomized public digest can contain words such as "private" by chance.
+  // Verify the schema and actual secret bytes, not arbitrary digest substrings.
+  const events = value.auditEvents();
+  assert.equal(events.length, 2);
+  const common = ['eventType', 'decision', 'reasonCode', 'packageId', 'authorizationId', 'envelopeId', 'occurredAt'];
+  assert.deepEqual(Object.keys(events[0]).sort(), [...common].sort());
+  assert.deepEqual(Object.keys(events[1]).sort(), [...common, 'chunkCount', 'bytesConsumed', 'manifestHash'].sort());
+  assert.doesNotMatch(serialized, /synthetic CT payload/iu);
+  assert.equal(serialized.includes(rawKeyHex), false);
+  assert.equal(serialized.includes(rawKeyBase64), false);
+  assert.doesNotMatch(JSON.stringify(events.map(({manifestHash, ...rest}) => rest)), /plaintext|dek|private|secret/iu);
 });

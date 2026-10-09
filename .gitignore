@@ -6,6 +6,8 @@
 !.env.production.example
 !.env.staging.example
 node_modules/
+__pycache__/
+*.pyc
 .pnpm-store/
 tmp/
 data/

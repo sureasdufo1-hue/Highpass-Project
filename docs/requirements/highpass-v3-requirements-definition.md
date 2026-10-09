@@ -1,5 +1,26 @@
 # Highpass v3 Requirements Definition
 
+2026-10-08: 김범희 adopted Consent lifecycle L1~L5 in the
+[policy record](../governance/highpass-v3-consent-lifecycle-policy-packet-2026-10-08.md).
+CON-003~006 retain their requirements; policy approval does not establish implementation,
+technical PASS, public API activation or external operational/legal approval.
+
+2026-10-08 policy follow-up: 김범희 adopted D1..D4 proposals, D5 patient-artifact-first
+sequencing and D6 testing in the [decision record](../governance/highpass-v3-lifecycle-decision-packet-2026-10-08.md).
+[Patient command contract](../api/highpass-v3-patient-consent-command-contract.md)
+starts pure input validation; persisted approval/Decision/Grant, later transitions,
+runtime and full Requirements completion remain incomplete. This is not approval
+of every baseline requirement or independent new-test evidence.
+
+## Lifecycle dependency refinement — 2026-10-08
+
+ID-001..006/EX-001..007/CON-001..006/AUTH-001..005/GRT-001..005 retain their original
+scope. [Dependency contract](../api/highpass-v3-lifecycle-dependency-contract.md)
+identifies bootstrap and directed-edge proposals, not newly approved requirements.
+Own-ref Mapping, source creation and INVITED participation never imply patient approval.
+New v3 consent/decision/grant and full clinical transitions remain NOT IMPLEMENTED or
+NOT VERIFIED; legacy component results do not upgrade those requirements to PASS.
+
 문서 버전: `v3.0-DRAFT-BASELINE`
 기준일: 2026-09-12
 상태: **REQUIREMENTS BASELINE / REVIEW REQUIRED**
@@ -82,21 +103,21 @@ Identity → Exchange Session → Consent / Authorization → Transfer Grant
 |---|---|---:|---|---|
 | V3-FR-ID-001 | 시스템은 불투명한 `PatientRef`를 발급하고 local patient ID를 전역 식별자로 사용하지 않아야 한다. | P0 | schema/API review, cross-hospital fixture | PARTIAL |
 | V3-FR-ID-002 | 기관별 local patient reference는 보호된 값과 검색용 digest를 분리해 `PatientMapping`으로 관리해야 한다. | P0 | data model, secret/PII inspection | PARTIAL |
-| V3-FR-ID-003 | Mapping 상태는 `NO_MATCH`, `MULTIPLE_MATCH`, `IDENTITY_CONFLICT`, `UNVERIFIED`, `VERIFIED`를 지원해야 한다. | P0 | state transition test | NOT IMPLEMENTED |
+| V3-FR-ID-003 | Mapping 상태는 `NO_MATCH`, `MULTIPLE_MATCH`, `IDENTITY_CONFLICT`, `UNVERIFIED`, `VERIFIED`를 지원해야 한다. | P0 | state transition test | PARTIAL — local own-ref service/PG/HTTP tested; runtime/cross-institution pending |
 | V3-FR-ID-004 | 이름·생년월일 등만으로 자동 병합해서는 안 되며 충돌은 사람 검토 대상으로 보내야 한다. | P0 | ambiguous-match negative test | PARTIAL |
-| V3-FR-ID-005 | Mapping 생성·변경·충돌해결에는 evidence digest, actor, 기관, 이전/신규 상태를 감사해야 한다. | P0 | audit completeness test | NOT IMPLEMENTED |
+| V3-FR-ID-005 | Mapping 생성·변경·충돌해결에는 evidence digest, actor, 기관, 이전/신규 상태를 감사해야 한다. | P0 | audit completeness test | PARTIAL — local transactional outbox/constraints/HTTP tested; runtime/full audit pending |
 | V3-FR-ID-006 | Destination Mapping이 `VERIFIED`가 아니면 PACS_IMPORT를 거부해야 한다. | P0 | `TC-IDENTITY-01` | NOT IMPLEMENTED |
 
 ### 6.2 Exchange Session
 
 | ID | Requirement | P | Verification | Current |
 |---|---|---:|---|---|
-| V3-FR-EX-001 | 모든 교류는 고유 `ExchangeSession`을 aggregate root로 생성해야 한다. | P0 | API/data contract | NOT IMPLEMENTED |
-| V3-FR-EX-002 | Session은 `PATIENT_INITIATED`와 `PROVIDER_INITIATED`를 구분해야 한다. | P0 | flow tests | NOT IMPLEMENTED |
+| V3-FR-EX-001 | 모든 교류는 고유 `ExchangeSession`을 aggregate root로 생성해야 한다. | P0 | API/data contract | PARTIAL — internal create PG tested, runtime/HTTP pending |
+| V3-FR-EX-002 | Session은 `PATIENT_INITIATED`와 `PROVIDER_INITIATED`를 구분해야 한다. | P0 | flow tests | PARTIAL — synthetic patient/admin create PG tested, consent workflow pending |
 | V3-FR-EX-003 | Session은 Baseline의 canonical state machine과 terminal state 불변조건을 따라야 한다. | P0 | transition/property tests | NOT IMPLEMENTED |
 | V3-FR-EX-004 | Session은 source/destination, requester, patientRef, purpose, access modes, expiry, correlation을 가져야 한다. | P0 | required-field contract | PARTIAL via transfer request |
-| V3-FR-EX-005 | 하나의 Session은 복수 Study를 선택할 수 있고 각 선택은 immutable snapshot으로 고정해야 한다. | P0 | multi-Study scope test | NOT IMPLEMENTED |
-| V3-FR-EX-006 | 생성·재시도는 idempotency key를 사용하고 중복 Session·중복 action을 만들지 않아야 한다. | P0 | concurrent/retry test | PARTIAL contract |
+| V3-FR-EX-005 | 하나의 Session은 복수 Study를 선택할 수 있고 각 선택은 immutable snapshot으로 고정해야 한다. | P0 | multi-Study scope test | PARTIAL — internal create/hash/append denial PG tested; downstream action snapshot pending |
+| V3-FR-EX-006 | 생성·재시도는 idempotency key를 사용하고 중복 Session·중복 action을 만들지 않아야 한다. | P0 | concurrent/retry test | PARTIAL — internal create concurrent/lost ACK PG tested; later actions pending |
 | V3-FR-EX-007 | 만료·철회·취소는 신규 grant·key release·access를 즉시 차단해야 한다. | P0 | expiry/revocation suite | PARTIAL |
 
 ### 6.3 Consent Artifact

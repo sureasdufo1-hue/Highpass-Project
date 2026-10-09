@@ -1,4 +1,6 @@
 import { applyDemoDataMigrations, createSeedData } from "./seed.js";
+import { PostgresDPoPReplayStore, dpopReplaySchemaSql } from "./dpop-replay-store.js";
+import { orderStoredAuditChain } from "./audit-chain-order.js";
 
 const tableOrder = [
   "patients",
@@ -28,11 +30,14 @@ export class PostgresStore {
     this.data = null;
     this.persistedData = null;
     this.saveQueue = Promise.resolve();
+    this.dpopReplayStore = new PostgresDPoPReplayStore(connectionString);
   }
 
   async load() {
     const { Client } = await import("pg");
-    this.client = new Client({ connectionString: this.connectionString });
+    this.client = new Client({ connectionString: this.connectionString, connectionTimeoutMillis: 5000,
+      statement_timeout: 25000, query_timeout: 30000, options: "-c lock_timeout=3000" });
+    this.client.on("error", () => console.warn("POSTGRES_CONNECTION_UNAVAILABLE"));
     await this.client.connect();
     await this.ensureSchema();
 
@@ -68,16 +73,29 @@ export class PostgresStore {
   }
 
   async save() {
-    this.saveQueue = this.saveQueue.then(() => this.saveNow(), () => this.saveNow());
+    return this.runExclusive(() => this.saveNow());
+  }
+
+  runExclusive(operation) {
+    const guarded = () => {
+      if (this.persistenceBlocked) throw new Error('POSTGRES_RELOAD_REQUIRED');
+      return operation();
+    };
+    this.saveQueue = this.saveQueue.then(guarded, guarded);
     return this.saveQueue;
   }
 
+  runAuditMutation(operation) { return this.runExclusive(operation); }
+
   async saveNow() {
     normalizeStoreData(this.data);
-    const appendChanges = this.appendOnlyChanges();
+    // Only the detached transaction snapshot may become the committed baseline.
+    // Requests can append/mutate live memory while database queries await.
+    const snapshot = structuredClone(this.data);
+    const appendChanges = this.appendOnlyChanges(snapshot);
     if (appendChanges) {
       await this.saveAppendOnly(appendChanges);
-      this.persistedData = structuredClone(this.data);
+      this.persistedData = snapshot;
       return;
     }
     await this.client.query("BEGIN");
@@ -103,31 +121,33 @@ export class PostgresStore {
         CASCADE
       `);
 
-      await this.insertPatients(this.data.patients);
-      await this.insertHospitals(this.data.hospitals);
-      await this.insertGateways(this.data.gateways);
-      await this.insertDoctors(this.data.doctors);
-      await this.insertStudies(this.data.imagingStudies);
-      await this.insertConsents(this.data.consents);
-      await this.insertConsentScopes(this.data.consentScopes);
-      await this.insertTransferRequests(this.data.transferRequests);
-      await this.insertTransferTickets(this.data.transferTickets);
-      await this.insertTokenLogs(this.data.dicomAccessTokenLogs);
-      await this.insertAuditLogs(this.data.auditLogs);
-      await this.insertTransferUsageLogs(this.data.transferUsageLogs);
-      await this.insertResearchExportRequests(this.data.researchExportRequests);
-      await this.insertPseudonymMappings(this.data.pseudonymMappings);
+      await this.insertPatients(snapshot.patients);
+      await this.insertHospitals(snapshot.hospitals);
+      await this.insertGateways(snapshot.gateways);
+      await this.insertDoctors(snapshot.doctors);
+      await this.insertStudies(snapshot.imagingStudies);
+      await this.insertConsents(snapshot.consents);
+      await this.insertConsentScopes(snapshot.consentScopes);
+      await this.insertTransferRequests(snapshot.transferRequests);
+      await this.insertTransferTickets(snapshot.transferTickets);
+      await this.insertTokenLogs(snapshot.dicomAccessTokenLogs);
+      await this.insertAuditLogs(snapshot.auditLogs);
+      await this.insertTransferUsageLogs(snapshot.transferUsageLogs);
+      await this.insertResearchExportRequests(snapshot.researchExportRequests);
+      await this.insertPseudonymMappings(snapshot.pseudonymMappings);
       await this.client.query("COMMIT");
-      this.persistedData = structuredClone(this.data);
+      this.persistedData = snapshot;
     } catch (error) {
       await this.client.query("ROLLBACK");
       throw error;
     }
   }
 
-  appendOnlyChanges() {
+  appendOnlyChanges(snapshot = this.data) {
     if (!this.persistedData) return null;
     const appendable = new Map([
+      ["patients", "patientId"],
+      ["imagingStudies", "studyId"],
       ["consents", "consentId"],
       ["consentScopes", "scopeId"],
       ["transferTickets", "ticketId"],
@@ -139,8 +159,8 @@ export class PostgresStore {
       ["pseudonymMappings", "mappingId"],
     ]);
     const changes = {};
-    for (const name of this.collectionNames) {
-      const current = this.data[name] ?? [];
+    for (const name of Object.keys(snapshot ?? {})) {
+      const current = snapshot[name] ?? [];
       const previous = this.persistedData[name] ?? [];
       if (!appendable.has(name)) {
         if (JSON.stringify(current) !== JSON.stringify(previous)) return null;
@@ -159,6 +179,10 @@ export class PostgresStore {
   async saveAppendOnly(changes) {
     await this.client.query("BEGIN");
     try {
+      // New catalog rows precede their dependent consent/audit rows. Existing
+      // patient, Study and nested Series records remain immutable in this path.
+      await this.insertPatients(changes.patients);
+      await this.insertStudies(changes.imagingStudies);
       await this.insertConsents(changes.consents);
       await this.insertConsentScopes(changes.consentScopes);
       await this.insertTransferRequests(changes.transferRequests);
@@ -176,11 +200,16 @@ export class PostgresStore {
   }
 
   async close() {
-    await this.client?.end();
+    await Promise.all([this.client?.end(), this.dpopReplayStore.close()]);
   }
 
   async ensureSchema() {
-    await this.client.query(schemaSql);
+    // Multi-statement initial DDL can exceed a runtime query budget on Docker
+    // Desktop cold storage. Bound initialization separately. Legacy bulk data
+    // writes retain a finite 30s client/25s statement budget; the dedicated
+    // replay pool keeps its short 5s client/4s statement limits.
+    await this.client.query({ text: schemaSql, query_timeout: 60000 });
+    await this.client.query({ text: dpopReplaySchemaSql, query_timeout: 60000 });
   }
 
   async readAll() {
@@ -241,7 +270,8 @@ export class PostgresStore {
       pseudonymMappings: () => this.client.query("SELECT * FROM pseudonym_mappings ORDER BY created_at, mapping_id"),
     };
     const result = await readers[name]();
-    return result.rows.map((row) => rowMappers[name](row));
+    const rows = result.rows.map((row) => rowMappers[name](row));
+    return name === "auditLogs" ? orderStoredAuditChain(rows) : rows;
   }
 
   async insertPatients(rows) {
@@ -470,9 +500,9 @@ export class PostgresStore {
     }
   }
 
-  async insertAuditLogs(rows) {
+  async insertAuditLogs(rows, client = this.client) {
     for (const row of rows) {
-      await this.client.query(
+      await client.query(
         `INSERT INTO audit_logs (
            audit_id, audit_session_id, actor_type, actor_id, hospital_id, patient_id, consent_id, ticket_id,
            source_hospital_id, target_hospital_id, action, study_instance_uid, series_instance_uid,
@@ -832,7 +862,9 @@ function toIsoString(value) {
 }
 
 function toDateString(value) {
-  return value instanceof Date ? value.toISOString().slice(0, 10) : value;
+  // pg parses a DATE as midnight in the Node process's local timezone. DATE
+  // has no timezone: converting it to UTC shifts Korean calendar days back.
+  return value instanceof Date ? `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}` : value;
 }
 
 const schemaSql = `
@@ -947,7 +979,7 @@ CREATE TABLE IF NOT EXISTS transfer_requests (
 
 CREATE TABLE IF NOT EXISTS transfer_tickets (
   ticket_id varchar PRIMARY KEY,
-  request_id varchar NOT NULL REFERENCES transfer_requests(request_id),
+  request_id varchar REFERENCES transfer_requests(request_id),
   consent_id varchar NOT NULL REFERENCES consents(consent_id),
   patient_id varchar NOT NULL REFERENCES patients(patient_id),
   source_hospital_id varchar NOT NULL,
@@ -966,6 +998,10 @@ CREATE TABLE IF NOT EXISTS transfer_tickets (
   redeemed_doctor_id varchar,
   redeemed_hospital_id varchar
 );
+
+-- Consent-originated PHR handoffs have no clinician transfer request.
+-- Keep all consent/patient/nonce constraints and the FK for non-null request IDs.
+ALTER TABLE transfer_tickets ALTER COLUMN request_id DROP NOT NULL;
 
 CREATE TABLE IF NOT EXISTS dicom_access_token_logs (
   token_id varchar PRIMARY KEY,

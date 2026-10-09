@@ -1,0 +1,79 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "type": "string", "defaultValue": "japaneast", "allowedValues": ["japaneast"] },
+    "vnetName": { "type": "string", "defaultValue": "vnet-highpass-capstone" },
+    "vmName": { "type": "string", "defaultValue": "vm-highpass-capstone", "allowedValues": ["vm-highpass-capstone"] },
+    "vmSize": { "type": "string", "defaultValue": "Standard_B2als_v2", "allowedValues": ["Standard_B2s", "Standard_B1ms", "Standard_B2als_v2"] },
+    "adminUsername": { "type": "string", "defaultValue": "highpassadmin", "allowedValues": ["highpassadmin"] },
+    "sshPublicKey": { "type": "string", "minLength": 40, "metadata": { "description": "Public Ed25519 key only; never provide a private key or password" } },
+    "managementSourceCidr": { "type": "string", "metadata": { "description": "Explicit verified public IPv4 /32; validate with the deployment helper" } },
+    "imageVersion": { "type": "string", "metadata": { "description": "Verified Canonical ubuntu-24_04-lts server image version; do not use latest for deployment" } }
+  },
+  "variables": {
+    "nicName": "nic-highpass-capstone",
+    "nsgName": "nsg-highpass-capstone",
+    "ipName": "pip-highpass-capstone",
+    "tags": { "project": "Highpass", "environment": "capstone-synthetic", "review": "DRAFT-UNASSIGNED", "demoDate": "2026-10-15" }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/networkSecurityGroups", "apiVersion": "2024-05-01",
+      "name": "[variables('nsgName')]", "location": "[parameters('location')]", "tags": "[variables('tags')]",
+      "properties": {
+        "securityRules": [
+          { "name": "SSH-from-demo-admin", "properties": { "priority": 100, "direction": "Inbound", "access": "Allow", "protocol": "Tcp", "sourceAddressPrefix": "[parameters('managementSourceCidr')]", "sourcePortRange": "*", "destinationAddressPrefix": "*", "destinationPortRange": "22" } },
+          { "name": "VPN-from-demo-network", "properties": { "priority": 110, "direction": "Inbound", "access": "Allow", "protocol": "Udp", "sourceAddressPrefix": "[parameters('managementSourceCidr')]", "sourcePortRange": "*", "destinationAddressPrefix": "*", "destinationPortRange": "51820" } },
+          { "name": "HTTPS-from-demo-network", "properties": { "priority": 120, "direction": "Inbound", "access": "Allow", "protocol": "Tcp", "sourceAddressPrefix": "[parameters('managementSourceCidr')]", "sourcePortRange": "*", "destinationAddressPrefix": "*", "destinationPortRange": "443" } },
+          { "name": "Deny-other-inbound", "properties": { "priority": 200, "direction": "Inbound", "access": "Deny", "protocol": "*", "sourceAddressPrefix": "*", "sourcePortRange": "*", "destinationAddressPrefix": "*", "destinationPortRange": "*" } }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/publicIPAddresses", "apiVersion": "2024-05-01",
+      "name": "[variables('ipName')]", "location": "[parameters('location')]", "tags": "[variables('tags')]",
+      "sku": { "name": "Standard" },
+      "properties": { "publicIPAllocationMethod": "Static", "publicIPAddressVersion": "IPv4", "idleTimeoutInMinutes": 4 }
+    },
+    {
+      "type": "Microsoft.Network/networkInterfaces", "apiVersion": "2024-05-01",
+      "name": "[variables('nicName')]", "location": "[parameters('location')]", "tags": "[variables('tags')]",
+      "dependsOn": ["[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]", "[resourceId('Microsoft.Network/publicIPAddresses', variables('ipName'))]"],
+      "properties": {
+        "enableIPForwarding": true,
+        "networkSecurityGroup": { "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]" },
+        "ipConfigurations": [{
+          "name": "primary",
+          "properties": {
+            "primary": true, "privateIPAllocationMethod": "Dynamic", "privateIPAddressVersion": "IPv4",
+            "subnet": { "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), 'cloud-services')]" },
+            "publicIPAddress": { "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('ipName'))]" }
+          }
+        }]
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines", "apiVersion": "2024-11-01",
+      "name": "[parameters('vmName')]", "location": "[parameters('location')]", "tags": "[variables('tags')]",
+      "dependsOn": ["[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]"],
+      "properties": {
+        "hardwareProfile": { "vmSize": "[parameters('vmSize')]" },
+        "osProfile": {
+          "computerName": "highpass-cloud", "adminUsername": "[parameters('adminUsername')]",
+          "linuxConfiguration": { "disablePasswordAuthentication": true, "provisionVMAgent": true, "ssh": { "publicKeys": [{ "path": "[concat('/home/', parameters('adminUsername'), '/.ssh/authorized_keys')]", "keyData": "[parameters('sshPublicKey')]" }] } }
+        },
+        "storageProfile": {
+          "imageReference": { "publisher": "Canonical", "offer": "ubuntu-24_04-lts", "sku": "server", "version": "[parameters('imageVersion')]" },
+          "osDisk": { "name": "osdisk-highpass-capstone", "createOption": "FromImage", "caching": "ReadWrite", "diskSizeGB": 32, "managedDisk": { "storageAccountType": "StandardSSD_LRS" }, "deleteOption": "Detach" }
+        },
+        "networkProfile": { "networkInterfaces": [{ "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]", "properties": { "primary": true, "deleteOption": "Detach" } }] },
+        "diagnosticsProfile": { "bootDiagnostics": { "enabled": true } }
+      }
+    }
+  ],
+  "outputs": {
+    "publicIp": { "type": "string", "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', variables('ipName')), '2024-05-01').ipAddress]" },
+    "scope": { "type": "string", "value": "CLOUD HOST FOUNDATION ONLY; no Key Vault role, no API/DB/VPN deployment or imaging success claim" }
+  }
+}

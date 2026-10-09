@@ -1,0 +1,5 @@
+# Metadata-only Control API overlay; retain the exact reviewed runtime/dependencies.
+# Use a local base tag verified against the current deployed cloud image ID.
+ARG CAPSTONE_BASE_IMAGE
+FROM ${CAPSTONE_BASE_IMAGE}
+COPY src/server.js src/services.js src/domain.js /app/src/

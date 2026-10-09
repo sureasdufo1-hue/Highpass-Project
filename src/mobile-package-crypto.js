@@ -130,23 +130,47 @@ export function buildEncryptedImagingPackage({
 }
 
 export function decryptAndVerifyImagingPackage({ envelope, chunks, dek, now = new Date() }) {
-  if (!envelope?.manifestEncrypted || envelope.cipherSuite !== "A256GCM-HIGH-PASS-V1") {
+  if (!envelope?.manifestEncrypted || envelope.cipherSuite !== "A256GCM-HIGH-PASS-V1" || envelope.protocolVersion !== "1.0") {
     throw new MobilePackageError("PACKAGE_ENVELOPE_INVALID", "unsupported or unencrypted package envelope");
   }
   if (!Buffer.isBuffer(dek) || dek.length !== KEY_BYTES) throw new MobilePackageError("PACKAGE_KEY_INVALID", "DEK must be a 256-bit Buffer");
-  if (new Date(now) >= new Date(envelope.expiresAt)) throw new MobilePackageError("PACKAGE_EXPIRED", "package has expired");
+  const currentTime = new Date(now).getTime();
+  const expiryTime = Date.parse(envelope.expiresAt);
+  if (!Number.isFinite(currentTime) || !Number.isFinite(expiryTime)) throw new MobilePackageError("PACKAGE_TTL_INVALID", "package timestamps are invalid");
+  if (currentTime >= expiryTime) throw new MobilePackageError("PACKAGE_EXPIRED", "package has expired");
   if (!Array.isArray(chunks) || chunks.length !== envelope.chunkCount) throw new MobilePackageError("PACKAGE_CHUNK_COUNT_MISMATCH", "chunk count does not match envelope");
   const manifestCipher = unpackEncrypted(Buffer.from(String(envelope.manifestCiphertext), "base64url"));
-  const manifest = JSON.parse(decryptAesGcm(manifestCipher, dek, Buffer.from(`${envelope.packageId}:manifest`, "utf8")).toString("utf8"));
+  let manifest;
+  const manifestPlaintext = decryptAesGcm(manifestCipher, dek, Buffer.from(`${envelope.packageId}:manifest`, "utf8"));
+  try { manifest = JSON.parse(manifestPlaintext.toString("utf8")); }
+  finally { manifestPlaintext.fill(0); }
   const expectedManifestHash = sha256Base64Url(Buffer.from(canonicalJson({ ...manifest, manifestHash: undefined }), "utf8"));
   if (manifest.manifestHash !== expectedManifestHash) throw new MobilePackageError("PACKAGE_MANIFEST_TAMPERED", "manifest hash mismatch");
-  const ciphertext = [];
-  for (const [index, chunk] of chunks.entries()) {
-    if (chunk.chunkNo !== index || sha256Base64Url(chunk.ciphertext) !== manifest.chunkHashes[index]) throw new MobilePackageError("PACKAGE_CHUNK_TAMPERED", "chunk hash mismatch", { index });
-    ciphertext.push(decryptAesGcm({ nonce: chunk.nonce, ciphertext: chunk.ciphertext, tag: chunk.tag }, dek, Buffer.from(`${envelope.packageId}:${index}`, "utf8")));
+  // Outer transport metadata is not authenticated by itself. Bind it to the
+  // AES-GCM protected manifest before trusting expiry, recipient or key refs.
+  if (manifest.schemaVersion !== envelope.schemaVersion || manifest.packageId !== envelope.packageId
+      || manifest.createdAt !== envelope.createdAt || manifest.expiresAt !== envelope.expiresAt
+      || manifest.destinationInstitution !== envelope.destinationInstitutionRef
+      || !Number.isSafeInteger(envelope.packageSize) || envelope.packageSize < 1
+      || chunks.reduce((total, chunk) => total + (Buffer.isBuffer(chunk.ciphertext) ? chunk.ciphertext.length : NaN), 0) !== envelope.packageSize
+      || !Array.isArray(manifest.chunkHashes)
+      || manifest.chunkHashes.length !== envelope.chunkCount || manifest.encryption?.algorithm !== "A256GCM"
+      || canonicalJson(manifest.encryption?.keyEnvelopeRefs) !== canonicalJson(envelope.keyEnvelopeRefs)) {
+    throw new MobilePackageError("PACKAGE_ENVELOPE_BINDING_INVALID", "transport metadata differs from protected manifest");
   }
-  if (sha256Base64Url(Buffer.concat(chunks.map((chunk) => chunk.ciphertext))) !== manifest.packageHash) throw new MobilePackageError("PACKAGE_HASH_MISMATCH", "package hash mismatch");
-  return { manifest, plaintextChunks: ciphertext };
+  if (!Number.isFinite(Date.parse(manifest.createdAt)) || Date.parse(manifest.createdAt) >= expiryTime) throw new MobilePackageError("PACKAGE_TTL_INVALID", "protected package timestamps are invalid");
+  const ciphertext = [];
+  try {
+    for (const [index, chunk] of chunks.entries()) {
+      if (chunk.chunkNo !== index || sha256Base64Url(chunk.ciphertext) !== manifest.chunkHashes[index]) throw new MobilePackageError("PACKAGE_CHUNK_TAMPERED", "chunk hash mismatch", { index });
+      ciphertext.push(decryptAesGcm({ nonce: chunk.nonce, ciphertext: chunk.ciphertext, tag: chunk.tag }, dek, Buffer.from(`${envelope.packageId}:${index}`, "utf8")));
+    }
+    if (sha256Base64Url(Buffer.concat(chunks.map((chunk) => chunk.ciphertext))) !== manifest.packageHash) throw new MobilePackageError("PACKAGE_HASH_MISMATCH", "package hash mismatch");
+    return { manifest, plaintextChunks: ciphertext };
+  } catch (error) {
+    for (const plaintext of ciphertext) plaintext.fill(0);
+    throw error;
+  }
 }
 
 export function encryptAesGcm(plaintext, key, aad = Buffer.alloc(0)) {
@@ -161,13 +185,20 @@ export function decryptAesGcm({ nonce, ciphertext, tag }, key, aad = Buffer.allo
   if (!Buffer.isBuffer(nonce) || nonce.length !== NONCE_BYTES || !Buffer.isBuffer(ciphertext) || !Buffer.isBuffer(tag) || tag.length !== TAG_BYTES || !Buffer.isBuffer(key) || key.length !== KEY_BYTES) {
     throw new MobilePackageError("CRYPTO_INPUT_INVALID", "invalid AES-GCM parameters");
   }
+  let partial;
+  let final;
   try {
     const decipher = createDecipheriv("aes-256-gcm", key, nonce);
     decipher.setAAD(aad);
     decipher.setAuthTag(tag);
-    return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    partial = decipher.update(ciphertext);
+    final = decipher.final();
+    return Buffer.concat([partial, final]);
   } catch {
     throw new MobilePackageError("CRYPTO_AUTH_FAILED", "ciphertext authentication failed");
+  } finally {
+    partial?.fill(0);
+    final?.fill(0);
   }
 }
 

@@ -1,6 +1,8 @@
 // HiPass MediQ Patient Mobile Application
 // Patient-Controlled Medical Imaging & MyData Mobility Client
 // Security Contract: Zero browser plaintext storage (no localStorage/sessionStorage), Fail-Closed
+import { initializeCapstoneAuth } from "/capstone-auth.js";
+let capstoneAuth = null;
 const syncChannel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("HI_PASS_SYNC_CHANNEL") : null;
 const secondarySyncChannel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("hipass_sync") : null;
 
@@ -33,6 +35,8 @@ const state = {
   activeConsent: null,
   activeTicket: null,
   countdownTimer: null,
+  ticketStatusTimer: null,
+  ticketStatusBusy: false,
   vaultData: null,
   deviceData: null,
   isAuthenticated: false,
@@ -43,7 +47,7 @@ const state = {
   // Multi-Slice Cine Player State
   cineStudy: null,
   cineCurrentSlice: 1,
-  cineTotalSlices: 50,
+  cineTotalSlices: 1,
   cineIsPlaying: false,
   cineTimer: null,
   cineMode: "manual", // 'manual' | 'cine'
@@ -59,7 +63,14 @@ const state = {
 // --------------------------------------------------------------------------
 // Initialization & Navigation
 // --------------------------------------------------------------------------
-document.addEventListener("DOMContentLoaded", () => {
+async function initializeMobileApp() {
+  // Match the existing web portal: signed presenter-login profiles stay in RAM.
+  // No development role-header fallback is allowed on a capstone-marked page.
+  capstoneAuth = await initializeCapstoneAuth();
+  if (document.documentElement.dataset.capstone === "1" && !capstoneAuth) {
+    throw new Error("CAPSTONE_AUTH_REQUIRED");
+  }
+  if (capstoneAuth?.context) handlePatientSelect(capstoneAuth.context.patientId);
   setupNavigation();
   setupSyncChannel();
   registerServiceWorker();
@@ -77,7 +88,12 @@ document.addEventListener("DOMContentLoaded", () => {
     headerBadge.textContent = "🔒 잠금 상태";
     headerBadge.className = "badge";
   }
-});
+}
+const startMobileApp = () => {
+  void initializeMobileApp().catch(() => showToast("시연 인증을 확인하지 못했습니다. 새로고침하여 다시 로그인하세요."));
+};
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", startMobileApp, { once: true });
+else startMobileApp();
 
 function setupNavigation() {
   document.querySelectorAll("[data-tab]").forEach((btn) => {
@@ -142,6 +158,8 @@ function switchTab(tabName) {
   });
   document.querySelectorAll(".nav-item").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.tab === tabName);
+    if (btn.dataset.tab === tabName) btn.setAttribute("aria-current", "page");
+    else btn.removeAttribute("aria-current");
   });
 
   if (state.isAuthenticated) {
@@ -202,6 +220,10 @@ function setupAuth() {
 
   const patientSelect = document.querySelector("#auth-patient-select");
   if (patientSelect) {
+    if (capstoneAuth) {
+      patientSelect.replaceChildren(new Option(capstoneAuth.context.patientName, capstoneAuth.context.patientId));
+      patientSelect.disabled = true;
+    }
     patientSelect.addEventListener("change", (e) => {
       handlePatientSelect(e.target.value);
     });
@@ -213,10 +235,10 @@ async function handleQuickAuth(method = "BIO") {
   state.isVerifying = true;
 
   const methodMetadata = {
-    BIO: { name: "지문 / Face ID", badge: "🟢 FIDO2 생체인증", icon: "👆" },
-    PASS: { name: "PASS 모바일 신분증", badge: "🟢 PASS 간편인증", icon: "📱" },
-    KAKAO: { name: "카카오 간편인증", badge: "🟢 카카오 인증", icon: "💬" },
-    PIN: { name: "간편 PIN 6자리", badge: "🟢 PIN 본인확인", icon: "🔢" },
+    BIO: { name: "생체인증 화면 시뮬레이션", badge: "개발용 인증", icon: "👆" },
+    PASS: { name: "PASS 화면 시뮬레이션", badge: "실제 PASS 미연동", icon: "📱" },
+    KAKAO: { name: "카카오 화면 시뮬레이션", badge: "실제 카카오 미연동", icon: "💬" },
+    PIN: { name: "PIN 화면 시뮬레이션", badge: "개발용 인증", icon: "🔢" },
   };
 
   const meta = methodMetadata[method] || methodMetadata.BIO;
@@ -255,25 +277,38 @@ async function handleQuickAuth(method = "BIO") {
   // 1-second scanning pulse
   await new Promise((resolve) => setTimeout(resolve, 900));
 
-  if (verifyText) verifyText.textContent = `✅ 본인확인 완료 (${meta.name})`;
-  if (authMainIcon) authMainIcon.textContent = "🔓";
+  if (verifyText) verifyText.textContent = "개발용 서버 인증 확인 중...";
   if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
     try { navigator.vibrate(60); } catch {}
   }
 
   // Record audit log via backend API
   try {
-    await fetch("/api/v1/mobile/auth/login", {
+    const result = await fetch("/api/v1/mobile/auth/login", {
       method: "POST",
       headers: patientHeaders(),
+      signal: AbortSignal.timeout(10000),
       body: JSON.stringify({
         patientId: state.patientId,
         method,
       }),
     });
-  } catch {}
+    if (!result.ok) throw new Error("AUTHORIZATION_FAILED");
+    const receipt = await result.json();
+    if (receipt.authenticated !== true || receipt.patientId !== state.patientId || receipt.simulation !== true) {
+      throw new Error("AUTH_RECEIPT_NOT_CONFIRMED");
+    }
+  } catch {
+    state.isVerifying = false;
+    if (verifyText) verifyText.textContent = "인증을 확인하지 못했습니다. 다시 시도하세요.";
+    if (btnBio) btnBio.style.display = "";
+    if (optGrid) optGrid.style.display = "";
+    return;
+  }
 
   // Update authentication state
+  if (verifyText) verifyText.textContent = `✅ 개발용 서버 인증 연결 완료 (${meta.name})`;
+  if (authMainIcon) authMainIcon.textContent = "🔓";
   state.isAuthenticated = true;
   state.authMethod = method;
   state.authenticatedAt = new Date().toISOString();
@@ -282,7 +317,7 @@ async function handleQuickAuth(method = "BIO") {
   // Update header badges
   const headerBadge = document.querySelector("#header-auth-badge");
   if (headerBadge) {
-    headerBadge.textContent = meta.badge;
+    headerBadge.textContent = "개발용 인증 · 하드웨어 미검증";
     headerBadge.className = "badge badge-good";
   }
 
@@ -291,7 +326,7 @@ async function handleQuickAuth(method = "BIO") {
     authOverlay.classList.add("unlocked");
   }
 
-  showToast(`1초 간편인증 성공! ${state.patientName} 님 환영합니다.`);
+  showToast("개발용 인증으로 연결했습니다. 생체인증·하드웨어 검증은 시뮬레이션입니다.");
 
   // Load all patient data now that app is authenticated
   await loadInitialData();
@@ -309,6 +344,7 @@ async function handleLockApp() {
     await fetch("/api/v1/mobile/auth/lock", {
       method: "POST",
       headers: patientHeaders(),
+      signal: AbortSignal.timeout(10000),
       body: JSON.stringify({
         patientId: state.patientId,
       }),
@@ -347,6 +383,7 @@ async function handleLockApp() {
   state.consents = [];
   state.activeStudy = null;
   state.activeTicket = null;
+  stopTicketStatusPolling();
   if (state.countdownTimer) clearInterval(state.countdownTimer);
   closeCineViewer();
 
@@ -364,11 +401,14 @@ async function handleLockApp() {
 function handlePatientSelect(patientId) {
   state.patientId = patientId;
   const names = {
+    "HP-TEST-PHANTOM-001": "합성 팬텀 환자",
     "P-1001": "김가상 (P-1001)",
     "P-1002": "이가상 (P-1002)",
     "P-1003": "박가상 (P-1003)",
   };
-  state.patientName = names[patientId] || `${patientId} (환자)`;
+  state.patientName = capstoneAuth?.context?.patientId === patientId
+    ? `${capstoneAuth.context.patientName} (${patientId})`
+    : names[patientId] || `${patientId} (합성 환자)`;
 
   const authPatientEl = document.querySelector("#auth-patient-name");
   if (authPatientEl) authPatientEl.textContent = state.patientName;
@@ -402,6 +442,7 @@ async function loadStudies() {
   try {
     const res = await fetch(`/api/imaging-studies?patientId=${state.patientId}&includeSeries=true`, {
       headers: patientHeaders(),
+      signal: AbortSignal.timeout(10000),
     });
     const studies = await res.json();
     state.studies = Array.isArray(studies) ? studies : [];
@@ -417,6 +458,7 @@ async function loadConsents() {
   try {
     const res = await fetch(`/api/patients/${state.patientId}/consents`, {
       headers: patientHeaders(),
+      signal: AbortSignal.timeout(10000),
     });
     const consents = await res.json();
     state.consents = Array.isArray(consents) ? consents : [];
@@ -428,7 +470,7 @@ async function loadConsents() {
 async function loadVaultInfo() {
   if (!state.isAuthenticated) return;
   try {
-    const res = await fetch("/api/v1/mobile/vault");
+    const res = await fetch("/api/v1/mobile/vault", { headers: patientHeaders(), signal: AbortSignal.timeout(10000) });
     if (res.ok) {
       state.vaultData = await res.json();
       renderVaultView();
@@ -439,7 +481,7 @@ async function loadVaultInfo() {
 async function loadDeviceInfo() {
   if (!state.isAuthenticated) return;
   try {
-    const res = await fetch("/api/v1/mobile/device");
+    const res = await fetch("/api/v1/mobile/device", { headers: patientHeaders(), signal: AbortSignal.timeout(10000) });
     if (res.ok) {
       state.deviceData = await res.json();
       renderDeviceView();
@@ -534,13 +576,13 @@ function renderHomeScreen() {
   const widgetDesc = document.querySelector("#home-share-desc");
 
   const activeConsents = state.consents.filter((c) => c.status === "ACTIVE");
-  if (state.activeTicket || activeConsents.length > 0) {
+  if (activeConsents.length > 0) {
     if (widgetBadge) {
-      widgetBadge.textContent = `🟢 ${activeConsents.length || 1}건 공유 중 (ACTIVE)`;
+      widgetBadge.textContent = `🟢 ${activeConsents.length}건 동의 활성 (ACTIVE)`;
       widgetBadge.className = "badge badge-good";
     }
     if (widgetDesc) {
-      widgetDesc.innerHTML = `가상 병원 B 진료실에 1회용 QR 공유가 활성화되어 있습니다.<br><span style="color:#38bdf8;">수신병원: 가상 병원 B (신경과)</span>`;
+      widgetDesc.textContent = "유효 동의 목록입니다. 일회용 QR의 발급·사용 상태는 공유 화면에서 별도로 확인하세요.";
     }
   } else {
     if (widgetBadge) {
@@ -757,19 +799,22 @@ function setupCinePlayer() {
   });
 }
 
-function openCineViewer(study) {
+async function openCineViewer(study) {
+  try {
+    const response = await fetch(`/api/patients/${state.patientId}/studies/${encodeURIComponent(study.studyInstanceUid)}/self-view`, {
+      method: "POST", headers: patientHeaders(), body: JSON.stringify({}), signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) throw new Error("SELF_VIEW_DENIED");
+  } catch {
+    showToast("열람 승인을 확인하지 못했습니다. 다시 로그인한 뒤 시도하세요.");
+    return;
+  }
   state.cineStudy = study;
-  state.cineTotalSlices = study.modality === "CR" ? 1 : 50;
+  // One illustrative canvas frame; never claim a retrieved DICOM slice count.
+  state.cineTotalSlices = 1;
   state.cineCurrentSlice = 1;
   state.cineIsPlaying = false;
   state.cineMode = "manual";
-
-  // Server-side audit logging for patient mobile self-view
-  fetch(`/api/patients/${state.patientId}/studies/${encodeURIComponent(study.studyInstanceUid)}/self-view`, {
-    method: "POST",
-    headers: patientHeaders(),
-    body: JSON.stringify({}),
-  }).catch(() => {});
 
   const modal = document.querySelector("#modal-cine-viewer");
   const title = document.querySelector("#cine-title");
@@ -780,16 +825,21 @@ function openCineViewer(study) {
   const hudDate = document.querySelector("#hud-study-date");
   const findingText = document.querySelector("#cine-finding-text");
 
-  if (title) title.textContent = study.description;
+  if (title) title.textContent = `[모의 미리보기 · 실제 DICOM 아님] ${study.description}`;
   if (badge) badge.textContent = study.modality || "DICOM";
-  if (sliceBadge) sliceBadge.textContent = `Slice 1 / ${state.cineTotalSlices}`;
+  if (sliceBadge) sliceBadge.textContent = `모의 프레임 1 / ${state.cineTotalSlices}`;
   if (slider) {
     slider.min = 1;
     slider.max = state.cineTotalSlices;
     slider.value = 1;
+    slider.disabled = state.cineTotalSlices <= 1;
   }
   if (maxLabel) maxLabel.textContent = state.cineTotalSlices;
-  if (hudDate) hudDate.textContent = study.studyDate || "2026-06-20";
+  for (const selector of ["#btn-mode-cine", "#btn-cine-play"]) {
+    const button = document.querySelector(selector);
+    if (button) button.disabled = state.cineTotalSlices <= 1;
+  }
+  if (hudDate) hudDate.textContent = study.studyDate || "검사일 미확인";
 
   if (findingText) {
     if (study.modality === "CT") {
@@ -799,6 +849,7 @@ function openCineViewer(study) {
     } else {
       findingText.textContent = "의료진 판독 소견: 흉부 단순촬영 특이소견 없음. 심장 및 대혈관 정상 윤곽 유지.";
     }
+    findingText.textContent = "시연용 예시 설명입니다. 실제 영상 판독이나 진단 결과가 아닙니다.";
   }
 
   if (modal) {
@@ -841,6 +892,7 @@ function toggleCinePlayback() {
 }
 
 function startCinePlayback() {
+  if (state.cineTotalSlices <= 1) return;
   if (state.cineTimer) clearInterval(state.cineTimer);
   state.cineIsPlaying = true;
   const playBtn = document.querySelector("#btn-cine-play");
@@ -863,9 +915,9 @@ function updateCineSliderAndFrame() {
   const slider = document.querySelector("#cine-slider");
   if (slider) slider.value = state.cineCurrentSlice;
   const sliceBadge = document.querySelector("#cine-slice-badge");
-  if (sliceBadge) sliceBadge.textContent = `Slice ${state.cineCurrentSlice} / ${state.cineTotalSlices}`;
+  if (sliceBadge) sliceBadge.textContent = `모의 프레임 ${state.cineCurrentSlice} / ${state.cineTotalSlices}`;
   const hudInst = document.querySelector("#hud-instance-no");
-  if (hudInst) hudInst.textContent = `Inst: ${state.cineCurrentSlice}`;
+  if (hudInst) hudInst.textContent = `모의 프레임: ${state.cineCurrentSlice}`;
   drawCurrentCineFrame();
 }
 
@@ -1067,6 +1119,8 @@ function setupShareWizard() {
     if (confirmHosp) confirmHosp.textContent = hospSelect ? hospSelect.options[hospSelect.selectedIndex].text : "가상 병원 B";
     const confirmCount = document.querySelector("#confirm-items-count");
     if (confirmCount) confirmCount.textContent = `${state.shareSelectedItems.size}건의 기록`;
+    const confirmDuration = document.querySelector("#confirm-duration-label");
+    if (confirmDuration) confirmDuration.textContent = durSelect ? durSelect.options[durSelect.selectedIndex].text : "발급 후 24시간";
 
     setWizardStep(3);
   });
@@ -1147,10 +1201,18 @@ function updateShareSelectCheckboxes() {
   });
 }
 
+function mobileConsentValidUntil(duration, nowMs = Date.now()) {
+  const hours = new Map([["1h", 1], ["24h", 24], ["7d", 168]]).get(duration);
+  if (hours === undefined || !Number.isFinite(nowMs)) throw new Error("INVALID_SHARE_DURATION");
+  return new Date(nowMs + hours * 3600000).toISOString();
+}
+
 async function handleExecuteShareTicket() {
   showToast("1회용 공유 티켓 및 QR을 생성하고 있습니다...");
 
   try {
+    // Reject unknown durations before issuing any consent or ticket request.
+    const validUntil = mobileConsentValidUntil(state.shareTargetDuration);
     // 1. Gather Selected Scopes
     const scopes = [];
     state.shareSelectedItems.forEach((id) => {
@@ -1167,13 +1229,14 @@ async function handleExecuteShareTicket() {
     const createRes = await fetch("/api/consents", {
       method: "POST",
       headers: patientHeaders(),
+      signal: AbortSignal.timeout(10000),
       body: JSON.stringify({
         patientId: state.patientId,
         sourceHospitalId: state.sourceHospitalId,
         targetHospitalId: targetHosp,
         purpose: "TREATMENT",
         permission: "VIEW_ONLY",
-        validUntil: new Date(Date.now() + 24 * 3600000).toISOString(),
+        validUntil,
         scopes: scopes.length > 0 ? scopes : [{ studyInstanceUid: state.studies[0]?.studyInstanceUid }],
       }),
     });
@@ -1191,6 +1254,7 @@ async function handleExecuteShareTicket() {
     const ticketRes = await fetch(`/api/consents/${encodeURIComponent(consent.consentId)}/handoff-ticket`, {
       method: "POST",
       headers: patientHeaders(),
+      signal: AbortSignal.timeout(10000),
       body: JSON.stringify({}),
     });
 
@@ -1203,6 +1267,7 @@ async function handleExecuteShareTicket() {
     state.activeTicket = ticketData;
 
     renderActiveQrView();
+    startTicketStatusPolling();
     setWizardStep(4);
     showToast("가상 병원 B 진료실 제시용 1회용 QR 발급 완료!");
 
@@ -1231,6 +1296,7 @@ function renderActiveQrView() {
   if (!state.activeTicket) return;
 
   const { ticketId, qr } = state.activeTicket;
+  if (state.activeTicket.terminal || typeof qr?.payload !== "string") return;
   const payloadUrl = qr.payload.replace("https://hipass.example", window.location.origin);
 
   // Crisp SVG QR
@@ -1261,42 +1327,179 @@ function renderActiveQrView() {
 function startCountdownTimer(expiresAtString) {
   if (state.countdownTimer) clearInterval(state.countdownTimer);
   const targetTime = new Date(expiresAtString).getTime();
+  const ticket = state.activeTicket;
   const timerEl = document.querySelector("#qr-countdown-text");
 
   function update() {
+    if (state.activeTicket !== ticket || ticket?.terminal) return;
     const diff = Math.max(0, Math.floor((targetTime - Date.now()) / 1000));
     const hours = String(Math.floor(diff / 3600)).padStart(2, "0");
     const mins = String(Math.floor((diff % 3600) / 60)).padStart(2, "0");
     const secs = String(diff % 60).padStart(2, "0");
     if (timerEl) timerEl.textContent = `⏱️ 유효시간: ${hours}:${mins}:${secs}`;
 
-    if (diff <= 0) {
-      clearInterval(state.countdownTimer);
-      const statusPill = document.querySelector("#qr-status-pill");
-      if (statusPill) {
-        statusPill.textContent = "⌛ 유효시간 만료 (EXPIRED)";
-        statusPill.className = "badge badge-warn";
-      }
-    }
+    if (Date.now() >= targetTime) expireActiveMobileTicket(ticket);
   }
 
   update();
-  state.countdownTimer = setInterval(update, 1000);
+  if (ticket && !ticket.terminal && Number.isFinite(targetTime) && Date.now() < targetTime) state.countdownTimer = setInterval(update, 1000);
+}
+
+function expireActiveMobileTicket(ticket, nowMs = Date.now()) {
+  // Local capability deadline only; not a claim of a server expiry receipt.
+  const deadline = Date.parse(ticket?.qr?.expiresAt);
+  if (!ticket || state.activeTicket !== ticket || ticket.terminal || !Number.isFinite(deadline) || nowMs < deadline) return;
+  ticket.terminal = true;
+  ticket.qr.payload = null;
+  stopTicketStatusPolling();
+  if (state.countdownTimer) clearInterval(state.countdownTimer);
+  state.countdownTimer = null;
+  const status = document.querySelector("#qr-status-pill");
+  const box = document.querySelector("#qr-box-wrap");
+  const timer = document.querySelector("#qr-countdown-text");
+  if (status) { status.textContent = "QR 유효기간 만료 (EXPIRED) · 서버 접수 여부 미확인"; status.className = "badge badge-warn"; }
+  if (box) box.textContent = "QR 유효기간 만료 · 재사용 불가";
+  if (timer) timer.textContent = "QR 표시 종료 · 다시 공유하려면 새 티켓을 발급하세요";
 }
 
 function onQrConsumedByHospital() {
-  if (state.countdownTimer) clearInterval(state.countdownTimer);
-  const statusPill = document.querySelector("#qr-status-pill");
-  const timerEl = document.querySelector("#qr-countdown-text");
-  if (statusPill) {
-    statusPill.textContent = "✅ B병원에서 QR 스캔 및 접수 완료 (CONSUMED)";
-    statusPill.className = "badge badge-good";
+  // A same-origin BroadcastChannel event is only an untrusted refresh hint.
+  // It is not an authenticated ticket-status receipt and must never overwrite
+  // REVOKED/EXPIRED, stop the deadline, or claim successful consumption.
+  if (!state.isAuthenticated || !state.activeTicket || !state.activeConsent || state.activeConsent.status !== "ACTIVE") return;
+  void refreshActiveTicketStatus();
+}
+
+function stopTicketStatusPolling() {
+  if (state.ticketStatusTimer) clearTimeout(state.ticketStatusTimer);
+  state.ticketStatusTimer = null;
+}
+
+function startTicketStatusPolling() {
+  stopTicketStatusPolling();
+  const ticket = state.activeTicket;
+  const deadline = Math.min(Date.parse(ticket?.qr?.expiresAt), Date.now() + 600000);
+  if (!Number.isFinite(deadline)) return;
+  const poll = async () => {
+    if (state.activeTicket !== ticket || !state.isAuthenticated || Date.now() >= deadline) return;
+    await refreshActiveTicketStatus();
+    if (state.activeTicket === ticket && state.isAuthenticated && !ticket.terminal && Date.now() < deadline) state.ticketStatusTimer = setTimeout(poll, 5000);
+  };
+  void poll();
+}
+
+async function refreshActiveTicketStatus() {
+  const ticket = state.activeTicket;
+  const consentId = state.activeConsent?.consentId;
+  if (!state.isAuthenticated || !ticket?.ticketId || !consentId || ticket.terminal || state.ticketStatusBusy) return;
+  state.ticketStatusBusy = true;
+  try {
+    const response = await fetch(`/api/consents/${encodeURIComponent(consentId)}/handoff-tickets/${encodeURIComponent(ticket.ticketId)}`, {
+      headers: patientHeaders(), cache: "no-store", signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) throw new Error("TICKET_STATUS_UNAVAILABLE");
+    const receipt = await response.json();
+    if (state.activeTicket !== ticket || ticket.terminal || state.activeConsent?.consentId !== consentId || !state.isAuthenticated) return;
+    if (receipt.consentId !== consentId || receipt.ticketId !== ticket.ticketId || receipt.expiresAt !== ticket.qr?.expiresAt || !["ISSUED", "USED", "REVOKED", "EXPIRED"].includes(receipt.status)) throw new Error("TICKET_STATUS_INVALID");
+    // A late success must not resurrect a locally confirmed revoked consent.
+    if (state.activeConsent.status === "REVOKED" && receipt.status !== "REVOKED") return;
+    if (receipt.status === "ISSUED") {
+      const status = document.querySelector("#qr-status-pill");
+      if (status) { status.textContent = "서버 확인 · 스캔 대기 (ISSUED)"; status.className = "badge badge-good"; }
+      return;
+    }
+    ticket.terminal = true;
+    ticket.ticket = { ...ticket.ticket, status: receipt.status };
+    stopTicketStatusPolling();
+    if (state.countdownTimer) clearInterval(state.countdownTimer);
+    const status = document.querySelector("#qr-status-pill");
+    const box = document.querySelector("#qr-box-wrap");
+    const timer = document.querySelector("#qr-countdown-text");
+    const labels = { USED: "서버 확인 · 티켓 사용 완료 (USED)", REVOKED: "서버 확인 · 공유 철회 (REVOKED)", EXPIRED: "서버 확인 · 유효기간 만료 (EXPIRED)" };
+    if (status) { status.textContent = labels[receipt.status]; status.className = receipt.status === "USED" ? "badge badge-good" : "badge badge-warn"; }
+    if (box) box.textContent = "QR 무효화됨 · 재사용 불가";
+    if (timer) timer.textContent = "티켓 종료 · 서버 상태 확인 완료";
+    // Remove the capability from memory as well as from the displayed QR.
+    ticket.qr.payload = null;
+  } catch {
+    if (state.activeTicket === ticket && !ticket.terminal && state.isAuthenticated) {
+      const status = document.querySelector("#qr-status-pill");
+      if (status) { status.textContent = "서버 상태 확인 실패 · 접수 여부 미확인"; status.className = "badge badge-warn"; }
+    }
+  } finally { state.ticketStatusBusy = false; }
+}
+
+async function requestMobileRevocation(consentId) {
+  const response = await fetch(`/api/consents/${encodeURIComponent(consentId)}/revoke`, {
+    method: "POST", headers: patientHeaders(), signal: AbortSignal.timeout(10000),
+  });
+  if (!response.ok) throw new Error("REVOCATION_NOT_CONFIRMED");
+  const receipt = await response.json();
+  if (receipt.consentId !== consentId || receipt.status !== "REVOKED") throw new Error("REVOCATION_NOT_CONFIRMED");
+  return receipt;
+}
+
+function confirmMobileAction(message) {
+  if (document.querySelector("#mobile-action-confirm")) return Promise.resolve(false);
+  const dialog = document.createElement("dialog");
+  if (typeof dialog.showModal !== "function") {
+    showToast("확인 대화상자를 지원하는 브라우저에서 다시 시도하세요.");
+    return Promise.resolve(false);
   }
-  if (timerEl) {
-    timerEl.textContent = "티켓 소진됨 (재사용 불가)";
+  dialog.id = "mobile-action-confirm";
+  dialog.setAttribute("aria-labelledby", "mobile-action-confirm-title");
+  dialog.setAttribute("aria-describedby", "mobile-action-confirm-message");
+  dialog.style.cssText = "width:min(360px,calc(100% - 32px));box-sizing:border-box;border:1px solid #cbd5e1;border-radius:16px;padding:24px;color:#0f172a;background:white";
+  const title = document.createElement("h2");
+  title.id = "mobile-action-confirm-title";
+  title.textContent = "작업 확인";
+  const description = document.createElement("p");
+  description.id = "mobile-action-confirm-message";
+  description.textContent = message;
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "btn btn-secondary";
+  cancel.textContent = "취소";
+  const proceed = document.createElement("button");
+  proceed.type = "button";
+  proceed.className = "btn btn-danger";
+  proceed.textContent = "확인 후 실행";
+  dialog.append(title, description, cancel, proceed);
+  return new Promise(resolve => {
+    let settled = false;
+    let timer;
+    const settle = accepted => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (dialog.open) dialog.close();
+      dialog.remove();
+      resolve(accepted);
+    };
+    cancel.addEventListener("click", () => settle(false));
+    proceed.addEventListener("click", () => settle(true));
+    dialog.addEventListener("cancel", event => { event.preventDefault(); settle(false); });
+    dialog.addEventListener("close", () => settle(false));
+    try {
+      document.body.append(dialog);
+      dialog.showModal();
+      cancel.focus();
+      timer = setTimeout(() => settle(false), 120000);
+    } catch { settle(false); }
+  });
+}
+
+function applyMobileRevocation(receipt) {
+  state.consents = state.consents.map(consent => consent.consentId === receipt.consentId ? receipt : consent);
+  if (state.activeConsent?.consentId === receipt.consentId) {
+    state.activeConsent = receipt;
+    state.activeTicket = null;
+    stopTicketStatusPolling();
+    if (state.countdownTimer) clearInterval(state.countdownTimer);
+    const box = document.querySelector("#qr-box-wrap");
+    if (box) box.textContent = "동의 철회 확인 · QR 무효화됨";
   }
-  showToast("B병원 진료실에서 QR을 인식하여 접수가 완료되었습니다!");
-  renderHomeScreen();
+  postMobileSync({ action: "CONSENT_REVOKED", consentId: receipt.consentId });
 }
 
 async function handleRevokeCurrentQr() {
@@ -1305,15 +1508,17 @@ async function handleRevokeCurrentQr() {
     return;
   }
 
-  if (!confirm("의료영상 공유를 즉시 철회하고 QR 코드를 폐기하시겠습니까?")) return;
+  const consentId = state.activeConsent.consentId;
+  if (!await confirmMobileAction("현재 선택한 의료영상 공유를 철회하고 QR 코드를 폐기하시겠습니까?")) return;
+  if (state.activeConsent?.consentId !== consentId) {
+    showToast("선택한 동의가 변경됐습니다. 현재 상태를 확인한 뒤 다시 시도하세요.");
+    return;
+  }
 
   try {
-    const res = await fetch(`/api/consents/${encodeURIComponent(state.activeConsent.consentId)}/revoke`, {
-      method: "POST",
-      headers: patientHeaders(),
-    });
-
-    if (res.ok) {
+    const receipt = await requestMobileRevocation(consentId);
+    applyMobileRevocation(receipt);
+    if (state.activeConsent?.consentId === receipt.consentId) {
       if (state.countdownTimer) clearInterval(state.countdownTimer);
       const statusPill = document.querySelector("#qr-status-pill");
       const boxWrap = document.querySelector("#qr-box-wrap");
@@ -1327,7 +1532,6 @@ async function handleRevokeCurrentQr() {
       showToast("공유 동의가 철회되고 QR이 무효화되었습니다.");
       await loadConsents();
       renderHomeScreen();
-      postMobileSync({ action: "CONSENT_REVOKED", consentId: state.activeConsent?.consentId });
     }
   } catch {
     showToast("동의 철회 중 오류가 발생했습니다.");
@@ -1341,22 +1545,25 @@ async function handleRevokeAllConsents() {
     return;
   }
 
-  if (!confirm("진행 중인 모든 의료기록 공유를 즉시 차단하시겠습니까?")) return;
+  if (!await confirmMobileAction(`현재 표시된 활성 동의 ${activeList.length}건을 모두 철회하시겠습니까?`)) return;
+  if (activeList.some(item => !state.consents.some(current => current.consentId === item.consentId && current.status === "ACTIVE"))) {
+    showToast("동의 상태가 변경됐습니다. 목록을 새로 확인해 주세요.");
+    return;
+  }
 
+  let confirmed = 0;
   for (const c of activeList) {
     try {
-      await fetch(`/api/consents/${encodeURIComponent(c.consentId)}/revoke`, {
-        method: "POST",
-        headers: patientHeaders(),
-      });
+      const receipt = await requestMobileRevocation(c.consentId);
+      applyMobileRevocation(receipt);
+      confirmed++;
     } catch {}
   }
 
-  showToast("모든 의료기록 공유가 안전하게 차단되었습니다.");
+  showToast(confirmed === activeList.length ? "모든 동의의 철회를 서버에서 확인했습니다." : `${confirmed}/${activeList.length}건 철회 확인. 나머지 동의는 철회 성공을 확인하지 못했습니다.`);
   await loadConsents();
   renderHomeScreen();
   renderShareManageScreen();
-  postMobileSync({ action: "CONSENT_REVOKED" });
 }
 
 // --------------------------------------------------------------------------
@@ -1392,14 +1599,18 @@ function renderShareManageScreen() {
     activeContainer.querySelectorAll("[data-action-revoke-one]").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const cid = btn.dataset.actionRevokeOne;
-        await fetch(`/api/consents/${encodeURIComponent(cid)}/revoke`, {
-          method: "POST",
-          headers: patientHeaders(),
-        });
-        showToast("공유가 차단되었습니다.");
-        await loadConsents();
-        renderShareManageScreen();
-        renderHomeScreen();
+        btn.disabled = true;
+        try {
+          if (!await confirmMobileAction("이 동의의 의료영상 공유를 철회하시겠습니까?")) return;
+          const receipt = await requestMobileRevocation(cid);
+          applyMobileRevocation(receipt);
+          showToast("동의 철회를 서버에서 확인했습니다.");
+          await loadConsents();
+          renderShareManageScreen();
+          renderHomeScreen();
+        } catch {
+          showToast("철회 성공을 확인하지 못했습니다. 동의 상태를 다시 확인하세요.");
+        } finally { btn.disabled = false; }
       });
     });
   }
@@ -1410,7 +1621,7 @@ function renderShareManageScreen() {
       <div class="timeline-icon-wrap">1</div>
       <div class="timeline-content">
         <strong style="font-size:13px;color:#0f172a;">환자 1초 간편인증 및 공유 동의 발급</strong>
-        <p style="font-size:11px;color:#64748b;margin:2px 0 0 0;">FIDO2 생체인증 · TEE 단말 무결성 검증 통과 (HOSP-A)</p>
+        <p style="font-size:11px;color:#64748b;margin:2px 0 0 0;">개발용 인증 시뮬레이션 · FIDO2/TEE 검증 NOT VERIFIED</p>
       </div>
     </div>
     <div class="timeline-item">
@@ -1464,9 +1675,10 @@ function renderVaultView() {
 }
 
 async function handleCryptoErase() {
-  if (!confirm("모바일 볼트에 보관된 모든 암호화 패키지를 영구 파기(Crypto-Erase)하시겠습니까?")) return;
+  if (!await confirmMobileAction("모바일 볼트의 모든 암호화 패키지 파기를 요청하시겠습니까? 현재 실제 모바일 보관함은 미연동입니다.")) return;
   try {
-    const res = await fetch("/api/v1/mobile/vault/erase", { method: "POST" });
+    const res = await fetch("/api/v1/mobile/vault/erase", { method: "POST", headers: patientHeaders(), signal: AbortSignal.timeout(10000) });
+    if (!res.ok) throw new Error("VAULT_ERASE_NOT_VERIFIED");
     if (res.ok) {
       const data = await res.json();
       showToast(`보관함 파기 완료: 영수증 ${data.receipt.slice(0, 20)}...`);
@@ -1499,6 +1711,10 @@ function renderDeviceView() {
 // Utilities
 // --------------------------------------------------------------------------
 function patientHeaders() {
+  if (document.documentElement.dataset.capstone === "1") {
+    if (!capstoneAuth) throw new Error("CAPSTONE_AUTH_REQUIRED");
+    return { "content-type": "application/json", ...capstoneAuth.headers("PATIENT") };
+  }
   return {
     "content-type": "application/json",
     "x-hipass-role": "PATIENT",

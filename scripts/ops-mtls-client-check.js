@@ -12,6 +12,7 @@ const options = {
   key: process.env.MTLS_KEY_FILE ? readFileSync(process.env.MTLS_KEY_FILE) : undefined,
   rejectUnauthorized: true,
 };
+let connection = {};
 
 const request = https.request(options, (response) => {
   response.resume();
@@ -20,9 +21,17 @@ const request = https.request(options, (response) => {
     process.exit(response.statusCode === 200 ? 0 : 2);
   });
 });
+const deadline = setTimeout(() => {
+  request.destroy(Object.assign(new Error("mTLS request deadline exceeded"), { code: "ETIMEDOUT" }));
+}, 5000);
+request.setTimeout(4000, () => request.destroy(Object.assign(new Error("mTLS socket timeout"), { code: "ETIMEDOUT" })));
+request.on("close", () => clearTimeout(deadline));
+request.on("socket", (socket) => {
+  socket.once("connect", () => { connection = { localAddress: socket.localAddress, localPort: socket.localPort }; });
+});
 
 request.on("error", (error) => {
-  console.error(JSON.stringify({ error: error.code ?? error.message }));
+  console.error(JSON.stringify({ error: error.code ?? error.message, ...connection }));
   process.exit(1);
 });
 

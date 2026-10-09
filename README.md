@@ -1,5 +1,7 @@
 # HiPass Platform
 
+현재 발표 환경·실제 사용자 흐름·남은 실패의 권위 위치는 [발표 환경 통합 상태](docs/implementation/mediq-presentation-integration-status-2026-10-09.md)의 현재 절입니다. 아래 날짜별 설명은 해당 시점의 이력이며 최신 배포의 PASS로 승계하지 않습니다. 전체 MVP/v3 미완료.
+
 ## MediQ 기록 계승 — 2026-10-08
 
 일정·전체 P0 목표 미달로 종료한 MediQ의 회고·선별 검증 기록·코드 재사용 후보를 [계승 자료집](docs/inherited/mediq/README.md)에 등록했습니다.
@@ -12,6 +14,18 @@
 환자 동의를 기준으로 병원 간 의료영상을 안전하게 조회하는 PoC입니다.
 
 CD로 영상을 옮기는 흐름을 줄이고, 필요한 병원과 의료진에게 필요한 Study/Series 범위만 열어주는 구조를 실험합니다. 실제 환자정보나 실제 병원 PACS에는 연결하지 않습니다.
+
+## 현재 v3 전환 상태 (2026-10-07)
+
+통합 기술 검토 → 수용기준 → P0 구현계획 이후, 독립 합성 검증환경과 패치된 Node 24/Debian 13 런타임을 추가했습니다. 기존 MVP HTTPS 검증 22개, mTLS 정상·음성 7개 및 Security Gate를 통과했습니다. 앱 이미지 스캔에서 Critical/High 0건을 확인했습니다. 실제 Chrome에서 내장 Viewer의 합성 영상 디코딩과 토큰 비노출, 양쪽 네임스페이스에서 DB/PACS 직접 접근 SYN 미도달을 확인했습니다. 동의 QR handoff의 PostgreSQL 계약 불일치와 화면 토큰 노출도 수정했습니다. 기존 계정 격리는 임의 해제하지 않았습니다. `/api/v3` 구현과 전체 MVP 달성은 아직 선언하지 않습니다. DPoP route enforcement와 사람 독립 검토는 남아 있으며, OHIF 전체 렌더링·임상 품질 검증을 수행한 것은 아닙니다.
+
+- [통합 기술 검토](docs/governance/highpass-v3-integrated-review-2026-10-07.md)
+- [수용기준 81개](docs/acceptance/highpass-v3-acceptance-criteria.md)
+- [P0 구현계획](docs/implementation/highpass-v3-p0-master-plan.md)
+- [이번 진행 결과와 다음 차단 해소 순서](docs/governance/highpass-v3-p0-execution-2026-10-07.md)
+- [독립 합성 검증 명령과 데이터 보존 절차](docs/DEMO-RUNBOOK.md#독립-합성-회귀-검증-2026-10-07)
+
+모바일 인증·보관함은 개발용 시뮬레이션입니다. FIDO2/TEE와 실제 STOW-RS 수신 PACS 등록은 미검증 또는 미구현입니다. 출처 검증 전 CD 유래 영상은 기본 시연경로와 새 Docker 이미지에서 제외합니다.
 
 ## 지금 들어있는 것
 
@@ -275,3 +289,78 @@ PASS — readiness recovered in 34.62 seconds; named volumes preserved
 - ISMS-P 인증 아님
 
 운영 전에는 법률 검토, 병원 보안 승인, 실제 인프라 설계, 독립 보안 검토가 따로 필요합니다.
+## DPoP strict synthetic validation (2026-10-07)
+
+기존 DICOMweb 토큰의 공개키 바인딩·매 요청 증명·신뢰 ingress 강제 검증을
+별도 합성 Docker 환경에서 실행한다. [실행 명령 및 한계](docs/DEMO-RUNBOOK.md#dpop--authenticated-ingress-strict-synthetic-profile-2026-10-07).
+기본 Compose의 Bearer 호환 모드와 구분하며, 기존 스택에 strict 모드를 자동 적용하지 않는다.
+PostgreSQL 공유 replay ledger와 저장소 장애 시 503 거부를 구현했다.
+현재 시험 결과와 재시작/다중 프로세스 검증 범위는 [최신 실행 기록](docs/governance/highpass-v3-p0-execution-2026-10-07.md)을 따른다.
+JSON 호환 profile의 재시작 보호, 전체 API HA, 독립 사람 검토와 신규 v3 Grant는 완료하지 않았다.
+전체 MVP/v3 및 실제 병원 운영 준비 완료를 주장하지 않는다.
+
+## v3 최초 환자 동의 결정 검증 (2026-10-08)
+
+[최신 실행 결과](docs/governance/highpass-v3-patient-decision-execution-2026-10-08.md):
+Node 464/464, owned 동의 PostgreSQL 120/120, identity 427/427 PASS.
+동의 snapshot·결정·감사·원본 receipt의 원자성과 신규 7개 테이블의 제한된
+RLS·불변성을 검증했다. runtime DB/공개 API/Grant/임상 접근은 활성화하지 않았다.
+새 증적은 DRAFT / UNASSIGNED이며 전체 MVP/v3 완료가 아니다.
+다음 필수 gate는 [COMMIT deadline·실제 lock 경쟁](docs/implementation/highpass-v3-p0-06-decision-deadline-races-prompt.md)이다.
+
+후속 [만료·lock 대기 실행 결과](docs/governance/highpass-v3-patient-decision-deadline-execution-2026-10-08.md):
+owned PG 127/127 및 단독 전체 Node 464/464 PASS. challenge·재인증 만료와
+실제 COMMIT 거부·3종 lock 대기를 추가 검증했다. 전체 D6·부모 만료 경계·
+철회/Grant는 미완료이며 다음은 [부모·변경 경쟁](docs/implementation/highpass-v3-p0-06-parent-expiry-mutation-races-prompt.md)이다.
+
+[부모·변경 경쟁 결과](docs/governance/highpass-v3-patient-parent-mutation-execution-2026-10-08.md):
+owned PG 135/135, 단독 Node 464/464 PASS. 기관/참조 변경의 commit·rollback,
+부모 연동 만료 및 감사된 취소-first 경쟁을 확인했다. 다음은 승인-first 역순
+경쟁과 [동의 철회·만료 계약 정렬](docs/implementation/highpass-v3-p0-06-consent-lifecycle-alignment-prompt.md)이다.
+
+[역순 경쟁·lifecycle 정렬 결과](docs/governance/highpass-v3-consent-lifecycle-alignment-execution-2026-10-08.md):
+PG 137/137 및 단독 Node 464/464 PASS. 기관·참조 변경의 승인-first 경쟁을 확인하고
+철회/만료의 ADR·API·ERD·acceptance를 제안 수준으로 정렬했다. L1~L5 정책은 미결정이며
+새 권한/API는 활성화하지 않았다. 다음은 실제 nonowner 취소 service의 양방향 경쟁이다.
+
+[실제 nonowner 취소·승인 경쟁 결과](docs/governance/highpass-v3-nonowner-cancel-races-execution-2026-10-08.md):
+PG 143/143, 단독 Node 464/464 PASS. 별도 취소·approval 계정의 양방향 실제 lock 경쟁,
+취소 응답 유실·감사 누락·lock timeout을 검증했다. 새 증적은 DRAFT / UNASSIGNED이며
+다음은 [등록된 다른 환자·기관 격리 행렬](docs/implementation/highpass-v3-p0-06-registered-patient-isolation-prompt.md)이다.
+철회/만료·전체 D6·Grant·전체 MVP/v3는 미완료다.
+
+[등록 환자·기관 격리 결과](docs/governance/highpass-v3-registered-patient-isolation-execution-2026-10-08.md):
+PG 160/160, 단독 Node 464/464 PASS. 각 등록 환자의 정상 승인·own read와 교차 read/write
+차단, actor/ref/tenant/audit tuple 변조 rollback을 검증했다. 초기 fixture 실패도 보존했다.
+공개 evidence API·최소 관리자 read와 전체 CON-006은 PARTIAL이다. 다음은
+[다중 Session 잠금 검증](docs/implementation/highpass-v3-p0-06-multisession-lock-order-prompt.md)이며
+새 증적은 DRAFT / UNASSIGNED다.
+
+[다중 Session·기관·Session 만료 경합](docs/governance/highpass-v3-multisession-contention-execution-2026-10-08.md):
+최신 PG 169/169 및 단독 Node 464/464 PASS. 실제 nonowner 승인/취소의 두 Session 경쟁,
+반대 방향 기관과 중지, 별도 maintenance의 SKIP LOCKED·승인 rollback 뒤 drain을 검증했다.
+최초 관측 assertion 실패는 보존했다. 전체 D6·Consent lifecycle·전체 MVP/v3는 미완료이며
+다음은 [실제 create/PENDING 경합](docs/implementation/highpass-v3-p0-06-create-pending-contention-prompt.md)이다.
+
+[실제 create/PENDING 경합 결과](docs/governance/highpass-v3-create-pending-contention-execution-2026-10-08.md):
+PG 181/181, 당시 Node 464/464 PASS; service-built parent와 실제 취소·만료 경합을 검증했다.
+[Consent lifecycle L1~L5](docs/governance/highpass-v3-consent-lifecycle-policy-packet-2026-10-08.md)는
+김범희가 2026-10-08 채택했다. 정책 승인과 새 기술 증적 독립 검토는 별개다.
+[철회 입력 검증 결과](docs/governance/highpass-v3-consent-withdraw-command-execution-2026-10-08.md):
+신규 8/8, 직렬 전체 Node 472/472 PASS. 병렬 회귀의 기존 Privacy HTTP 1개 실패는 보존했다.
+다음은 [철회·만료 additive DDL](docs/implementation/highpass-v3-p0-06-consent-lifecycle-ddl-prompt.md)이다.
+전체 lifecycle 서비스·공개 API·전체 MVP/v3는 아직 미완료다.
+
+[Terminal DDL·private 철회 projection 결과](docs/governance/highpass-v3-consent-lifecycle-ddl-execution-2026-10-08.md):
+최신 PG 208/208, command/projection scoped 13/13 PASS. initial event/receipt를 보존한
+event3 조립·RLS·rollback 및 실제 최소권한 private projection을 검증했다.
+이는 실제 철회/만료 서비스·공개 read·임상 Grant의 완료 증명이 아니다.
+직렬 전체 Node 477/477 PASS. 다음은
+[원자적 철회 서비스](docs/implementation/highpass-v3-p0-06-withdraw-service-prompt.md)이며 계약 분석을 시작했다.
+
+[내부 원자적 철회 서비스 결과](docs/governance/highpass-v3-consent-withdraw-service-execution-2026-10-08.md):
+최신 PG 226/226 및 scoped Node 19/19 PASS. 초기 증적 보존, 안전한 원본 결과 복구·감사,
+동일/상이 key 동시 실행, ACK 유실·COMMIT 만료 rollback과 locale 안정성을 검증했다.
+직렬 전체 Node 483/483 PASS.
+전체 registered 격리·양방향 경합·expiry worker/공개 read·임상 권한은 미완료이며 새 증적은
+DRAFT / UNASSIGNED다. 다음은 [철회 경합·환자/기관 경계](docs/implementation/highpass-v3-p0-06-withdraw-races-prompt.md)다.

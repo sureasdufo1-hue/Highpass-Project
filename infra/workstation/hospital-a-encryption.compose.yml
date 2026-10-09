@@ -1,0 +1,11 @@
+services:
+  gateway:
+    environment:
+      CAPSTONE_IMAGE_ENCRYPTION_REQUIRED: '1'
+      CAPSTONE_RUNTIME_DIAGNOSTICS: '1'
+      CAPSTONE_KEY_IDENTITY_DIR: /run/key-identity
+      CAPSTONE_VAULT_KEY_ID: ${HIPASS_KEY_RELEASE_VAULT_KEY_ID:?pinned versioned key required}
+    volumes:
+      - /opt/highpass/capstone-key-identity:/run/key-identity:ro
+    extra_hosts:
+      - 'kv-hp-demo-4869edd9.vault.azure.net:10.89.1.4'

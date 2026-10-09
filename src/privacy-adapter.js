@@ -11,6 +11,9 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 const MAX_BRIDGE_OUTPUT_BYTES = 4 * 1024 * 1024;
 
 export class OpfLocalAdapter {
+  #diagnostics = { spawned: 0, closed: 0, stdinFailures: 0, stdoutFailures: 0, spawnFailures: 0 };
+
+  diagnostics() { return Object.freeze({ ...this.#diagnostics, active: this.active, queued: this.queue.length }); }
   constructor(options = {}) {
     this.checkpointPath = options.checkpointPath ?? process.env.HIPASS_PRIVACY_MODEL_PATH ?? null;
     this.bridgePath = options.bridgePath ?? DEFAULT_BRIDGE;
@@ -19,18 +22,23 @@ export class OpfLocalAdapter {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxConcurrency = options.maxConcurrency ?? 1;
     this.maxQueue = options.maxQueue ?? 8;
+    if (!Number.isInteger(this.timeoutMs) || this.timeoutMs < 1 || this.timeoutMs > 60000
+      || !Number.isInteger(this.maxConcurrency) || this.maxConcurrency < 1 || this.maxConcurrency > 4
+      || !Number.isInteger(this.maxQueue) || this.maxQueue < 0 || this.maxQueue > 64) {
+      throw new Error("INVALID_PRIVACY_ADAPTER_LIMITS");
+    }
     this.active = 0;
     this.queue = [];
   }
 
-  async readiness() {
+  async readiness(options = {}) {
     if (!this.checkpointPath) return unavailable("EXPLICIT_CHECKPOINT_REQUIRED");
     try {
       await Promise.all([
         access(this.bridgePath),
         access(path.join(this.checkpointPath, "config.json")),
       ]);
-      const result = await this.#run(["--ready"], "");
+      const result = await this.#enqueue((signal) => this.#run(["--ready"], "", signal), options);
       return result.ready === true
         ? { ready: true, modelRevision: result.model_revision, runtimeRevision: result.runtime_revision }
         : unavailable("MODEL_INITIALIZATION_FAILED");
@@ -40,22 +48,22 @@ export class OpfLocalAdapter {
     }
   }
 
-  countTokens(text) {
-    return this.#enqueue(async () => {
+  countTokens(text, options = {}) {
+    return this.#enqueue(async (signal) => {
       this.#requireExplicitCheckpoint();
-      const result = await this.#run(["--count-tokens"], text);
+      const result = await this.#run(["--count-tokens"], text, signal);
       if (!Number.isInteger(result.token_count) || result.token_count < 0) {
         throw processingError(502, PrivacyErrorCode.MODEL_OUTPUT_INVALID);
       }
       return result.token_count;
-    });
+    }, options);
   }
 
-  detect(text) {
-    return this.#enqueue(async () => {
+  detect(text, options = {}) {
+    return this.#enqueue(async (signal) => {
       const startedAt = performance.now();
       this.#requireExplicitCheckpoint();
-      const result = await this.#run([], text);
+      const result = await this.#run([], text, signal);
       if (!Array.isArray(result.detected_spans)) {
         throw processingError(502, PrivacyErrorCode.MODEL_OUTPUT_INVALID);
       }
@@ -80,33 +88,50 @@ export class OpfLocalAdapter {
         durationMs: Math.round((performance.now() - startedAt) * 1000) / 1000,
         warning: result.warning ?? null,
       };
-    });
+    }, options);
   }
 
   #requireExplicitCheckpoint() {
     if (!this.checkpointPath) throw processingError(503, PrivacyErrorCode.MODEL_UNAVAILABLE);
   }
 
-  #enqueue(operation) {
-    if (this.active < this.maxConcurrency) return this.#start(operation);
+  async #enqueue(operation, options = {}) {
+    const joined = linkedSignal(this.timeoutMs, options.signal);
+    const signal = joined.signal;
+    try {
+    if (signal.aborted) return Promise.reject(processingError(504, PrivacyErrorCode.MODEL_TIMEOUT));
+    if (this.active < this.maxConcurrency) return await this.#start(operation, signal);
     if (this.queue.length >= this.maxQueue) {
       return Promise.reject(processingError(429, PrivacyErrorCode.QUEUE_FULL));
     }
-    return new Promise((resolve, reject) => this.queue.push({ operation, resolve, reject }));
+    return await new Promise((resolve, reject) => {
+      const entry = { operation, signal, resolve, reject, cleanup: () => signal.removeEventListener("abort", cancelled) };
+      const cancelled = () => {
+        const index = this.queue.indexOf(entry);
+        if (index !== -1) this.queue.splice(index, 1);
+        entry.cleanup();
+        reject(processingError(504, PrivacyErrorCode.MODEL_TIMEOUT));
+      };
+      signal.addEventListener("abort", cancelled, { once: true });
+      this.queue.push(entry);
+    });
+    } finally { joined.dispose(); }
   }
 
-  async #start(operation) {
+  #start(operation, signal) {
     this.active += 1;
-    try {
-      return await operation();
-    } finally {
+    const work = Promise.resolve().then(() => {
+      if (signal.aborted) throw processingError(504, PrivacyErrorCode.MODEL_TIMEOUT);
+      return operation(signal);
+    }).finally(() => {
       this.active -= 1;
       const next = this.queue.shift();
-      if (next) this.#start(next.operation).then(next.resolve, next.reject);
-    }
+      if (next) { next.cleanup(); this.#start(next.operation, next.signal).then(next.resolve, next.reject); }
+    });
+    return abortable(work, signal);
   }
 
-  #run(extraArguments, input) {
+  #run(extraArguments, input, signal) {
     const checkpoint = path.resolve(this.checkpointPath);
     return new Promise((resolve, reject) => {
       const child = spawn(this.pythonCommand, [
@@ -126,26 +151,41 @@ export class OpfLocalAdapter {
         },
       });
       const chunks = [];
+      child.once("spawn", () => { this.#diagnostics.spawned++; });
       let total = 0;
       let settled = false;
-      const timer = setTimeout(() => {
-        if (settled) return;
-        settled = true;
+      let failure = null;
+      let killTimer;
+      const stop = (error) => {
+        if (settled || failure) return;
+        failure = error;
+        chunks.length = 0;
+        child.stdin.destroy();
         child.kill();
-        reject(processingError(504, PrivacyErrorCode.MODEL_TIMEOUT));
-      }, this.timeoutMs);
+        killTimer = setTimeout(() => { if (!settled) child.kill("SIGKILL"); }, 1000);
+        killTimer.unref();
+      };
+      const aborted = () => stop(processingError(504, PrivacyErrorCode.MODEL_TIMEOUT));
+      signal.addEventListener("abort", aborted, { once: true });
+      if (signal.aborted) aborted();
 
       child.stdout.on("data", (chunk) => {
+        if (failure) return;
         total += chunk.length;
         if (total > MAX_BRIDGE_OUTPUT_BYTES) {
-          child.kill();
+          stop(processingError(502, PrivacyErrorCode.MODEL_OUTPUT_INVALID));
           return;
         }
         chunks.push(chunk);
       });
-      child.once("error", () => finishReject(processingError(503, PrivacyErrorCode.MODEL_UNAVAILABLE)));
+      child.once("error", () => { this.#diagnostics.spawnFailures++; stop(processingError(503, PrivacyErrorCode.MODEL_UNAVAILABLE)); });
+      child.stdout.on("error", () => { this.#diagnostics.stdoutFailures++; stop(processingError(502, PrivacyErrorCode.MODEL_OUTPUT_INVALID)); });
+      child.stdin.on("error", () => { this.#diagnostics.stdinFailures++; stop(processingError(502, PrivacyErrorCode.MODEL_OUTPUT_INVALID)); });
       child.once("close", (code) => {
+        this.#diagnostics.closed++;
         if (settled) return;
+        // Hold active capacity until the owned child is actually closed.
+        if (failure) { finishReject(failure); return; }
         let payload;
         try {
           payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
@@ -159,7 +199,7 @@ export class OpfLocalAdapter {
           return;
         }
         settled = true;
-        clearTimeout(timer);
+        cleanup();
         resolve(payload);
       });
       child.stdin.end(Buffer.from(String(input), "utf8"));
@@ -167,11 +207,41 @@ export class OpfLocalAdapter {
       function finishReject(error) {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
+        cleanup();
         reject(error);
+      }
+      function cleanup() {
+        clearTimeout(killTimer);
+        signal.removeEventListener("abort", aborted);
       }
     });
   }
+}
+
+// Avoid AbortSignal.any (not present in the earliest supported Node 20 releases).
+function linkedSignal(timeoutMs, parent) {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  const timer = setTimeout(abort, timeoutMs);
+  if (parent) {
+    parent.addEventListener("abort", abort, { once: true });
+    if (parent.aborted) abort();
+  }
+  return { signal: controller.signal, dispose: () => {
+    clearTimeout(timer);
+    parent?.removeEventListener("abort", abort);
+  } };
+}
+
+async function abortable(work, signal) {
+  let onAbort;
+  const cancelled = new Promise((_, reject) => {
+    onAbort = () => reject(processingError(504, PrivacyErrorCode.MODEL_TIMEOUT));
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) onAbort();
+  });
+  try { return await Promise.race([work, cancelled]); }
+  finally { signal.removeEventListener("abort", onAbort); }
 }
 
 function bridgeError(code) {

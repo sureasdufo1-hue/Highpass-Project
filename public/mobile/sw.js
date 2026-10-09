@@ -2,14 +2,20 @@
 // Security Principle: Only static client assets (HTML, CSS, JS, Icons) are cached.
 // Sensitive clinical data and API endpoints (/api/*) are NEVER stored in cache.
 
-const CACHE_NAME = "hipass-mediq-shell-v1";
+const CACHE_NAME = "hipass-mediq-shell-v4";
 
 const APP_SHELL_ASSETS = [
   "/mobile/",
   "/mobile/index.html",
   "/mobile/style.css",
+  "/ui/tokens.css",
+  "/ui/components.css",
+  "/ui/mobile.css",
+  "/ui/brand.css",
+  "/brand/mediq-source.png",
   "/mobile/app.js",
   "/qrcode.js",
+  "/capstone-auth.js",
   "/mobile/manifest.json",
   "/mobile/icon-192.png",
   "/mobile/icon-512.png",
@@ -20,7 +26,11 @@ const APP_SHELL_ASSETS = [
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(APP_SHELL_ASSETS);
+      return Promise.all(APP_SHELL_ASSETS.map(async asset => {
+        const response = await fetch(asset, { credentials: "omit", cache: "reload", signal: AbortSignal.timeout(10000) });
+        if (response.status !== 200 || response.type === "opaque") throw new Error("APP_SHELL_UNAVAILABLE");
+        await cache.put(asset, response);
+      }));
     }).then(() => self.skipWaiting())
   );
 });
@@ -31,7 +41,7 @@ self.addEventListener("activate", (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((name) => {
-          if (name !== CACHE_NAME) {
+          if (name.startsWith("hipass-mediq-shell-") && name !== CACHE_NAME) {
             return caches.delete(name);
           }
         })
@@ -49,36 +59,31 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Security Rule: NEVER cache /api/* or sensitive endpoints
-  if (requestUrl.pathname.startsWith("/api/")) {
-    event.respondWith(fetch(event.request));
+  // Exact public shell allowlist only; never handle credentials, query-bearing
+  // URLs, DICOMweb or arbitrary /mobile/* responses through the cache.
+  if (requestUrl.origin !== self.location.origin || requestUrl.search ||
+      event.request.headers.has("authorization") ||
+      !APP_SHELL_ASSETS.includes(requestUrl.pathname)) {
     return;
   }
 
-  // App Shell Cache Strategy: Stale-While-Revalidate
+  // Network first prevents an old role-header client surviving a deployment.
   event.respondWith(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.match(event.request).then((cachedResponse) => {
-        const fetchPromise = fetch(event.request).then((networkResponse) => {
-          // If valid response from same-origin static asset, update cache
-          if (
-            networkResponse &&
-            networkResponse.status === 200 &&
-            requestUrl.origin === self.location.origin &&
-            (requestUrl.pathname.startsWith("/mobile/") || requestUrl.pathname.endsWith(".js") || requestUrl.pathname.endsWith(".css"))
-          ) {
-            cache.put(event.request, networkResponse.clone());
-          }
-          return networkResponse;
-        }).catch(() => {
-          // Offline navigation fallback
-          if (event.request.mode === "navigate") {
-            return cache.match("/mobile/index.html");
-          }
-        });
-
-        return cachedResponse || fetchPromise;
-      });
-    })
+    (async () => {
+      const cache = await caches.open(CACHE_NAME);
+      try {
+        const response = await fetch(event.request, { signal: AbortSignal.timeout(10000) });
+        if (response.status === 200 && response.type !== "opaque") await cache.put(event.request, response.clone());
+        return response;
+      } catch {
+        const cached = await cache.match(event.request);
+        if (cached) return cached;
+        if (event.request.mode === "navigate") {
+          const shell = await cache.match("/mobile/index.html");
+          if (shell) return shell;
+        }
+        return Response.error();
+      }
+    })()
   );
 });

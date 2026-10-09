@@ -1,0 +1,4 @@
+subjectAltName=URI:spiffe://highpass.local/dev/identity-edge-proxy
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=clientAuth

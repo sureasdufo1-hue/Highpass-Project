@@ -1,0 +1,7 @@
+/* Original user-supplied raster logo; viewport excludes only screenshot whitespace. */
+.mediq-logo { display:inline-block; flex:none; width:140px; height:64px; background:#fff url('/brand/mediq-source.png') no-repeat -146px -368px; background-size:435px 778px; vertical-align:middle; }
+.global-persona-brand .brand-badge, #patient-portal-app .brand-mark, #hospital-saas-app .mq-mark { display:none; }
+.global-persona-brand .brand-title { font-size:0; }
+.global-persona-brand .brand-title::before { content:''; display:inline-block; width:140px; height:64px; background:#fff url('/brand/mediq-source.png') no-repeat -146px -368px; background-size:435px 778px; vertical-align:middle; }
+.mobile-header .brand { gap:0; }
+.auth-card > .mediq-logo { margin:0 auto 12px; }

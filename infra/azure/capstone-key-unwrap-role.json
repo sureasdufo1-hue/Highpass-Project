@@ -1,0 +1,9 @@
+{
+  "Name": "Highpass Capstone Hospital B Unwrap Only 20261009",
+  "IsCustom": true,
+  "Description": "Synthetic capstone Data Plane only; read public key metadata and unwrap. No wrap, secrets, management or deletion.",
+  "Actions": [], "NotActions": [],
+  "DataActions": ["Microsoft.KeyVault/vaults/keys/read", "Microsoft.KeyVault/vaults/keys/unwrap/action"],
+  "NotDataActions": [],
+  "AssignableScopes": ["/subscriptions/a3c0e7d4-ce09-4991-946b-88574869edd9/resourceGroups/rg-highpass-capstone-20261008"]
+}

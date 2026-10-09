@@ -18,7 +18,7 @@ const checks = [
   {
     name: "Viewer -> Gateway",
     expected: "ALLOW",
-    command: ["docker", ["run", "--rm", "--network", `${networkPrefix}_frontend_net`, "alpine:3.20", "sh", "-lc", "nc -vz -w 3 hipass-control-api 3000"]],
+    command: ["docker", ["run", "--rm", "--network", `${networkPrefix}_frontend_net`, process.env.HIPASS_APP_IMAGE ?? "highpass-platform-mvp:local", "-e", "fetch('http://hipass-control-api:3000/api/health',{signal:AbortSignal.timeout(10000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]],
   },
   {
     name: "API -> PostgreSQL",
@@ -33,13 +33,14 @@ const checks = [
 ];
 
 const results = checks.map((check) => {
-  const allowed = run(check.command[0], check.command[1]);
-  const pass = check.expected === "ALLOW" ? allowed : !allowed;
+  const allowed = check.expected === "DENY" ? inspectIsolation(check.name) : run(check.command[0], check.command[1]);
+  const pass = allowed === check.expected;
   return {
     name: check.name,
     expected: check.expected,
-    actual: allowed ? "ALLOW" : "DENY",
-    result: pass ? "PASS" : "FAIL",
+    actual: allowed,
+    result: pass ? "PASS" : allowed === "ENVIRONMENT_ERROR" ? "NOT VERIFIED" : "FAIL",
+    evidenceType: check.expected === "DENY" ? "NETWORK_TOPOLOGY_ONLY" : "TRANSPORT_PROBE",
   };
 });
 
@@ -48,9 +49,25 @@ process.exit(results.every((item) => item.result === "PASS") ? 0 : 1);
 
 function run(command, args) {
   try {
-    execFileSync(command, args, { stdio: "pipe" });
-    return true;
-  } catch {
-    return false;
+    execFileSync(command, args, { stdio: "pipe", timeout: 30000, windowsHide: true });
+    return "ALLOW";
+  } catch (error) {
+    const output = `${error.stdout ?? ""}\n${error.stderr ?? ""}`;
+    // Only an explicit refused connection proves this transport was denied.
+    // DNS/image/daemon/timeout errors never count as a policy DENY.
+    if (error.status === 1 && /connection refused/i.test(output) && !/docker.*error|daemon|pull access denied/i.test(output)) return "DENY";
+    return "ENVIRONMENT_ERROR";
   }
+}
+
+function inspectIsolation(name) {
+  try {
+    const source = JSON.parse(execFileSync("docker", ["inspect", process.env.HIPASS_VIEWER_CONTAINER ?? "hospital-b-viewer"], { encoding: "utf8", timeout: 10000, windowsHide: true }))[0];
+    const targetName = name.includes("PostgreSQL") ? (process.env.HIPASS_POSTGRES_CONTAINER ?? "hipass-postgres") : (process.env.HIPASS_ORTHANC_CONTAINER ?? "hospital-a-orthanc");
+    const target = JSON.parse(execFileSync("docker", ["inspect", targetName], { encoding: "utf8", timeout: 10000, windowsHide: true }))[0];
+    if (!source.State.Running || !target.State.Running) return "ENVIRONMENT_ERROR";
+    const shared = Object.keys(source.NetworkSettings.Networks).some((network) => network in target.NetworkSettings.Networks);
+    const published = Object.values(target.NetworkSettings.Ports ?? {}).some((bindings) => bindings?.length);
+    return !shared && !published ? "DENY" : "BOUNDARY_NOT_PROVEN";
+  } catch { return "ENVIRONMENT_ERROR"; }
 }

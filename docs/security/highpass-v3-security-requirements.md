@@ -1,5 +1,16 @@
 # Highpass v3 Security Requirements
 
+## Lifecycle authority clarification — 2026-10-08
+
+IAM-004/TEN-001..003/AUTH-001..004/GRT-001..003 require separate server-verified
+patient approval and institution participation. A supplied ACTIVE state/evidence digest
+is not verified consent. [Dependency contract](../api/highpass-v3-lifecycle-dependency-contract.md)
+defines proposed privacy projections and current-authority checks. Revocation committed
+in DB precedes stale ALLOW/Grant; outbox enqueue is not downstream acknowledgement.
+D1..D4 proposals/D5 sequencing were user-approved by 김범희2026-10-08; D6 testing
+is authorized but technical result NOT VERIFIED. See [decision record](../governance/highpass-v3-lifecycle-decision-packet-2026-10-08.md).
+No clinical/maintenance runtime privileges are granted by that policy decision.
+
 문서 버전: `v3.0-DRAFT-BASELINE`
 기준일: 2026-09-12
 상태: **SECURITY REQUIREMENTS / REVIEW REQUIRED**
@@ -40,7 +51,7 @@
 | V3-SR-AUTH-004 | 철회·만료·상태변경은 캐시된 ALLOW보다 우선하며 신규 access/key release를 차단해야 한다. | P0 | stale authorization test | PARTIAL |
 | V3-SR-GRT-001 | grant는 최소 resource/action/recipient와 짧은 TTL, issuer/audience/jti를 가져야 한다. | P0 | claim/scope tests | PARTIAL |
 | V3-SR-GRT-002 | grant 원문은 지속 저장하지 않고 hash/jti/status만 저장해야 한다. | P0 | DB/log inspection | PARTIAL |
-| V3-SR-GRT-003 | 위변조·재사용·audience/recipient/scope mismatch·expiry는 전부 DENY와 감사로 끝나야 한다. | P0 | negative/replay suite | IMPLEMENTED-LOCAL/partial v3 |
+| V3-SR-GRT-003 | 위변조·재사용·audience/recipient/scope mismatch·expiry는 전부 DENY와 감사로 끝나야 한다. | P0 | negative/replay suite | IMPLEMENTED-LOCAL legacy DICOMweb + PostgreSQL shared replay; scoped verdicts in latest execution record; full API HA and v3 grants NOT VERIFIED |
 
 ### 2.3 Patient safety and DICOM boundary
 

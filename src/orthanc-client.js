@@ -168,13 +168,15 @@ export class OrthancClient {
     };
   }
 
-  async wadoInstance(studyInstanceUid, seriesInstanceUid, sopInstanceUid) {
+  async wadoInstance(studyInstanceUid, seriesInstanceUid, sopInstanceUid, { allowSyntheticFallback = true } = {}) {
     try {
       const instance = await this.findInstanceByUid(studyInstanceUid, seriesInstanceUid, sopInstanceUid);
       if (!instance) {
+        if (!allowSyntheticFallback) throw new Error("SOURCE_OBJECT_UNAVAILABLE");
         return this.wadoCuratedInstance(studyInstanceUid, seriesInstanceUid, sopInstanceUid);
       }
       if (instance._curated) {
+        if (!allowSyntheticFallback) throw new Error("SOURCE_OBJECT_UNAVAILABLE");
         return {
           status: 200,
           contentType: "application/dicom",
@@ -190,6 +192,7 @@ export class OrthancClient {
         body: Buffer.from(await response.arrayBuffer()),
       };
     } catch (err) {
+      if (!allowSyntheticFallback) throw err;
       const fallback = this.wadoCuratedInstance(studyInstanceUid, seriesInstanceUid, sopInstanceUid);
       if (fallback.status === 200) return fallback;
       throw err;
@@ -272,7 +275,7 @@ export class OrthancClient {
       }
     }
 
-    if (instance.previewImageUrl) {
+    if (process.env.HIPASS_ENABLE_CURATED_DICOM === "1" && instance.previewImageUrl) {
       const relPath = instance.previewImageUrl.replace(/^\//, "");
       const fullPath = path.resolve("public", relPath);
       if (existsSync(fullPath)) {
@@ -498,7 +501,7 @@ function el(groupHex, elementHex, vr, value) {
 
 export function renderDicomToBmp(dcmBuffer) {
   if (!dcmBuffer || dcmBuffer.length < 132 || dcmBuffer.subarray(128, 132).toString("ascii") !== "DICM") return null;
-  let rows = 512, cols = 512, bits = 16, samplesPerPixel = 1, photometric = "MONOCHROME2";
+  let rows = 512, cols = 512, bits = 16, samplesPerPixel = 1, photometric = "MONOCHROME2", signedPixels = 0;
   let intercept = 0, slope = 1, wc = 50, ww = 350;
   let pixelOffset = -1, pixelLen = 0;
 
@@ -513,6 +516,7 @@ export function renderDicomToBmp(dcmBuffer) {
     if (g === 0x0028 && e === 0x0010) rows = dcmBuffer.readUInt16LE(i + 8);
     if (g === 0x0028 && e === 0x0011) cols = dcmBuffer.readUInt16LE(i + 8);
     if (g === 0x0028 && e === 0x0100) bits = dcmBuffer.readUInt16LE(i + 8);
+    if (g === 0x0028 && e === 0x0103) signedPixels = dcmBuffer.readUInt16LE(i + 8);
     if (g === 0x0028 && e === 0x1050) {
       const len = dcmBuffer.readUInt16LE(i + 6);
       const val = parseFloat(dcmBuffer.subarray(i + 8, i + 8 + len).toString().split("\\")[0]);
@@ -547,6 +551,7 @@ export function renderDicomToBmp(dcmBuffer) {
   }
 
   if (pixelOffset < 0 || pixelOffset >= dcmBuffer.length) return null;
+  if (!rows || !cols || rows > 4096 || cols > 4096 || pixelLen === 0xffffffff || pixelOffset + pixelLen > dcmBuffer.length) return null;
 
   // Case 1: RGB 24-bit
   if (samplesPerPixel === 3 || photometric.includes("RGB")) {
@@ -578,16 +583,19 @@ export function renderDicomToBmp(dcmBuffer) {
     return bmp;
   }
 
-  // Case 2: Monochrome 16-bit
-  if (pixelOffset + rows * cols * 2 > dcmBuffer.length) return null;
-  const rawPixels = dcmBuffer.subarray(pixelOffset, pixelOffset + rows * cols * 2);
+  // Uncompressed 8/16-bit monochrome, including synthetic Secondary Capture.
+  if (samplesPerPixel !== 1 || !['MONOCHROME1', 'MONOCHROME2'].includes(photometric) || ![8, 16].includes(bits)) return null;
+  const bytesPerPixel = bits / 8;
+  if (pixelLen < rows * cols * bytesPerPixel || pixelOffset + rows * cols * bytesPerPixel > dcmBuffer.length) return null;
+  const rawPixels = dcmBuffer.subarray(pixelOffset, pixelOffset + rows * cols * bytesPerPixel);
   const minVal = wc - ww / 2;
   const maxVal = wc + ww / 2;
   const range = maxVal - minVal || 1;
   const isMono1 = photometric.includes("MONOCHROME1");
 
   const paletteSize = 1024;
-  const fileSize = 54 + paletteSize + rows * cols;
+  const stride = Math.ceil(cols / 4) * 4;
+  const fileSize = 54 + paletteSize + rows * stride;
   const bmp = Buffer.alloc(fileSize);
 
   bmp.write("BM", 0);
@@ -599,7 +607,7 @@ export function renderDicomToBmp(dcmBuffer) {
   bmp.writeUInt16LE(1, 26);
   bmp.writeUInt16LE(8, 28);
   bmp.writeUInt32LE(0, 30);
-  bmp.writeUInt32LE(rows * cols, 34);
+  bmp.writeUInt32LE(rows * stride, 34);
   bmp.writeUInt32LE(256, 46);
   bmp.writeUInt32LE(256, 50);
 
@@ -610,13 +618,15 @@ export function renderDicomToBmp(dcmBuffer) {
 
   const dst = 54 + paletteSize;
   for (let i = 0; i < rows * cols; i++) {
-    const raw = rawPixels.readInt16LE(i * 2);
+    const raw = bits === 8
+      ? (signedPixels ? rawPixels.readInt8(i) : rawPixels.readUInt8(i))
+      : (signedPixels ? rawPixels.readInt16LE(i * 2) : rawPixels.readUInt16LE(i * 2));
     const hu = raw * slope + intercept;
     let gray = Math.round(((hu - minVal) / range) * 255);
     if (gray < 0) gray = 0;
     if (gray > 255) gray = 255;
     if (isMono1) gray = 255 - gray;
-    bmp[dst + i] = gray;
+    bmp[dst + Math.floor(i / cols) * stride + i % cols] = gray;
   }
   return bmp;
 }

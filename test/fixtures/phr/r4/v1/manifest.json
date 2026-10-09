@@ -16,7 +16,7 @@
   },
   "orthancSeed": {
     "source": "scripts/load-sample-dicom.js",
-    "sha256": "402474595488aeee123c3458903986b9ed7392302114c9cd5f1bf2c4091b5773",
+    "sha256": "fb627a0bcab08596911be67f9c0fcd3ff5315e6bdc873d257a459e823e1587af",
     "mappedStudyUids": ["1.2.826.0.1.3680043.10.5432.20260908.1001.1"],
     "knownMetadataOnlyStudyUids": ["1.2.826.0.1.3680043.10.5432.20260908.1002.1"]
   },

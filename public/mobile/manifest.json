@@ -1,6 +1,6 @@
 {
-  "name": "HiPass MediQ (하이패스 메디큐)",
-  "short_name": "HiPass MediQ",
+  "name": "Medi Q (메디큐)",
+  "short_name": "Medi Q",
   "description": "환자 주도형 의료영상·마이데이터 모바일 플랫폼",
   "start_url": "/mobile/",
   "scope": "/mobile/",

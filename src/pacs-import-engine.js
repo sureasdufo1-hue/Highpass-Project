@@ -13,10 +13,10 @@ import {
 } from "./pacs-crypto-engine.js";
 
 /**
- * Real DICOM PACS Import Engine for Hospital B
+ * Local encrypted archive simulator for Hospital B.
  * 
- * Transfers actual DICOM instance binaries from Source Hospital A
- * into Target Hospital B's dedicated PACS storage archive (C-STORE / STOW-RS).
+ * Stores source instance bytes in a local archive. This is not C-STORE,
+ * STOW-RS, or a destination PACS registration/verification implementation.
  * Performs end-to-end SHA-256 cryptographic integrity verification.
  */
 
@@ -35,13 +35,25 @@ export async function importStudyToHospitalBPacs({
   patientId = "P-1001",
   targetHospitalId = "HOSP-B",
   baseDestDir = path.resolve("data/hospital-b-pacs"),
+  kek = null,
+  allowSynthetic = false,
 }) {
   if (!studyInstanceUid) {
     throw new PacsImportError("STUDY_UID_REQUIRED", "StudyInstanceUID is required for PACS import");
   }
+  const masterKek = kek ?? getHospitalMasterKek(targetHospitalId);
+  if (!Buffer.isBuffer(masterKek) || masterKek.length !== 32) {
+    throw new PacsImportError("INVALID_KEK_CONFIGURATION", "Archive key must contain exactly 32 bytes");
+  }
+  if (!/^[0-9]+(\.[0-9]+)*$/.test(studyInstanceUid) || studyInstanceUid.length > 64) {
+    throw new PacsImportError("INVALID_STUDY_UID", "Invalid StudyInstanceUID");
+  }
 
   // 1. Ensure target PACS directory exists
   const studyDestDir = path.join(baseDestDir, studyInstanceUid);
+  if (fs.existsSync(studyDestDir)) {
+    throw new PacsImportError("ARCHIVE_ALREADY_EXISTS", "Existing archive is preserved; replacement requires explicit migration");
+  }
   fs.mkdirSync(studyDestDir, { recursive: true });
 
   // 2. Discover Series and Instances for the Study
@@ -139,7 +151,7 @@ export async function importStudyToHospitalBPacs({
         }
       }
     } catch {
-      // fallback
+      throw new PacsImportError("SOURCE_DISCOVERY_FAILED", "Source DICOM discovery failed");
     }
   }
 
@@ -205,9 +217,14 @@ export async function importStudyToHospitalBPacs({
 
   // 3. Generate dynamic 256-bit DEK for Envelope Encryption
   const dek = generateDek();
+  let keyEnvelope;
+  try {
 
   // 4. Encrypt and persist each binary DICOM instance into Hospital B PACS
   for (const item of instancesToTransfer) {
+    if (![item.seriesInstanceUid, item.sopInstanceUid].every((uid) => typeof uid === "string" && uid.length <= 64 && /^[0-9]+(\.[0-9]+)*$/.test(uid))) {
+      throw new PacsImportError("INVALID_OBJECT_UID", "Invalid DICOM object UID");
+    }
     const seriesDir = path.join(studyDestDir, item.seriesInstanceUid);
     fs.mkdirSync(seriesDir, { recursive: true });
 
@@ -216,16 +233,17 @@ export async function importStudyToHospitalBPacs({
       dicomBuffer = fs.readFileSync(item.filePath);
     } else if (orthancClient && typeof orthancClient.wadoInstance === "function") {
       try {
-        const wadoRes = await orthancClient.wadoInstance(studyInstanceUid, item.seriesInstanceUid, item.sopInstanceUid);
+        const wadoRes = await orthancClient.wadoInstance(studyInstanceUid, item.seriesInstanceUid, item.sopInstanceUid, { allowSyntheticFallback: allowSynthetic });
         if (wadoRes && wadoRes.status === 200 && Buffer.isBuffer(wadoRes.body)) {
           dicomBuffer = wadoRes.body;
         }
       } catch {
-        // fallback
+        throw new PacsImportError("SOURCE_RETRIEVAL_FAILED", "Source DICOM retrieval failed");
       }
     }
 
     if (!dicomBuffer) {
+      if (!allowSynthetic) throw new PacsImportError("SOURCE_OBJECT_UNAVAILABLE", "Source DICOM object is unavailable");
       dicomBuffer = buildSyntheticDicomBuffer({
         studyInstanceUid,
         seriesInstanceUid: item.seriesInstanceUid,
@@ -258,10 +276,12 @@ export async function importStudyToHospitalBPacs({
     });
   }
 
+  keyEnvelope = wrapDek(dek, masterKek, studyInstanceUid);
+  } finally {
+    dek.fill(0);
+  }
   const combinedSha256 = hasher.digest("hex");
   const importedAt = new Date().toISOString();
-  const masterKek = getHospitalMasterKek(targetHospitalId);
-  const keyEnvelope = wrapDek(dek, masterKek, studyInstanceUid);
 
   // 5. Write Hospital B PACS Study Archive Manifest with Envelope Encryption metadata
   const manifest = {
@@ -270,11 +290,12 @@ export async function importStudyToHospitalBPacs({
     sourceHospitalId: "HOSP-A",
     targetHospitalId,
     status: "ARCHIVED_IN_PACS",
-    transferMethod: "STOW_RS_DIRECT_ARCHIVE",
+    transferMethod: "LOCAL_ENCRYPTED_ARCHIVE_SIMULATOR",
+    simulation: true,
     encryptedAtRest: true,
     cipherSuite: "AES-256-GCM",
     keyEnvelope,
-    destinationVerification: true,
+    destinationVerification: false,
     instancesCount: instanceReceipts.length,
     totalBytes,
     sha256: combinedSha256,
@@ -287,7 +308,8 @@ export async function importStudyToHospitalBPacs({
 
   return {
     status: "COMPLETED",
-    transferMethod: "STOW_RS_DIRECT_ARCHIVE",
+    transferMethod: "LOCAL_ENCRYPTED_ARCHIVE_SIMULATOR",
+    simulation: true,
     studyInstanceUid,
     sourceHospitalId: "HOSP-A",
     targetHospitalId,
@@ -296,7 +318,7 @@ export async function importStudyToHospitalBPacs({
     sha256: combinedSha256,
     encryptedAtRest: true,
     cipherSuite: "AES-256-GCM",
-    destinationVerification: true,
+    destinationVerification: false,
     destinationPath: path.relative(process.cwd(), studyDestDir).replace(/\\/g, "/"),
     importedAt,
   };
@@ -383,4 +405,3 @@ export function readArchivedDicomBuffer({
 
   throw new PacsImportError("DCM_FILE_NOT_FOUND", `Archived DICOM file not found: ${sopInstanceUid}`);
 }
-

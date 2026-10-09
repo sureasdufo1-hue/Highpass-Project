@@ -1,0 +1,8 @@
+# Explicit synthetic presenter authentication. Real hospital IdP/MFA deferred.
+services:
+  control:
+    environment:
+      HIPASS_CAPSTONE_MOCK_IDP: '1'
+      HIPASS_CAPSTONE_LOGIN_KEY_FILE: /run/secrets/capstone-login-key
+    volumes:
+      - ${HIPASS_CLOUD_SECRET_DIR}/capstone-login-key:/run/secrets/capstone-login-key:ro

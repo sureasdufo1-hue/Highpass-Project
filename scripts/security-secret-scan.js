@@ -3,7 +3,8 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 const root = process.cwd();
-const ignoredDirs = new Set([".git", "node_modules", "data", "tmp", "coverage", "artifacts", ".next", "dist", "build"]);
+// Generated Python bytecode is already excluded by .gitignore; scan its .py source.
+const ignoredDirs = new Set([".git", "node_modules", "data", "tmp", "coverage", "artifacts", ".next", "dist", "build", "__pycache__"]);
 const ignoredExtensions = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".dcm", ".pdf", ".zip"]);
 const findings = [];
 

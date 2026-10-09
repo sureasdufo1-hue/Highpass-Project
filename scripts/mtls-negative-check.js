@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
@@ -64,13 +64,13 @@ function checkClient(name, certificate, expected, runAsRoot) {
   ];
 
   const allowed = runDocker(args);
-  const actual = allowed ? "ALLOW" : "DENY";
+  const actual = allowed;
   return {
     name,
     certificateId: certificate.id,
     expected,
     actual,
-    result: actual === expected ? "PASS" : "FAIL",
+    result: actual === expected ? "PASS" : actual === "ENVIRONMENT_ERROR" ? "NOT VERIFIED" : "FAIL",
   };
 }
 
@@ -87,17 +87,18 @@ function checkNoCertificate(name, expected) {
     image,
     "scripts/ops-mtls-client-check.js",
   ]);
-  const actual = allowed ? "ALLOW" : "DENY";
+  const actual = allowed;
   return {
     name,
     expected,
     actual,
-    result: actual === expected ? "PASS" : "FAIL",
+    result: actual === expected ? "PASS" : actual === "ENVIRONMENT_ERROR" ? "NOT VERIFIED" : "FAIL",
   };
 }
 
 function checkGeneratedClient(name, fixtureType, expected) {
   const certificate = ensureGeneratedClient(fixtureType);
+  if (!certificate) return { name, expected, actual: "FIXTURE_GENERATION_FAILED", result: "NOT VERIFIED" };
   return checkClient(name, certificate, expected, true);
 }
 
@@ -110,10 +111,25 @@ function ensureGeneratedClient(fixtureType) {
     : "URI:spiffe://highpass.local/gateway/hipass-gateway-service";
   const eku = fixtureType === "wrong-eku" ? "serverAuth" : "clientAuth";
   const validityDays = fixtureType === "expired" ? "0" : "1";
+  const localOpenSSL = process.env.HIPASS_OPENSSL_COMMAND ?? (process.platform === "win32" && existsSync("C:/Program Files/Git/usr/bin/openssl.exe") ? "C:/Program Files/Git/usr/bin/openssl.exe" : null);
+  if (localOpenSSL) {
+    try {
+      const fixture = (suffix) => path.join(outputDir, `client.${suffix}`);
+      const invoke = (args) => execFileSync(localOpenSSL, args, { stdio: "pipe", timeout: 15000, windowsHide: true });
+      invoke(["req", "-newkey", "rsa:2048", "-nodes", "-subj", `/CN=${fixtureType}-client`, "-keyout", fixture("key"), "-out", fixture("csr")]);
+      writeFileSync(fixture("ext"), `subjectAltName=${san}\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=${eku}\n`);
+      const signing = signedByRuntimeCa
+        ? ["-CA", path.join(certsRoot, "mtls/ca.crt"), "-CAkey", path.join(certsRoot, "mtls/ca.key"), "-CAserial", path.join(outputDir, "ca.srl"), "-CAcreateserial"]
+        : ["-signkey", fixture("key")];
+      invoke(["x509", "-req", "-days", validityDays, "-in", fixture("csr"), ...signing, "-out", fixture("crt"), "-extfile", fixture("ext")]);
+      for (const file of [fixture("csr"), fixture("ext"), path.join(outputDir, "ca.srl")]) rmSync(file, { force: true });
+      return { id: `${fixtureType}-generated-fixture`, path: path.join(outputDir, "client.crt"), keyPath: path.join(outputDir, "client.key") };
+    } catch { return null; }
+  }
   const signCommand = signedByRuntimeCa
     ? `openssl x509 -req -days ${validityDays} -in /fixtures/${fixtureType}/client.csr -CA /certs/mtls/ca.crt -CAkey /certs/mtls/ca.key -CAserial /fixtures/${fixtureType}/ca.srl -CAcreateserial -out /fixtures/${fixtureType}/client.crt -extfile /fixtures/${fixtureType}/client.ext`
     : `openssl x509 -req -signkey /fixtures/${fixtureType}/client.key -days 1 -in /fixtures/${fixtureType}/client.csr -out /fixtures/${fixtureType}/client.crt -extfile /fixtures/${fixtureType}/client.ext`;
-  runDocker([
+  const generated = runDocker([
     "run",
     "--rm",
     "-v",
@@ -134,6 +150,7 @@ function ensureGeneratedClient(fixtureType) {
       `chmod 644 /fixtures/${fixtureType}/client.key /fixtures/${fixtureType}/client.crt`,
     ].join(" && "),
   ]);
+  if (generated !== "ALLOW") return null;
   return {
     id: `${fixtureType}-generated-fixture`,
     path: `tmp/certs/generated-fixtures/${fixtureType}/client.crt`,
@@ -142,11 +159,26 @@ function ensureGeneratedClient(fixtureType) {
 }
 
 function runDocker(args) {
+  const since = new Date(Date.now() - 1000).toISOString();
   try {
-    execFileSync("docker", args, { stdio: "pipe" });
-    return true;
-  } catch {
-    return false;
+    execFileSync("docker", args, { stdio: "pipe", timeout: 30000, windowsHide: true });
+    return "ALLOW";
+  } catch (error) {
+    const output = `${error.stdout ?? ""}\n${error.stderr ?? ""}`;
+    const denied = /ERR_SSL_.*(?:CERTIFICATE|UNKNOWN_CA)|ERR_TLS_CERT_ALTNAME_INVALID|CERT_HAS_EXPIRED|DEPTH_ZERO_SELF_SIGNED_CERT|SELF_SIGNED_CERT_IN_CHAIN|UNABLE_TO_VERIFY_LEAF_SIGNATURE|"statusCode":403/.test(output);
+    if (denied) return "DENY";
+    // ECONNRESET alone is not DENY. Correlate the client TCP tuple with a
+    // certificate rejection emitted by the actual mTLS server.
+    if (process.env.HIPASS_MTLS_PROXY_CONTAINER && output.includes("ECONNRESET")) {
+      try {
+        const client = output.split(/\r?\n/).filter((line) => line.startsWith("{")).map((line) => JSON.parse(line)).find((item) => item.error === "ECONNRESET");
+        const logs = execFileSync("docker", ["logs", "--since", since, process.env.HIPASS_MTLS_PROXY_CONTAINER], { encoding: "utf8", timeout: 10000, windowsHide: true });
+        const normalize = (ip) => String(ip).replace(/^::ffff:/, "");
+        const proof = logs.split(/\r?\n/).filter((line) => line.startsWith("{")).map((line) => JSON.parse(line)).some((item) => item.event === "TLS_CLIENT_REJECTED" && item.remotePort === client?.localPort && normalize(item.remoteAddress) === normalize(client?.localAddress) && /CERT_HAS_EXPIRED|INVALID_PURPOSE|SELF_SIGNED_CERT|UNABLE_TO_GET_ISSUER|CERT_SIGNATURE_FAILURE|CERTIFICATE/.test(`${item.code} ${item.authorizationError ?? ""}`));
+        if (proof) return "DENY";
+      } catch {}
+    }
+    return "ENVIRONMENT_ERROR";
   }
 }
 
@@ -155,7 +187,7 @@ function findCertificate(id) {
 }
 
 function relativeCertPath(value) {
-  const normalized = value.replace(/\\/g, "/");
+  const normalized = (path.isAbsolute(value) ? path.relative(certsRoot, value) : value).replace(/\\/g, "/");
   return normalized.replace(/^tmp\/certs\//, "");
 }
 

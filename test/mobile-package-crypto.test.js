@@ -57,3 +57,21 @@ test("manifest remains scoped to opaque references and excludes patient identifi
   assert.equal(serialized.includes("patientRef"), false);
 });
 
+test("untrusted envelope cannot extend authenticated expiry or change recipient/key binding", () => {
+  const packageData = buildEncryptedImagingPackage(base);
+  const now = new Date("2026-09-12T00:01:00.000Z");
+  for (const patch of [{ expiresAt: "2026-09-13T00:00:00.000Z" }, { destinationInstitutionRef: "inst_other" }, { createdAt: "2026-09-11T00:00:00.000Z" }, { packageSize: packageData.envelope.packageSize + 1 }, { keyEnvelopeRefs: ["kenv_foreignforeignforeign"] }]) {
+    assert.throws(() => decryptAndVerifyImagingPackage({ envelope: { ...packageData.envelope, ...patch }, chunks: packageData.chunks, dek: packageData.dek, now }), error => error.code === "PACKAGE_ENVELOPE_BINDING_INVALID");
+  }
+  assert.throws(() => decryptAndVerifyImagingPackage({ envelope: { ...packageData.envelope, expiresAt: "invalid" }, chunks: packageData.chunks, dek: packageData.dek, now }), error => error.code === "PACKAGE_TTL_INVALID");
+  packageData.dek.fill(0);
+});
+
+test("multi-chunk authentication failure returns no partial plaintext", () => {
+  const packageData = buildEncryptedImagingPackage({ ...base, objects: [{ ...base.objects[0], data: Buffer.alloc(65537, 7) }] });
+  const chunks = packageData.chunks.map(chunk => ({ ...chunk, tag: Buffer.from(chunk.tag) }));
+  chunks[1].tag[0] ^= 1;
+  assert.throws(() => decryptAndVerifyImagingPackage({ envelope: packageData.envelope, chunks, dek: packageData.dek, now: new Date("2026-09-12T00:01:00.000Z") }), error => error.code === "CRYPTO_AUTH_FAILED");
+  packageData.dek.fill(0);
+});
+

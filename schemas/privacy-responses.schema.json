@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://highpass.local/schemas/privacy-responses.schema.json",
+  "$defs": {
+    "error": {
+      "type": "object", "additionalProperties": false, "required": ["error"],
+      "properties": { "error": { "type": "string" } }
+    },
+    "readiness": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "model", "policyRegistry", "approvedUseRegistry", "contract"],
+      "properties": {
+        "status": { "enum": ["READY", "NOT_READY"] },
+        "policyRegistry": { "const": "READY" },
+        "approvedUseRegistry": { "const": "READY" },
+        "contract": { "const": "PF-1" },
+        "model": {
+          "type": "object", "additionalProperties": false, "required": ["ready"],
+          "properties": {
+            "ready": { "type": "boolean" },
+            "modelRevision": { "type": "string" },
+            "runtimeRevision": { "type": "string" },
+            "code": { "const": "MODEL_UNAVAILABLE" },
+            "reason": { "type": "string" }
+          }
+        }
+      }
+    },
+    "inspection": {
+      "type": "object", "additionalProperties": false,
+      "required": ["contractVersion", "inspectionId", "jobStatus", "policyDecision", "reviewStatus", "releaseEligible", "purpose", "approvedUseRef", "sourceArtifactRef", "sourceArtifactVersion", "recipientRef", "policyVersion", "rulesProfile", "policyRegistryDigest", "rulesDigest", "inputDigest", "tokenCount", "byteLength", "redactedText", "findings", "qualityFlags", "modelRevision", "runtimeRevision", "durationMs", "inspectedAt"],
+      "properties": {
+        "contractVersion": { "const": "1.0.0" },
+        "inspectionId": { "type": "string", "format": "uuid" },
+        "jobStatus": { "const": "SUCCEEDED" },
+        "policyDecision": { "const": "REVIEW_REQUIRED" },
+        "reviewStatus": { "const": "PENDING" },
+        "releaseEligible": { "const": false },
+        "purpose": { "enum": ["RESEARCH", "TEACHING", "DEMO", "AI_LOCAL"] },
+        "approvedUseRef": { "type": "string" },
+        "sourceArtifactRef": { "type": "string" },
+        "sourceArtifactVersion": { "type": ["integer", "string"], "minLength": 1 },
+        "recipientRef": { "type": "string" },
+        "policyVersion": { "type": "string" },
+        "rulesProfile": { "type": "string" },
+        "policyRegistryDigest": { "$ref": "#/$defs/digest" },
+        "rulesDigest": { "$ref": "#/$defs/digest" },
+        "inputDigest": { "$ref": "#/$defs/digest" },
+        "tokenCount": { "type": "integer", "minimum": 0, "maximum": 2048 },
+        "byteLength": { "type": "integer", "minimum": 1, "maximum": 32768 },
+        "redactedText": { "type": "string", "description": "Review preview; may contain preserved clinical/conflicting spans. Not release-approved." },
+        "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+        "qualityFlags": { "type": "array", "items": { "type": "string" } },
+        "modelRevision": { "type": "string" },
+        "runtimeRevision": { "type": "string" },
+        "durationMs": { "type": ["number", "null"], "minimum": 0 },
+        "inspectedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "finding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["start", "end", "offsetUnit", "endExclusive", "systemType", "action", "replacement", "sources", "ruleIds", "conflict", "unmapped"],
+      "properties": {
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 1 },
+        "offsetUnit": { "const": "unicode_codepoint" },
+        "endExclusive": { "const": true },
+        "nativeLabel": { "type": ["string", "null"] },
+        "systemType": { "type": ["string", "null"] },
+        "action": { "enum": ["REPLACE", "SHIFT", "REVIEW"] },
+        "replacement": { "type": ["string", "null"] },
+        "sources": { "type": "array", "items": { "enum": ["model", "rule", "structured_field"] } },
+        "ruleIds": { "type": "array", "items": { "type": "string" } },
+        "score": { "type": ["number", "null"] },
+        "conflict": { "type": "boolean" },
+        "unmapped": { "type": "boolean" }
+      }
+    }
+  }
+}

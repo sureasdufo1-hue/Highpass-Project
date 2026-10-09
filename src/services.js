@@ -1,5 +1,7 @@
 import { createHash, createHmac, createPublicKey, randomBytes, timingSafeEqual, verify } from "node:crypto";
 import { createKeyProvider } from "./key-provider.js";
+import { orderStoredAuditChain } from "./audit-chain-order.js";
+import { MemoryDPoPReplayStore } from "./dpop-replay-store.js";
 import { OrthancClient } from "./orthanc-client.js";
 import { LocalDevelopmentPseudonymKeyProvider } from "./pseudonym-protection.js";
 import { buildRetentionPolicies, executeRetentionPurge, planRetentionPurge } from "./retention.js";
@@ -58,8 +60,12 @@ export class HipassService {
     this.anomalyRules = normalizeAnomalyRules(options.anomalyRules);
     this.deIdentificationPolicy = normalizeDeIdentificationPolicy(options.deIdentificationPolicy);
     this.orthanc = options.orthancClient ?? new OrthancClient();
+    this.hospitalArchiveKek = options.hospitalArchiveKek ?? null;
+    this.allowSyntheticArchive = options.allowSyntheticArchive === true;
     this.pseudonymKeyProvider = options.pseudonymKeyProvider ?? new LocalDevelopmentPseudonymKeyProvider(this.tokenSecret, this.dicomTokenKeyProvider);
-    this.dpopNonceCache = new Map();
+    this.dpopReplayStore = options.dpopReplayStore ?? store.dpopReplayStore ?? new MemoryDPoPReplayStore();
+    if (process.env.NODE_ENV === "production" && process.env.HIPASS_DPOP_REQUIRED === "1" && !this.dpopReplayStore.persistent) throw new Error("Strict production DPoP requires persistent replay storage");
+    this.dpopIssuanceBindings = new WeakMap();
     this.normalizeAuditLogChain();
   }
 
@@ -686,6 +692,24 @@ export class HipassService {
     };
   }
 
+  async viewPatientTicketStatus(consentId, ticketId, patientId, requestMeta = {}) {
+    const consent = this.getConsent(consentId);
+    const ticket = this.store.get("transferTickets").find(item => item.ticketId === ticketId && item.consentId === consentId && item.patientId === patientId);
+    // Missing, mismatched and non-owned identifiers are indistinguishable.
+    if (!patientId || !consent || consent.patientId !== patientId || !ticket) return null;
+    if (!Object.values(TransferTicketStatus).includes(ticket.status)) throw new ServiceValidationError("TICKET_STATUS_INVALID", "Ticket status unavailable", [], 409);
+    const now = Date.parse(this.clock());
+    const expires = Date.parse(ticket.expiresAt);
+    if (!Number.isFinite(now) || !Number.isFinite(expires)) throw new ServiceValidationError("TICKET_STATUS_INVALID", "Ticket status unavailable", [], 409);
+    const status = consent.effectiveStatus === ConsentStatus.REVOKED ? TransferTicketStatus.REVOKED
+      : consent.effectiveStatus !== ConsentStatus.ACTIVE || now >= expires ? TransferTicketStatus.EXPIRED : ticket.status;
+    await this.writeAudit({ actorType: ActorType.PATIENT, actorId: patientId, patientId,
+      consentId, ticketId, action: AuditAction.TICKET_STATUS_VIEWED, result: "SUCCESS",
+      ipAddress: requestMeta.ipAddress, userAgent: requestMeta.userAgent });
+    await this.store.save();
+    return { consentId, ticketId, status, expiresAt: ticket.expiresAt };
+  }
+
   async issueConsentHandoffTicket(consentId, patientId, requestMeta = {}) {
     const consent = this.getConsent(consentId);
     if (!consent) return null;
@@ -799,7 +823,11 @@ export class HipassService {
     const redeemAuditSessionId = makeId("audit-session");
     const ticket = findTicketByNonce(this.store.get("transferTickets"), nonce);
 
-    const denied = async (reasonCode) => {
+    const denied = async (reasonCode, statusCode = 403) => {
+      if (statusCode === 503) {
+        const auditStatus = await this.recordProofStoreFailure({ actorType: ActorType.DOCTOR, actorId: input?.doctorId ?? "UNKNOWN", ipAddress: requestMeta.ipAddress }, reasonCode);
+        return { decision: AccessDecision.DENIED, reasonCode, statusCode, auditStatus };
+      }
       await this.writeAudit({
         auditSessionId: ticket?.auditSessionId ?? redeemAuditSessionId,
         actorType: ActorType.DOCTOR,
@@ -868,6 +896,16 @@ export class HipassService {
       return denied(AccessDenyReason.DOWNLOAD_NOT_ALLOWED);
     }
 
+    // Failed proof must not consume a patient's one-time handoff. The verified
+    // binding is passed internally once, never accepted from request JSON.
+    if (requestMeta.dpopProof || process.env.HIPASS_DPOP_REQUIRED === "1") {
+      const proof = await this.verifyIssuanceProof(requestMeta);
+      if (!proof.valid) return denied(proof.reason, proof.statusCode);
+      // Awaiting proof verification must not create a second redemption window.
+      if (ticket.status !== TransferTicketStatus.ISSUED) return denied(ticket.status === TransferTicketStatus.USED ? "TICKET_ALREADY_USED" : "TICKET_INVALID");
+      if (new Date(ticket.expiresAt).getTime() < new Date(this.clock()).getTime()) return denied("TICKET_EXPIRED");
+      this.dpopIssuanceBindings.set(requestMeta, proof);
+    }
     ticket.status = TransferTicketStatus.USED;
     ticket.usedAt = this.clock();
     ticket.redeemedDoctorId = input.doctorId;
@@ -1099,6 +1137,21 @@ export class HipassService {
   }
 
   async requestDicomAccessToken(input, requestMeta = {}) {
+    let proofBinding = null;
+    if (requestMeta.dpopProof || process.env.HIPASS_DPOP_REQUIRED === "1") {
+      const proof = this.dpopIssuanceBindings.get(requestMeta) ?? await this.verifyIssuanceProof(requestMeta);
+      this.dpopIssuanceBindings.delete(requestMeta);
+      if (!proof.valid) {
+        if (proof.statusCode === 503) {
+          const auditStatus = await this.recordProofStoreFailure({ actorType: ActorType.DOCTOR, actorId: input.doctorId ?? "UNKNOWN", ipAddress: requestMeta.ipAddress }, proof.reason);
+          return { decision: AccessDecision.DENIED, reasonCode: proof.reason, statusCode: 503, auditStatus };
+        }
+        await this.writeAudit({ actorType: ActorType.DOCTOR, actorId: input.doctorId ?? "UNKNOWN", action: AuditAction.TOKEN_DENIED, result: "FAIL", reason: proof.reason, ipAddress: requestMeta.ipAddress });
+        await this.store.save();
+        return { decision: AccessDecision.DENIED, reasonCode: proof.reason };
+      }
+      proofBinding = { jkt: proof.publicKeyThumbprint };
+    }
     const policy = await this.evaluateDicomAccessRequest(input, requestMeta);
     if (policy.decision !== AccessDecision.ALLOWED) {
       await this.writeAudit({
@@ -1140,6 +1193,7 @@ export class HipassService {
       expiresAt,
       auditSessionId: policy.auditSessionId,
     };
+    if (proofBinding) claims.cnf = proofBinding;
     const accessToken = this.signAccessToken(claims);
     this.store.get("dicomAccessTokenLogs").push({
       tokenId,
@@ -1180,6 +1234,7 @@ export class HipassService {
     return {
       decision: AccessDecision.ALLOWED,
       accessToken,
+      tokenType: proofBinding ? "DPoP" : "Bearer",
       expiresAt,
       allowedStudyUid: input.studyInstanceUid,
       allowedSeriesUids,
@@ -1189,7 +1244,11 @@ export class HipassService {
   }
 
   async verifyDicomAccessToken(rawToken, input = {}, requestMeta = {}) {
-    const invalid = async (reason, auditSessionId = makeId("audit-session"), claims = {}) => {
+    const invalid = async (reason, auditSessionId = makeId("audit-session"), claims = {}, statusCode = 403) => {
+      if (statusCode === 503) {
+        const auditStatus = await this.recordProofStoreFailure({ auditSessionId, actorType: ActorType.GATEWAY, actorId: "gateway", consentId: claims.consentId, ipAddress: requestMeta.ipAddress }, reason);
+        return { active: false, reason, auditSessionId, statusCode, auditStatus };
+      }
       await this.writeAudit({
         auditSessionId,
         actorType: ActorType.GATEWAY,
@@ -1253,6 +1312,17 @@ export class HipassService {
     const consent = this.store.get("consents").find((item) => item.consentId === claims.consentId);
     if (!consent || this.effectiveConsentStatus(consent) !== ConsentStatus.ACTIVE) {
       return invalid("TOKEN_CONSENT_INACTIVE", auditSessionId, claims);
+    }
+    if (!claims.cnf && requestMeta.authorizationScheme?.toLowerCase() === "dpop") return invalid("DPOP_BOUND_TOKEN_REQUIRED", auditSessionId, claims);
+    if (claims.cnf || process.env.HIPASS_DPOP_REQUIRED === "1") {
+      if (!claims.cnf?.jkt) return invalid("DPOP_BOUND_TOKEN_REQUIRED", auditSessionId, claims);
+      if (!requestMeta.ingressTrusted) return invalid("TRUSTED_INGRESS_REQUIRED", auditSessionId, claims);
+      if (requestMeta.authorizationScheme?.toLowerCase() !== "dpop") return invalid("DPOP_AUTH_SCHEME_REQUIRED", auditSessionId, claims);
+      const proof = await this.verifyDPoPProof(requestMeta.dpopProof, {
+        method: requestMeta.method, url: requestMeta.externalUrl, expectedPublicKeyThumbprint: claims.cnf.jkt,
+        accessToken: rawToken, requireAbsoluteUrl: true, requestMeta,
+      });
+      if (!proof.valid) return invalid(proof.reason, auditSessionId, claims, proof.statusCode);
     }
     return { active: true, claims };
   }
@@ -1409,7 +1479,7 @@ export class HipassService {
       throw new ServiceValidationError("PERMISSION_DENIED_VIEW_ONLY", "PACS Import requires DOWNLOAD_ALLOWED permission; VIEW_ONLY consents cannot be imported into remote PACS");
     }
 
-    // Execute actual DICOM binary transfer into Hospital B PACS archive
+    // Local encrypted archive simulator; no destination PACS registration claim.
     let importReceipt;
     try {
       importReceipt = await importStudyToHospitalBPacs({
@@ -1418,10 +1488,20 @@ export class HipassService {
         studyData: study,
         patientId: study.patientId,
         targetHospitalId,
+        kek: this.hospitalArchiveKek,
+        allowSynthetic: this.allowSyntheticArchive,
         ...(input.destDir || input.baseDestDir ? { baseDestDir: input.destDir || input.baseDestDir } : {}),
       });
     } catch (err) {
-      throw new ServiceValidationError("PACS_IMPORT_FAILED", `PACS import engine error: ${err.message}`);
+      await this.writeAudit({
+        auditSessionId: makeId("audit-session"), actorType: ActorType.DOCTOR,
+        actorId: input.doctorId, patientId: study.patientId, consentId: consent.consentId,
+        sourceHospitalId: study.sourceHospitalId, targetHospitalId,
+        action: "IMAGE_TRANSFER", studyInstanceUid: study.studyInstanceUid,
+        result: "FAIL", reason: "PACS_IMPORT_FAILED",
+        ipAddress: requestMeta.ipAddress, userAgent: requestMeta.userAgent,
+      });
+      throw new ServiceValidationError("PACS_IMPORT_FAILED", "Hospital archive operation failed", [], 503);
     }
 
     const auditSessionId = makeId("audit-session");
@@ -1446,7 +1526,7 @@ export class HipassService {
 
     return {
       status: "COMPLETED",
-      transferMethod: importReceipt.transferMethod || "STOW_RS_DIRECT_ARCHIVE",
+      transferMethod: importReceipt.transferMethod,
       studyInstanceUid: study.studyInstanceUid,
       sourceHospitalId: study.sourceHospitalId,
       targetHospitalId,
@@ -1455,8 +1535,8 @@ export class HipassService {
       sha256: importReceipt.sha256,
       encryptedAtRest: importReceipt.encryptedAtRest ?? true,
       cipherSuite: importReceipt.cipherSuite ?? "AES-256-GCM",
-      destinationVerification: true,
-      destinationPath: importReceipt.destinationPath,
+      destinationVerification: false,
+      simulation: true,
       auditSessionId,
       timestamp: this.clock(),
     };
@@ -1472,7 +1552,7 @@ export class HipassService {
 
   async gatewayListStudies(rawToken, requestMeta = {}) {
     const tokenStatus = await this.verifyDicomAccessToken(rawToken, {}, requestMeta);
-    if (!tokenStatus.active) return { status: 403, body: { error: tokenStatus.reason } };
+    if (!tokenStatus.active) return { status: tokenStatus.statusCode ?? 403, body: { error: tokenStatus.reason } };
     const { claims } = tokenStatus;
     let result;
     try {
@@ -1497,7 +1577,7 @@ export class HipassService {
       studyInstanceUid,
       requestedAction: RequestedAction.VIEW,
     }, requestMeta);
-    if (!tokenStatus.active) return { status: 403, body: { error: tokenStatus.reason } };
+    if (!tokenStatus.active) return { status: tokenStatus.statusCode ?? 403, body: { error: tokenStatus.reason } };
     const { claims } = tokenStatus;
     let result;
     try {
@@ -1526,7 +1606,7 @@ export class HipassService {
       seriesInstanceUid,
       requestedAction: RequestedAction.VIEW,
     }, requestMeta);
-    if (!tokenStatus.active) return { status: 403, body: { error: tokenStatus.reason } };
+    if (!tokenStatus.active) return { status: tokenStatus.statusCode ?? 403, body: { error: tokenStatus.reason } };
     const { claims } = tokenStatus;
     let result;
     try {
@@ -1553,7 +1633,7 @@ export class HipassService {
       seriesInstanceUid,
       requestedAction: RequestedAction.VIEW,
     }, requestMeta);
-    if (!tokenStatus.active) return { status: 403, body: { error: tokenStatus.reason }, contentType: "application/json" };
+    if (!tokenStatus.active) return { status: tokenStatus.statusCode ?? 403, body: { error: tokenStatus.reason }, contentType: "application/json" };
     const { claims } = tokenStatus;
     let result;
     try {
@@ -1584,7 +1664,7 @@ export class HipassService {
       seriesInstanceUid,
       requestedAction: RequestedAction.VIEW,
     }, requestMeta);
-    if (!tokenStatus.active) return { status: 403, body: { error: tokenStatus.reason }, contentType: "application/json" };
+    if (!tokenStatus.active) return { status: tokenStatus.statusCode ?? 403, body: { error: tokenStatus.reason }, contentType: "application/json" };
     const { claims } = tokenStatus;
     let result;
     try {
@@ -1617,7 +1697,7 @@ export class HipassService {
       seriesInstanceUid,
       requestedAction: RequestedAction.DOWNLOAD,
     }, requestMeta);
-    if (!tokenStatus.active) return { status: 403, body: { error: tokenStatus.reason }, contentType: "application/json" };
+    if (!tokenStatus.active) return { status: tokenStatus.statusCode ?? 403, body: { error: tokenStatus.reason }, contentType: "application/json" };
     const { claims } = tokenStatus;
     let result;
     try {
@@ -1694,7 +1774,7 @@ export class HipassService {
 
   async listSeries(rawToken, studyInstanceUid, auditSessionId, requestMeta = {}) {
     const tokenStatus = this.introspectToken(rawToken, studyInstanceUid);
-    if (!tokenStatus.active) return { status: 403, body: { error: tokenStatus.reason } };
+    if (!tokenStatus.active) return { status: tokenStatus.statusCode ?? 403, body: { error: tokenStatus.reason } };
     const study = this.store.get("imagingStudies").find((item) => item.studyInstanceUid === studyInstanceUid);
     if (!study) return { status: 404, body: { error: "STUDY_NOT_FOUND" } };
 
@@ -1724,7 +1804,7 @@ export class HipassService {
 
   async retrieveStudy(rawToken, studyInstanceUid, auditSessionId, requestMeta = {}) {
     const tokenStatus = this.introspectToken(rawToken, studyInstanceUid);
-    if (!tokenStatus.active) return { status: 403, body: { error: tokenStatus.reason } };
+    if (!tokenStatus.active) return { status: tokenStatus.statusCode ?? 403, body: { error: tokenStatus.reason } };
     const study = this.store.get("imagingStudies").find((item) => item.studyInstanceUid === studyInstanceUid);
     if (!study) return { status: 404, body: { error: "STUDY_NOT_FOUND" } };
 
@@ -1760,7 +1840,7 @@ export class HipassService {
 
   async retrieveSeries(rawToken, studyInstanceUid, seriesInstanceUid, auditSessionId, requestMeta = {}) {
     const tokenStatus = this.introspectToken(rawToken, studyInstanceUid, seriesInstanceUid);
-    if (!tokenStatus.active) return { status: 403, body: { error: tokenStatus.reason } };
+    if (!tokenStatus.active) return { status: tokenStatus.statusCode ?? 403, body: { error: tokenStatus.reason } };
     const study = this.store.get("imagingStudies").find((item) => item.studyInstanceUid === studyInstanceUid);
     const series = study?.series.find((item) => item.seriesInstanceUid === seriesInstanceUid);
     if (!study) return { status: 404, body: { error: "STUDY_NOT_FOUND" } };
@@ -1801,7 +1881,7 @@ export class HipassService {
 
   listInstances(rawToken, studyInstanceUid, seriesInstanceUid) {
     const tokenStatus = this.introspectToken(rawToken, studyInstanceUid, seriesInstanceUid);
-    if (!tokenStatus.active) return { status: 403, body: { error: tokenStatus.reason } };
+    if (!tokenStatus.active) return { status: tokenStatus.statusCode ?? 403, body: { error: tokenStatus.reason } };
     const study = this.store.get("imagingStudies").find((item) => item.studyInstanceUid === studyInstanceUid);
     const series = study?.series.find((item) => item.seriesInstanceUid === seriesInstanceUid);
     if (!series) return { status: 404, body: { error: "SERIES_NOT_FOUND" } };
@@ -1816,40 +1896,14 @@ export class HipassService {
   }
 
   async writeAudit(input) {
-    const auditLogs = this.store.get("auditLogs");
-    const previousHash = auditLogs.at(-1)?.recordHash ?? null;
-    const createdAt = input.createdAt ?? this.clock();
-    const reasonCode = input.reasonCode ?? input.reason ?? null;
-    const log = {
-      auditId: makeId("audit"),
-      auditSessionId: input.auditSessionId ?? makeId("session"),
-      actorType: input.actorType,
-      actorId: input.actorId,
-      hospitalId: input.hospitalId ?? input.targetHospitalId ?? input.sourceHospitalId ?? null,
-      patientId: input.patientId ?? null,
-      consentId: input.consentId ?? null,
-      ticketId: input.ticketId ?? null,
-      sourceHospitalId: input.sourceHospitalId ?? null,
-      targetHospitalId: input.targetHospitalId ?? null,
-      action: input.action,
-      studyInstanceUid: input.studyInstanceUid ?? null,
-      seriesInstanceUid: input.seriesInstanceUid ?? null,
-      sopInstanceUid: input.sopInstanceUid ?? null,
-      ipAddress: input.ipAddress ?? null,
-      userAgent: input.userAgent ?? null,
-      ja3Fingerprint: input.ja3Fingerprint ?? null,
-      createdAt,
-      result: input.result,
-      reason: reasonCode,
-      reasonCode,
-      previousHash,
-      recordHash: null,
+    const append = () => {
+      const auditLogs = this.store.get("auditLogs");
+      const log = buildAuditLog(input, auditLogs.at(-1)?.recordHash ?? null, input.createdAt ?? this.clock());
+      auditLogs.push(log);
+      return log;
     };
-    log.recordHash = auditRecordHash(log);
-    auditLogs.push(log);
-    if (!input.skipAnomalyDetection) {
-      await this.detectAnomaliesFor(log);
-    }
+    const log = typeof this.store.runAuditMutation === 'function' ? await this.store.runAuditMutation(append) : append();
+    if (!input.skipAnomalyDetection) await this.detectAnomaliesFor(log);
   }
 
   async recordAuditMutationDenied(input = {}) {
@@ -1868,15 +1922,10 @@ export class HipassService {
 
   normalizeAuditLogChain() {
     const auditLogs = this.store.get("auditLogs");
-    let previousHash = null;
-    for (const log of auditLogs) {
-      log.hospitalId ??= log.targetHospitalId ?? log.sourceHospitalId ?? null;
-      log.reasonCode ??= log.reason ?? null;
-      log.ja3Fingerprint ??= null;
-      log.previousHash = previousHash;
-      log.recordHash = auditRecordHash({ ...log, recordHash: null });
-      previousHash = log.recordHash;
-    }
+    const ordered = orderStoredAuditChain(auditLogs);
+    // Existing method name retained; no normalization/re-signing of records.
+    for (let index = 0; index < ordered.length; index++) auditLogs[index] = ordered[index];
+    if (!this.verifyAuditIntegrity().ok) throw new Error("AUDIT_CHAIN_INTEGRITY_REQUIRED");
   }
 
   listAuditLogs(filters = {}) {
@@ -2280,32 +2329,31 @@ export class HipassService {
     };
   }
 
-  checkAndRecordDPoPNonce(jti) {
-    if (!jti || typeof jti !== "string") return false;
-    const nowMs = new Date(this.clock()).getTime();
-
-    const purgeBeforeMs = nowMs - 120_000;
-    for (const [cachedJti, timestampMs] of this.dpopNonceCache.entries()) {
-      if (timestampMs < purgeBeforeMs) {
-        this.dpopNonceCache.delete(cachedJti);
-      }
-    }
-
-    if (this.dpopNonceCache.has(jti)) {
-      return false; // Replayed
-    }
-
-    this.dpopNonceCache.set(jti, nowMs);
-    return true; // Fresh
+  async verifyIssuanceProof(requestMeta) {
+    return requestMeta.ingressTrusted ? this.verifyDPoPProof(requestMeta.dpopProof, {
+      method: requestMeta.method, url: requestMeta.externalUrl, requireAbsoluteUrl: true, requestMeta,
+    }) : { valid: false, reason: "TRUSTED_INGRESS_REQUIRED" };
   }
 
-  async verifyDPoPProof(dpopJwt, { method = "GET", url = "/", expectedPublicKeyThumbprint = null, requestMeta = {} } = {}) {
+  async recordProofStoreFailure(meta, reason) {
+    try {
+      await this.writeAudit({ ...meta, action: AuditAction.TOKEN_INVALID, result: "FAIL", reason, skipAnomalyDetection: true });
+      await this.store.save();
+      return "RECORDED";
+    } catch {
+      // DB outages cannot be turned into token validity or an invented audit PASS.
+      console.warn("DPOP_STORE_FAILURE_AUDIT_NOT_RECORDED");
+      return "NOT_RECORDED";
+    }
+  }
+
+  async verifyDPoPProof(dpopJwt, { method = "GET", url = "/", expectedPublicKeyThumbprint = null, accessToken = null, requireAbsoluteUrl = false, requestMeta = {} } = {}) {
     if (!dpopJwt || typeof dpopJwt !== "string") {
       return { valid: false, reason: AccessDenyReason.DPOP_PROOF_REQUIRED };
     }
 
     const parts = dpopJwt.split(".");
-    if (parts.length !== 3) {
+    if (dpopJwt.length > 8192 || parts.length !== 3 || parts.some((part) => !/^[A-Za-z0-9_-]+$/.test(part))) {
       return { valid: false, reason: AccessDenyReason.DPOP_SIGNATURE_INVALID };
     }
 
@@ -2318,12 +2366,12 @@ export class HipassService {
       return { valid: false, reason: AccessDenyReason.DPOP_SIGNATURE_INVALID };
     }
 
-    if (header.typ !== "dpop+jwt" || header.alg !== "ES256" || !header.jwk) {
+    if (!header || !payload || header.typ !== "dpop+jwt" || header.alg !== "ES256" || !header.jwk || header.crit) {
       return { valid: false, reason: AccessDenyReason.DPOP_SIGNATURE_INVALID };
     }
 
     const jwk = header.jwk;
-    if (jwk.kty !== "EC" || jwk.crv !== "P-256" || !jwk.x || !jwk.y) {
+    if (jwk.kty !== "EC" || jwk.crv !== "P-256" || !jwk.x || !jwk.y || Object.hasOwn(jwk, "d")) {
       return { valid: false, reason: AccessDenyReason.DPOP_SIGNATURE_INVALID };
     }
 
@@ -2336,23 +2384,47 @@ export class HipassService {
       return { valid: false, reason: AccessDenyReason.DPOP_SIGNATURE_INVALID };
     }
 
-    if (String(payload.htm).toUpperCase() !== String(method).toUpperCase()) {
+    if (typeof payload.htm !== "string" || payload.htm !== method) {
       return { valid: false, reason: AccessDenyReason.DPOP_METHOD_MISMATCH };
     }
 
-    const normalizedRequestPath = (url.startsWith("http") ? new URL(url).pathname : url.split("?")[0]).toLowerCase();
-    const normalizedProofPath = (payload.htu.startsWith("http") ? new URL(payload.htu).pathname : payload.htu.split("?")[0]).toLowerCase();
-    if (normalizedRequestPath !== normalizedProofPath) {
+    let matchingUri = false;
+    try {
+      if (requireAbsoluteUrl) {
+        const requested = new URL(url);
+        const proofUrl = new URL(payload.htu);
+        matchingUri = requested.protocol === "https:" && proofUrl.protocol === "https:" && !proofUrl.username && !proofUrl.password && !proofUrl.search && !proofUrl.hash && requested.origin === proofUrl.origin && requested.pathname === proofUrl.pathname;
+      } else {
+        matchingUri = typeof payload.htu === "string" && url.split("?")[0] === payload.htu.split("?")[0];
+      }
+    } catch {}
+    if (!matchingUri) {
       return { valid: false, reason: AccessDenyReason.DPOP_URI_MISMATCH };
     }
 
     const nowEpochSeconds = Math.floor(new Date(this.clock()).getTime() / 1000);
     const iatSeconds = Number(payload.iat);
-    if (Number.isNaN(iatSeconds) || Math.abs(nowEpochSeconds - iatSeconds) > 60) {
+    if (typeof payload.iat !== "number" || !Number.isSafeInteger(iatSeconds) || Math.abs(nowEpochSeconds - iatSeconds) > 60) {
       return { valid: false, reason: AccessDenyReason.DPOP_PROOF_EXPIRED };
     }
 
-    const isFreshNonce = this.checkAndRecordDPoPNonce(payload.jti);
+    if (typeof payload.jti !== "string" || !payload.jti.length || payload.jti.length > 128) return { valid: false, reason: AccessDenyReason.DPOP_SIGNATURE_INVALID };
+    if (accessToken && payload.ath !== createHash("sha256").update(accessToken).digest("base64url")) return { valid: false, reason: "DPOP_ATH_MISMATCH" };
+    try {
+      const pubKey = createPublicKey({ key: jwk, format: "jwk" });
+      const signature = Buffer.from(signatureB64, "base64url");
+      if (signature.length !== 64 || !verify("SHA256", Buffer.from(`${headerB64}.${payloadB64}`), { key: pubKey, dsaEncoding: "ieee-p1363" }, signature)) return { valid: false, reason: AccessDenyReason.DPOP_SIGNATURE_INVALID };
+    } catch { return { valid: false, reason: AccessDenyReason.DPOP_SIGNATURE_INVALID }; }
+
+    // Signature first; an attacker cannot poison the replay cache with a forgery.
+    const proofHash = createHash("sha256").update(JSON.stringify([this.dicomTokenIssuer, calculatedThumbprint, payload.jti])).digest("hex");
+    let isFreshNonce;
+    try {
+      isFreshNonce = await this.dpopReplayStore.consume(proofHash, new Date(this.clock()).getTime());
+      if (typeof isFreshNonce !== "boolean") throw new Error("Invalid replay store result");
+    } catch (error) {
+      return { valid: false, reason: ["DPOP_REPLAY_CLOCK_SKEW", "DPOP_REPLAY_STORE_FULL"].includes(error.code) ? error.code : "DPOP_REPLAY_STORE_UNAVAILABLE", statusCode: 503 };
+    }
     if (!isFreshNonce) {
       await this.writeAudit({
         auditSessionId: requestMeta.auditSessionId ?? makeId("session"),
@@ -2369,18 +2441,6 @@ export class HipassService {
       });
 
       return { valid: false, reason: AccessDenyReason.DPOP_NONCE_REPLAYED };
-    }
-
-    try {
-      const pubKey = createPublicKey({ key: jwk, format: "jwk" });
-      const signedData = Buffer.from(`${headerB64}.${payloadB64}`, "utf8");
-      const signatureBytes = Buffer.from(signatureB64, "base64url");
-      const isSigValid = verify("SHA256", signedData, { key: pubKey, dsaEncoding: "ieee-p1363" }, signatureBytes);
-      if (!isSigValid) {
-        return { valid: false, reason: AccessDenyReason.DPOP_SIGNATURE_INVALID };
-      }
-    } catch {
-      return { valid: false, reason: AccessDenyReason.DPOP_SIGNATURE_INVALID };
     }
 
     return {
@@ -2975,6 +3035,21 @@ function isUnusualDownloadHour(iso, rules) {
   const start = rules.unusualDownloadStartHour;
   const end = rules.unusualDownloadEndHour;
   return start <= end ? hour >= start && hour < end : hour >= start || hour < end;
+}
+
+export function buildAuditLog(input, previousHash, createdAt, auditId = makeId('audit')) {
+  const reasonCode = input.reasonCode ?? input.reason ?? null;
+  const log = { auditId, auditSessionId: input.auditSessionId ?? makeId('session'),
+    actorType: input.actorType, actorId: input.actorId,
+    hospitalId: input.hospitalId ?? input.targetHospitalId ?? input.sourceHospitalId ?? null,
+    patientId: input.patientId ?? null, consentId: input.consentId ?? null, ticketId: input.ticketId ?? null,
+    sourceHospitalId: input.sourceHospitalId ?? null, targetHospitalId: input.targetHospitalId ?? null,
+    action: input.action, studyInstanceUid: input.studyInstanceUid ?? null, seriesInstanceUid: input.seriesInstanceUid ?? null,
+    sopInstanceUid: input.sopInstanceUid ?? null, ipAddress: input.ipAddress ?? null, userAgent: input.userAgent ?? null,
+    ja3Fingerprint: input.ja3Fingerprint ?? null, createdAt, result: input.result, reason: reasonCode, reasonCode,
+    previousHash, recordHash: null };
+  log.recordHash = auditRecordHash(log);
+  return log;
 }
 
 function auditRecordHash(log) {

@@ -51,7 +51,7 @@ export function sendProblem(response, problem) {
 export function getBearerToken(request) {
   const header = request.headers.authorization ?? "";
   const [scheme, token] = header.split(" ");
-  return scheme?.toLowerCase() === "bearer" ? token : null;
+  return ["bearer", "dpop"].includes(scheme?.toLowerCase()) ? token : null;
 }
 
 export async function serveStatic(response, pathname) {

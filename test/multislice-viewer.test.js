@@ -6,12 +6,17 @@ import path from "node:path";
 import { JsonStore } from "../src/store.js";
 import { HipassService } from "../src/services.js";
 import { Role, RequestedAction } from "../src/domain.js";
+import { OrthancClient } from "../src/orthanc-client.js";
 
 test("Multi-Slice CT/MRI Stack Navigation & WADO-RS Rendered Slices", async (t) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "hipass-multislice-"));
   const store = new JsonStore(path.join(dir, "db.json"));
   await store.load();
-  const service = new HipassService(store, () => new Date().toISOString(), { tokenSecret: "test-secret-key-12345" });
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const orthancClient = new OrthancClient();
+  orthancClient.qidoInstances = async (study, series) => orthancClient.qidoCuratedInstances(study, series);
+  orthancClient.wadoRenderedInstance = async (study, series, sop) => orthancClient.wadoCuratedRenderedInstance(study, series, sop);
+  const service = new HipassService(store, () => new Date().toISOString(), { tokenSecret: "test-secret-key-12345", orthancClient });
 
   const ctStudyUid = "1.2.410.200003.1037.1.0.1357867.20070207.132600.80505.1";
   const ctSeriesUid = "1.3.12.2.1107.5.1.4.50511.30000007020708010365600000031";
@@ -59,7 +64,7 @@ test("Multi-Slice CT/MRI Stack Navigation & WADO-RS Rendered Slices", async (t) 
     }
   });
 
-  await t.test("WADO-RS /rendered endpoint returns authentic rendered BMP slice for CT", async () => {
+  await t.test("Rendered synthetic fixture returns a BMP slice (not a clinical image)", async () => {
     const listRes = await service.gatewayListInstances(token, ctStudyUid, ctSeriesUid);
     const firstSop = listRes.body[0]["00080018"].Value[0];
 

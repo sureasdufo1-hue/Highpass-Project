@@ -42,7 +42,7 @@ try {
   await readiness();
   if (mode === "--readiness" || mode === "--start") finish();
 
-  await run("unit-integration", process.execPath, ["--test"]);
+  await run("unit-integration", process.execPath, ["--test", "--test-concurrency=4"]);
   await run("certificate-expiry", process.execPath, ["scripts/operations-expiry-check.js"]);
   await run("expired-certificate-fixture", process.execPath, ["scripts/cert-fixture-check.js"]);
   await run("https-e2e", process.execPath, ["scripts/e2e-integration-test.js"], {

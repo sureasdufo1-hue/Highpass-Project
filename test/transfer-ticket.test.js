@@ -3,12 +3,37 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { randomBytes } from "node:crypto";
 import { JsonStore } from "../src/store.js";
 import { HipassService, ServiceValidationError } from "../src/services.js";
 
 const STUDY_001 = "1.2.410.100.1.20260620.001";
 const SERIES_001_1 = "1.2.410.100.1.20260620.001.1";
 const STUDY_002 = "1.2.410.100.1.20260518.002";
+
+test('patient ticket status is ownership-bound, minimal, audited and clock-effective', async () => {
+  const { dir, service, clock, store } = await createService();
+  try {
+    const { approval } = await issueTicket(service);
+    const id = approval.consentId, ticketId = approval.ticketId;
+    assert.equal(await service.viewPatientTicketStatus(id, ticketId, 'P-1002'), null);
+    assert.equal(await service.viewPatientTicketStatus('wrong-consent', ticketId, 'P-1001'), null);
+    const issued = await service.viewPatientTicketStatus(id, ticketId, 'P-1001');
+    assert.equal(issued.status, 'ISSUED');
+    assert.deepEqual(Object.keys(issued).sort(), ['consentId', 'expiresAt', 'status', 'ticketId']);
+    assert.ok(store.get('auditLogs').some(log => log.action === 'TICKET_STATUS_VIEWED' && log.ticketId === ticketId));
+    const stored = store.get('transferTickets').find(row => row.ticketId === ticketId);
+    stored.status = 'USED';
+    assert.equal((await service.viewPatientTicketStatus(id, ticketId, 'P-1001')).status, 'USED');
+    clock.advance(11);
+    assert.equal((await service.viewPatientTicketStatus(id, ticketId, 'P-1001')).status, 'EXPIRED');
+    assert.equal(stored.status, 'USED', 'GET does not mutate stored lifecycle');
+    await service.revokeConsent(id, 'P-1001');
+    assert.equal((await service.viewPatientTicketStatus(id, ticketId, 'P-1001')).status, 'REVOKED');
+    stored.status = 'UNKNOWN';
+    await assert.rejects(service.viewPatientTicketStatus(id, ticketId, 'P-1001'), /unavailable/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
 
 function clockAt(startMs) {
   const state = { now: startMs };
@@ -419,7 +444,7 @@ test("Viewer handoff derives scope from the ticket, returns context, and rejects
 });
 
 test("executePacsImport requires active patient consent and records SHA-256 integrity and audit", async () => {
-  const { dir, service, store } = await createService();
+  const { dir, service, store } = await createService({ hospitalArchiveKek: randomBytes(32), allowSyntheticArchive: true });
   try {
     const consent = await service.createConsent({
       patientId: "P-1001",
@@ -436,13 +461,15 @@ test("executePacsImport requires active patient consent and records SHA-256 inte
       doctorId: "DOC-B-01",
       targetHospitalId: "HOSP-B",
       studyInstanceUid: STUDY_001,
+      destDir: path.join(dir, "archive"),
     });
 
     assert.equal(result.status, "COMPLETED");
     assert.equal(result.studyInstanceUid, STUDY_001);
     assert.equal(result.sourceHospitalId, "HOSP-A");
     assert.equal(result.targetHospitalId, "HOSP-B");
-    assert.equal(result.destinationVerification, true);
+    assert.equal(result.destinationVerification, false);
+    assert.equal(result.transferMethod, "LOCAL_ENCRYPTED_ARCHIVE_SIMULATOR");
     assert.match(result.sha256, /^[a-f0-9]{64}$/);
     assert.ok(result.auditSessionId);
 
