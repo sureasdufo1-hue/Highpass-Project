@@ -4,6 +4,8 @@
 
 ## 환자 Control 배포 준비 계약
 
+2026-10-10 검증 추가: `python scripts/patient-vault-integration-ops.py --phantom CT --browser` 및 `--phantom MR --browser`는 실제 VM-local Vault·고정 합성 PACS·격리 SQL에 공통 Viewer의 Chrome 검증을 연결한다. VM 암호는 concealed 로컬 입력에만 전달한다. `--browser` 단독 실행은 거부한다. 신뢰된 로컬 HTTPS에 자체 launcher/메모리 시험 PATIENT JWT를 제공하고 API/영상 요청은 실제 기존 handler에 전달한다. DPoP·서명 ingress·authority·release 정책을 mock PASS로 대체하지 않는다. 각 modality의 두 실제256×256 SOP와 Grant 철회 후 신규 접근 거부/PACS 읽기 불변을 확인했다. 현재 상태 문서의 신규 증적은 DRAFT / UNASSIGNED이다. 이는 실제 공개 배포 ingress·전체 환자/모바일 로그인 화면·동의 철회 API 또는12개 전체 pixel 검증이 아니다.
+
 명시적 준비 도구 `scripts/prepare-capstone-patient-database.js`는 기본 preflight이며 `--apply`에서만 변경한다. 별도 `capstone-patient-preparation.compose.yml`의 `patient-preparation` profile은 bootstrap admin/password와 새 전용 password 파일만 준비 컨테이너에 readonly mount한다. Control에 admin key를 전달하지 않는다. 신규 소스 이미지 재빌드 후 `docker compose -f infra/azure/capstone-control.compose.yml -f infra/azure/capstone-patient-preparation.compose.yml --profile patient-preparation run --rm patient-prepare`로 preflight한다. 승인된 실제 변경 시에만 같은 명령의 서비스 뒤에 `scripts/prepare-capstone-patient-database.js --apply`를 추가한다. 이번에는 이 명령을 배포 DB에서 실행하지 않았다.
 
 준비는 advisory transaction lock·2초 lock timeout·5초 statement timeout을 적용한다. migration033~036과 별도 LOGIN/선별 권한을 한 transaction에서 생성하며 실패 시 rollback한다. 기존 계정 또는 부분/전체 객체가 존재하면 암호 회전·DROP·권한 보정 없이 중단한다. 재실행 거부는 이 도구의 의도된 기존 상태 보호이며 멱등 업데이트 성공이 아니다. 합성 환자/ref는 자동 등록하지 않는다. SELECT FOR SHARE에 필요한 특정 column UPDATE는 남지만 audit UPDATE/DELETE·release metadata UPDATE·table-wide UPDATE·schema CREATE·관리 role membership은 부여하지 않는다. DB 준비 성공과 실제 파일-mount 서비스 시작·브라우저 검증을 구분한다.

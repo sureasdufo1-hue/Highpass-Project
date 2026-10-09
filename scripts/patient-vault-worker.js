@@ -42,6 +42,19 @@ for await(const line of createInterface({input:process.stdin,crlfDelay:Infinity}
     if(role==='A' && input.operation==='stats'){
       console.log(JSON.stringify({ok:true,pacsReads}));continue;
     }
+    if(role==='A' && input.operation==='metadata'){
+      const modality=input.params.pacs;
+      if(!['CT','MR'].includes(modality))throw new Error('PATIENT_PACS_SCOPE_INVALID');
+      const study='1.2.826.0.1.3680043.10.5432.20261009.'+(modality==='CT'?'1':'2'),series=study+'.1';
+      if(input.params.path!==`/dicom-web/studies/${study}/series/${series}/instances`)throw new Error('PATIENT_PACS_SCOPE_INVALID');
+      const origin=process.env.HIPASS_PROBE_PACS_ORIGIN;
+      if(!/^https:\/\/(?:10\.[0-9.]+|172\.(?:1[6-9]|2[0-9]|3[01])\.[0-9.]+|192\.168\.[0-9.]+):8443$/.test(origin??''))throw new Error('PATIENT_PRIVATE_PACS_REQUIRED');
+      phase='PACS_QIDO';const metadata=await boundedHttps(origin,input.params.path,{tls:{ca:readFileSync('/run/pacs/ca.crt'),cert:readFileSync('/run/pacs/gateway-client.crt'),key:readFileSync('/run/pacs/gateway-client.key'),servername:'hospital-a-orthanc-mtls'},timeoutMs:5000,maxBytes:1024*1024,headers:{accept:'application/dicom+json'}});
+      plain=metadata.body;if(metadata.status!==200)throw new Error('PATIENT_PACS_QIDO_FAILED');
+      const rows=JSON.parse(plain.toString()),expected=new Set(Array.from({length:12},(_,i)=>series+'.'+(i+1)));
+      if(rows.length!==12 || rows.some(row=>!expected.delete(row['00080018']?.Value?.[0])) || expected.size)throw new Error('PATIENT_PACS_UID_INVALID');
+      console.log(JSON.stringify({ok:true,contentType:'application/dicom+json',body:plain.toString('base64'),pacsEvidence:{modality,study,series,instances:12},pacsReads}));continue;
+    }
     if(role==='A' && input.operation==='seal'){
       const c=JSON.parse(Buffer.from(input.params.receipt.split('.')[0],'base64url'));
       scopeChecks={path:c.path===new URL(input.params.route.externalUrl).pathname,grant:c.claims.jti===input.params.scope.tokenId,
@@ -53,7 +66,7 @@ for await(const line of createInterface({input:process.stdin,crlfDelay:Infinity}
         if(!['CT','MR'].includes(input.params.pacs) || Object.entries(scopeChecks).some(([key,value])=>key!=='remainingMs' && value!==true))throw new Error('PATIENT_PACS_SCOPE_INVALID');
         const study='1.2.826.0.1.3680043.10.5432.20261009.'+(input.params.pacs==='CT'?'1':'2');
         const series=study+'.1',sop=input.params.route.sopInstanceUid;
-        if(input.params.route.studyInstanceUid!==study || input.params.route.seriesInstanceUid!==series || ![series+'.1',series+'.2'].includes(sop))throw new Error('PATIENT_PACS_SCOPE_INVALID');
+        if(input.params.route.studyInstanceUid!==study || input.params.route.seriesInstanceUid!==series || !Array.from({length:12},(_,i)=>series+'.'+(i+1)).includes(sop))throw new Error('PATIENT_PACS_SCOPE_INVALID');
         const options={tls:{ca:readFileSync('/run/pacs/ca.crt'),cert:readFileSync('/run/pacs/gateway-client.crt'),key:readFileSync('/run/pacs/gateway-client.key'),servername:'hospital-a-orthanc-mtls'},
           timeoutMs:5000,maxBytes:1024*1024,headers:{accept:'application/dicom+json'}};
         const path=`/dicom-web/studies/${study}/series/${series}/instances`;

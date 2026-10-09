@@ -49,7 +49,13 @@ def receive(channel, seconds=30):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--phantom", choices=["CT", "MR"])
+    parser.add_argument("--browser", action="store_true")
+    parser.add_argument("--full-app", action="store_true")
     args = parser.parse_args()
+    if args.browser and not args.phantom:
+        parser.error("--browser requires --phantom CT or MR")
+    if args.full_app and (not args.browser or not args.phantom):
+        parser.error("--full-app requires --browser and --phantom CT or MR")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_id = secrets.token_hex(6)
     directory = ROOT / "artifacts/workstation" / ("patient-vault-" + stamp + "-" + run_id)
@@ -103,7 +109,7 @@ def main():
         def do_POST(self):
             self.connection.settimeout(30)
             try:
-                if not hmac.compare_digest(self.headers.get("x-probe-key", ""), bridge_key) or self.path not in ["/seal", "/open", "/stats"]:
+                if not hmac.compare_digest(self.headers.get("x-probe-key", ""), bridge_key) or self.path not in ["/seal", "/open", "/stats", "/metadata"]:
                     self.send_error(403)
                     return
                 size = int(self.headers.get("content-length", "0"))
@@ -205,11 +211,11 @@ def main():
                            "sourceDigest": source_digest, "sourceFiles": len(hashes), "observedClockDeltaMs": ready.get("nowMs", 0) - int(time.time() * 1000)})
         server = ThreadingHTTPServer(("127.0.0.1", 0), Bridge)
         threading.Thread(target=server.serve_forever, daemon=True).start()
-        child = subprocess.Popen(["node", "scripts/verify-patient-self-view-postgres.js"], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        child = subprocess.Popen(["node", "scripts/verify-patient-full-app.js" if args.full_app else "scripts/verify-patient-self-view-postgres.js"], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             env={**os.environ, "HIPASS_PATIENT_PROBE_BRIDGE": "http://127.0.0.1:" + str(server.server_port),
-                 "HIPASS_PATIENT_PROBE_SECRET": bridge_key, "HIPASS_PATIENT_PROBE_KEY_ID": registry["keyId"], "HIPASS_PATIENT_PROBE_PHANTOM": args.phantom or ""})
+                 "HIPASS_PATIENT_PROBE_SECRET": bridge_key, "HIPASS_PATIENT_PROBE_KEY_ID": registry["keyId"], "HIPASS_PATIENT_PROBE_PHANTOM": args.phantom or "", "HIPASS_PATIENT_PROBE_BROWSER": "1" if args.browser else "0"})
         # Nonsecret fixed synthetic profile. Original no-argument one-pixel gate stays available.
-        stdout, _stderr = child.communicate(timeout=150)
+        stdout, _stderr = child.communicate(timeout=240 if args.browser else 150)
         summary = json.loads(stdout)
         checks.append({"test": "ISOLATED_SQL_ACTUAL_VM_PATIENT_VAULT_FLOW", "status": "PASS" if child.returncode == 0 and summary.get("status") == "PASS" else "FAIL"})
     except Exception as error:
@@ -249,7 +255,7 @@ def main():
         if trust:
             trust.close()
         credential = None
-    result = {"review": "DRAFT / UNASSIGNED", "scope": "VM-local actual Azure patient crypto with isolated SQL; " + ("actual A synthetic PACS " + args.phantom if args.phantom else "one-pixel fixture") + "; not browser/public edge TLS/deployment",
+    result = {"review": "DRAFT / UNASSIGNED", "scope": "VM-local actual Azure patient crypto with isolated SQL; " + ("actual A synthetic PACS " + args.phantom if args.phantom else "one-pixel fixture") + ("; actual Chrome common Viewer via trusted local HTTPS" if args.browser else "; not browser") + "; not full app/login/public edge deployment",
               "checks": checks, "operations": operations, "integration": summary,
               "status": "FAIL" if any(c["status"] == "FAIL" for c in checks) else "PASS" if len(checks) == 7 and all(c["status"] == "PASS" for c in checks) else "NOT VERIFIED"}
     (directory / "result.json").write_text(json.dumps(result, indent=2), encoding="utf8")

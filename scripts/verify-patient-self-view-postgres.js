@@ -1,5 +1,5 @@
 // Isolated synthetic integration probe. Never connects to the deployed database.
-import { execFileSync } from 'node:child_process';
+import { execFileSync,spawn } from 'node:child_process';
 import { randomBytes, randomUUID, createHash, generateKeyPairSync, sign, createHmac,publicEncrypt,privateDecrypt,constants } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
@@ -27,21 +27,46 @@ import {readJson} from '../src/http-utils.js';
 import {fileURLToPath} from 'node:url';
 import {createPatientSelfViewGrantRuntime} from '../src/patient-self-view-grant-runtime.js';
 import {preparePatientDatabase} from './lib/patient-database-preparation.js';
+import {createPatientBrowserProbe} from './lib/patient-browser-integration.js';
 
 const docker = args => execFileSync('docker',args,{encoding:'utf8',timeout:15000,env:childEnv,stdio:['pipe','pipe','pipe']}).trim();
+const runDockerAsync=args=>new Promise((resolve,reject)=>{
+  const child=spawn('docker',args,{env:childEnv,windowsHide:true,stdio:['ignore','pipe','pipe']});let output='',settled=false;
+  const finish=(error)=>{if(settled)return;settled=true;clearTimeout(timer);error?reject(error):resolve(output.trim());};
+  const timer=setTimeout(()=>{child.kill();finish(Object.assign(new Error('DOCKER_START_TIMEOUT'),{code:'ETIMEDOUT'}));},30000);
+  child.stdout.on('data',chunk=>{output+=chunk;if(output.length>1024*1024){child.kill();finish(new Error('DOCKER_START_OUTPUT_LIMIT'));}});
+  child.stderr.resume();child.on('error',finish);child.on('close',code=>finish(code===0?undefined:new Error('DOCKER_START_FAILED')));
+});
 const childEnv={...process.env,POSTGRES_PASSWORD:randomBytes(32).toString('hex')};
 const name=`hp-selfview-validation-${randomUUID().slice(0,8)}`;
 let ownedId,admin,pool,legacy,http,aHttp,bHttp,cleanup=false,stage='container',failureCode,finalCounts;
+let browserProbe,browserEvidence,browserIngressSecret,browserGrantHash;
 const results=[]; const start=Date.now();
 const loginPassword=randomBytes(32).toString('hex');
 const phantomModality=process.env.HIPASS_PATIENT_PROBE_PHANTOM;
 assert.ok(!phantomModality || ['CT','MR'].includes(phantomModality));
 const studyUid=phantomModality?'1.2.826.0.1.3680043.10.5432.20261009.'+(phantomModality==='CT'?'1':'2'):'1.2.3';
 const seriesUid=studyUid+'.1',foreignSeries=studyUid+'.2';
+const browserRequested=process.env.HIPASS_PATIENT_PROBE_BROWSER==='1';
+let publicOrigin='https://synthetic.invalid';
 try {
-  const image=docker(['inspect','hipass-postgres','--format','{{.Image}}']);
+  if(browserRequested){
+    assert.ok(phantomModality && process.env.HIPASS_PATIENT_PROBE_BRIDGE,'ACTUAL_BROWSER_RESOURCES_REQUIRED');
+    browserProbe=await createPatientBrowserProbe({forward:async(req,res)=>{
+      const api=req.url.startsWith('/api/'),chunks=[];let size=0;
+      for await(const chunk of req){size+=chunk.length;assert.ok(size<=32768);chunks.push(chunk);}
+      const headers={};for(const name of ['authorization','dpop','content-type','accept'])if(typeof req.headers[name]==='string')headers[name]=req.headers[name];
+      if(api){const signature=signIngress({method:req.method,url:req.url,headers},'192.0.2.1',browserIngressSecret);
+        Object.assign(headers,{'x-forwarded-for':'192.0.2.1','x-forwarded-proto':'https','x-hipass-ingress-time':signature.timestamp,'x-hipass-ingress-signature':signature.signature});}
+      const result=await fetch(`http://127.0.0.1:${(api?http:bHttp).address().port}${req.url}`,{method:req.method,headers,body:chunks.length?Buffer.concat(chunks):undefined,signal:AbortSignal.timeout(35000)});
+      const body=Buffer.from(await result.arrayBuffer());assert.ok(body.length<=33554432);
+      if(api&&result.status===201){const issued=JSON.parse(body.toString());browserGrantHash=createHash('sha256').update(issued.accessToken).digest('hex');}
+      res.writeHead(result.status,{'content-type':result.headers.get('content-type')??'application/json','cache-control':'no-store'});res.end(body);
+    }});publicOrigin=browserProbe.origin;
+  }
+  stage='image-inspect';const image=docker(['inspect','hipass-postgres','--format','{{.Image}}']);
   assert.match(image,/^sha256:[a-f0-9]{64}$/);
-  ownedId=docker(['run','--rm','-d','--name',name,'--label','highpass.purpose=isolated-selfview-validation',
+  stage='container-start';ownedId=await runDockerAsync(['run','--rm','-d','--name',name,'--label','highpass.purpose=isolated-selfview-validation',
     '--tmpfs','/var/lib/postgresql/data:rw,size=256m',
     '-e','POSTGRES_PASSWORD','-p','127.0.0.1::5432',image]);
   assert.match(ownedId,/^[a-f0-9]{64}$/);
@@ -152,8 +177,8 @@ try {
   }}});
   const secret=randomBytes(32).toString('hex');
   const issuer=new PatientSelfViewGrantService({authority:reader,persistence:adapter,proofService:service,
-    keyProvider:new LocalDevelopmentKeyProvider(secret),allowedOrigin:'https://synthetic.invalid',enabled:true});
-  const url=`https://synthetic.invalid/api/patients/${input.patientId}/studies/${studyUid}/self-view-grants`;
+    keyProvider:new LocalDevelopmentKeyProvider(secret),allowedOrigin:publicOrigin,enabled:true});
+  const url=`${publicOrigin}/api/patients/${input.patientId}/studies/${studyUid}/self-view-grants`;
   const pair=generateKeyPairSync('ec',{namedCurve:'P-256'}),jwk=pair.publicKey.export({format:'jwk'});
   const makeProof=({method='POST',target=url,token}={})=>{
     const header=Buffer.from(JSON.stringify({typ:'dpop+jwt',alg:'ES256',jwk})).toString('base64url');
@@ -193,9 +218,10 @@ try {
     const client=await rolePool.connect();try{return await client.query({text,values,query_timeout:5000});}finally{client.release();}
   }}});
   const ingressSecret=randomBytes(32).toString('hex');
+  browserIngressSecret=ingressSecret;
   const authEnv={AUTH_MODE:'TEST',NODE_ENV:'test',TEST_JWT_SECRET:secret,JWT_ISSUER:'highpass-capstone-test-idp',JWT_AUDIENCE:'highpass-capstone-api'};
   const handler=createPatientSelfViewGrantHttpHandler({issuer,auditAuthenticationDenied:createPatientGrantAuthenticationAudit(service),authenticate:r=>authenticateRequest(r,authEnv),requestMeta:r=>({
-    ...ingressMeta(r,ingressSecret),method:r.method,externalUrl:new URL(r.url,'https://synthetic.invalid').href,dpopProof:r.headers.dpop,
+    ...ingressMeta(r,ingressSecret),method:r.method,externalUrl:new URL(r.url,publicOrigin).href,dpopProof:r.headers.dpop,
   })});
   let releaseHandler=null,releaseAuthEnv,patientAuthorizer=null;
   http=createServer(async(req,res)=>{try{
@@ -227,7 +253,7 @@ try {
   };
   const response=await call();assert.equal(response.status,201);assert.equal(response.cache,'no-store');
   assert.equal(response.referrer,'no-referrer');assert.equal(response.location,null);assert.ok(response.body.accessToken);
-  const granted=(await count()).grants;
+  let granted=(await count()).grants;
   assert.equal((await call({token:null})).status,401);
   assert.equal((await call({trusted:false})).status,403);
   assert.equal((await call({token:jwt({role:'DOCTOR',doctorId:'SYNTHETIC-DOCTOR',hospitalId:'H-B'})})).status,403);
@@ -243,15 +269,15 @@ try {
     .authenticate({headers:{'x-hipass-service-token':gatewayKey}});
   const queryPool={query:async config=>{const client=await rolePool.connect();try{return await client.query(config);}finally{client.release();}}};
   const verifier=new PatientSelfViewAuthorization({pool:queryPool,authority:new PatientSelfViewAuthorityReader({pool:queryPool,enabled:true,allowIssuedGrant:true}),
-    service,keyProvider:new LocalDevelopmentKeyProvider(secret),publicBaseUrl:'https://synthetic.invalid',sourceHospitalId:'H-A',enabled:true});
-  const patientPath=`/patient-dicomweb/studies/${studyUid}/series/${seriesUid}/instances`,patientUrl='https://synthetic.invalid'+patientPath;
+    service,keyProvider:new LocalDevelopmentKeyProvider(secret),publicBaseUrl:publicOrigin,sourceHospitalId:'H-A',enabled:true});
+  const patientPath=`/patient-dicomweb/studies/${studyUid}/series/${seriesUid}/instances`,patientUrl=publicOrigin+patientPath;
   const access={method:'GET',path:patientPath,token:response.body.accessToken,authorizationScheme:'DPoP',
     dpopProof:makeProof({method:'GET',target:patientUrl,token:response.body.accessToken})};
   const checked=await verifier.authorize(access,caller);assert.equal(checked.active,true);assert.equal(checked.scope.permission,'VIEW_ONLY');
   assert.ok(!JSON.stringify(checked).includes(access.token));
   stage='patient-key-release-ledger';
   const pixelPath=patientPath+'/'+seriesUid+'.1/rendered';
-  const pixelDecision=await verifier.authorize({...access,path:pixelPath,dpopProof:makeProof({method:'GET',target:'https://synthetic.invalid'+pixelPath,token:access.token})},caller);
+  const pixelDecision=await verifier.authorize({...access,path:pixelPath,dpopProof:makeProof({method:'GET',target:publicOrigin+pixelPath,token:access.token})},caller);
   assert.equal(pixelDecision.active,true);
   const releaseRepo=new PostgresPatientKeyReleaseRepository(queryPool);
   const remoteVault=Boolean(process.env.HIPASS_PATIENT_PROBE_BRIDGE);
@@ -313,7 +339,7 @@ try {
   // Valid synthetic one-pixel PNG fixture, NOT DICOM or the actual CT/MR PACS.
   const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jfSkAAAAASUVORK5CYII=','base64');
   let pacsReads=0;
-  const aHandler=createPatientDataPlaneHandler({publicBaseUrl:'https://synthetic.invalid',controlOrigin:'https://synthetic-control.invalid',orthancOrigin:'https://synthetic-pacs.invalid',
+  const aHandler=createPatientDataPlaneHandler({publicBaseUrl:publicOrigin,controlOrigin:'https://synthetic-control.invalid',orthancOrigin:'https://synthetic-pacs.invalid',
     serviceToken:gatewayKey,sourceHospitalId:'H-A',patientImageEncryptionFactory:control=>remoteVault
       ?{sealPatient:({body,signal,...params})=>remoteCrypto('seal',gatewayKey,{...params,pacs:phantomModality??null,body:body.toString('base64')})}
       :createPatientImageEncryptor({...rsaConfig,control}),transport:async(origin,path,options)=>{
@@ -322,12 +348,13 @@ try {
         return {status:result.status,contentType:'application/json',body:Buffer.from(JSON.stringify(result.body))};
       }
       assert.equal(origin,'https://synthetic-pacs.invalid');assert.equal(options.headers.authorization,undefined);assert.equal(options.headers.dpop,undefined);
+      if(browserRequested&&path.endsWith('/instances'))return {status:200,...await remoteCrypto('metadata',gatewayKey,{path,pacs:phantomModality})};
       pacsReads++;return {status:200,contentType:'image/png',body:Buffer.from(png)};
     }});
   aHttp=createServer(aHandler);aHttp.requestTimeout=10000;aHttp.headersTimeout=10000;
   await new Promise(resolve=>aHttp.listen(0,'127.0.0.1',resolve));
   const patientDecryption=remoteVault?{openPatient:(result,path,{token})=>remoteCrypto('open',bReleaseKey,{result:{...result,body:result.body.toString('base64')},path,token})}
-    :createPatientImageDecryptor({...rsaConfig,publicBaseUrl:'https://synthetic.invalid',control:(path,body)=>loopbackControl(path,bReleaseKey,body)});
+    :createPatientImageDecryptor({...rsaConfig,publicBaseUrl:publicOrigin,control:(path,body)=>loopbackControl(path,bReleaseKey,body)});
   let lastEncrypted;
   bHttp=createServer(createCapstoneBPortal({root:fileURLToPath(new URL('../public/',import.meta.url)),ca:Buffer.from('explicit-fixture-only'),
     patientSelfViewEnabled:true,patientImageDecryption:patientDecryption,transport:async(origin,path,options)=>{
@@ -337,7 +364,7 @@ try {
       return {status:result.status,contentType:result.headers.get('content-type'),body};
     }}));
   bHttp.requestTimeout=15000;bHttp.headersTimeout=10000;await new Promise(resolve=>bHttp.listen(0,'127.0.0.1',resolve));
-  const pipelineProof=makeProof({method:'GET',target:'https://synthetic.invalid'+pixelPath,token:access.token});
+  const pipelineProof=makeProof({method:'GET',target:publicOrigin+pixelPath,token:access.token});
   const pipelineFetch=async(token,proof,path=pixelPath)=>{
     const result=await fetch(`http://127.0.0.1:${bHttp.address().port}${path}`,{headers:{authorization:'DPoP '+token,dpop:proof},signal:AbortSignal.timeout(15000)});
     return {status:result.status,body:Buffer.from(await result.arrayBuffer())};
@@ -350,13 +377,13 @@ try {
   assert.equal(actualRelease.status,'CONSUMED');assert.equal(actualRelease.grantId,JSON.parse(Buffer.from(access.token.split('.')[1],'base64url')).jti);
   await assert.rejects(patientDecryption.openPatient(lastEncrypted,pixelPath,{token:access.token}));
   assert.equal((await pipelineFetch(access.token,pipelineProof)).status,403);
-  assert.equal((await pipelineFetch(access.token+'a',makeProof({method:'GET',target:'https://synthetic.invalid'+pixelPath,token:access.token+'a'}))).status,403);
+  assert.equal((await pipelineFetch(access.token+'a',makeProof({method:'GET',target:publicOrigin+pixelPath,token:access.token+'a'}))).status,403);
   assert.equal(pacsReads,1);
   if(phantomModality)assert.equal((await remoteCrypto('stats',gatewayKey,{})).pacsReads,1);
   let expectedPacsReads=1;
   if(phantomModality){
     const nextPath=patientPath+'/'+seriesUid+'.2/rendered';
-    const next=await pipelineFetch(access.token,makeProof({method:'GET',target:'https://synthetic.invalid'+nextPath,token:access.token}),nextPath);
+    const next=await pipelineFetch(access.token,makeProof({method:'GET',target:publicOrigin+nextPath,token:access.token}),nextPath);
     assert.equal(next.status,200);assert.equal(next.body.readUInt32BE(16),256);assert.equal(next.body.readUInt32BE(20),256);
     assert.notDeepEqual(next.body,restored.body);
     const nextPayload=JSON.parse(lastEncrypted.body);assert.equal(nextPayload.manifest.sopInstanceUid,seriesUid+'.2');
@@ -366,13 +393,29 @@ try {
   }
   results.push(remoteVault?'REAL_PG_HTTP_VM_LOCAL_PATIENT_AZURE_AES_ROUNDTRIP_AND_REPLAY_NO_PACS_SIDE_EFFECT'
     :'REAL_PG_HTTP_A_B_PATIENT_AES_RSA_FIXTURE_ROUNDTRIP_AND_REPLAY_NO_PACS_SIDE_EFFECT');
+  if(browserRequested){
+    stage='actual-browser-pacs-vault';
+    browserEvidence=await browserProbe.verify({patientId:input.patientId,study:{studyInstanceUid:studyUid,series:[{seriesInstanceUid:seriesUid}],modality:phantomModality},authentication:jwt({}),
+      stats:()=>remoteCrypto('stats',gatewayKey,{}),revoke:async()=>{
+        assert.match(browserGrantHash,/^[a-f0-9]{64}$/);
+        const row=(await admin.query("UPDATE capstone_patient_self_view_grants SET status='REVOKED' WHERE token_hash=$1 AND status='ACTIVE' RETURNING grant_id",[browserGrantHash])).rows;
+        assert.equal(row.length,1);
+      }});
+    assert.equal(browserEvidence.status,'PASS');
+    const browserGrant=(await admin.query('SELECT grant_id,status FROM capstone_patient_self_view_grants WHERE token_hash=$1',[browserGrantHash])).rows[0];
+    assert.equal(browserGrant.status,'REVOKED');
+    assert.equal((await admin.query("SELECT count(*)::int AS n FROM capstone_patient_key_releases WHERE grant_id=$1 AND status='CONSUMED'",[browserGrant.grant_id])).rows[0].n,2);
+    expectedPacsReads+=2;assert.equal(pacsReads,expectedPacsReads);assert.equal((await remoteCrypto('stats',gatewayKey,{})).pacsReads,expectedPacsReads);
+    assert.equal((await count()).grants,granted+1);granted++;
+    results.push('ACTUAL_BROWSER_PACS_VAULT_TWO_SLICES_SQL_GRANT_REVOCATION_AND_TWO_CONSUMED_RELEASES');
+  }
   assert.equal((await verifier.ready({receipt:checked.receipt,bytesPrepared:128,outcome:'READY'},caller)).accepted,true);
   assert.equal((await verifier.ready({receipt:'a'+checked.receipt,bytesPrepared:128,outcome:'READY'},caller)).accepted,false);
   assert.equal((await verifier.authorize(access,caller)).reason,'DPOP_NONCE_REPLAYED');
   assert.equal((await verifier.authorize({...access,path:patientPath.replace('/series/'+seriesUid,'/series/'+foreignSeries)},caller)).reason,'SCOPE_MISMATCH');
   const usedClaims=JSON.parse(Buffer.from(access.token.split('.')[1],'base64url'));
   await admin.query("UPDATE capstone_patient_self_view_grants SET status='REVOKED' WHERE grant_id=$1",[usedClaims.jti]);
-  assert.equal((await pipelineFetch(access.token,makeProof({method:'GET',target:'https://synthetic.invalid'+pixelPath,token:access.token}))).status,403);
+  assert.equal((await pipelineFetch(access.token,makeProof({method:'GET',target:publicOrigin+pixelPath,token:access.token}))).status,403);
   assert.equal(pacsReads,expectedPacsReads);
   if(phantomModality)assert.equal((await remoteCrypto('stats',gatewayKey,{})).pacsReads,expectedPacsReads);
   await assert.rejects(patientRelease.authorize({...releaseInput,releaseId:second.releaseId,packageBinding:(await releaseRepo.read(second.releaseId)).binding,phase:'BEFORE_UNWRAP'}));
@@ -408,10 +451,23 @@ try {
   finalCounts={...await count(),proofs:(await admin.query('SELECT count(*)::int AS count FROM dpop_replay_entries')).rows[0].count};
 } catch(error) {process.exitCode=1;failureCode=typeof error.code==='string'?error.code:error.message==='Query read timeout'?'QUERY_TIMEOUT':error.name;results.push(`FAIL_OR_ENVIRONMENT_BLOCKED:${stage}`);}
 finally {
+  if(browserProbe)await browserProbe.stop().catch(()=>{process.exitCode=1;results.push('BROWSER_CLEANUP_NOT_VERIFIED');});
   for(const server of [bHttp,aHttp])if(server){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
   if(http){http.closeAllConnections();await new Promise(resolve=>http.close(resolve));}
   await pool?.end().catch(()=>{});await legacy?.end().catch(()=>{});await admin?.end().catch(()=>{});
-  if(ownedId) {try {docker(['stop','--time','3',ownedId]);cleanup=true;}catch{process.exitCode=1;}}
-  console.log(JSON.stringify({status:process.exitCode?'FAIL':'PASS',review:'DRAFT / UNASSIGNED',crypto:process.env.HIPASS_PATIENT_PROBE_BRIDGE?'VM_LOCAL_ACTUAL_AZURE_KEY_VAULT':'LOCAL_RSA_FIXTURE',data:phantomModality?'ACTUAL_A_SYNTHETIC_PACS_'+phantomModality:'ONE_PIXEL_PNG_FIXTURE',scope:'isolated synthetic PostgreSQL/tmpfs, dedicated login runtime, loopback HTTP and A/B AES-GCM; crypto/data modes explicitly reported; not public TLS/deployment/browser/disk crash durability',
-    checks:results,finalCounts,failureCode,cleanup,elapsedMs:Date.now()-start},null,2));
+  if(!ownedId&&stage==='container-start'){
+    // A timed-out start may have created its uniquely named container already.
+    try{const recovered=JSON.parse(await runDockerAsync(['inspect',name]));assert.equal(recovered.length,1);
+      assert.equal(recovered[0].Name,'/'+name);assert.equal(recovered[0].Config.Labels['highpass.purpose'],'isolated-selfview-validation');
+      assert.equal(recovered[0].HostConfig.AutoRemove,true);assert.equal(recovered[0].Mounts.length,0);ownedId=recovered[0].Id;
+    }catch{}
+  }
+  if(ownedId) {try {
+    await runDockerAsync(['stop','--timeout','3',ownedId]).catch(()=>{});
+    const deadline=Date.now()+10000;
+    while(Date.now()<deadline){if(await runDockerAsync(['ps','-aq','--filter','name=^'+name+'$'])===''){cleanup=true;break;}await new Promise(resolve=>setTimeout(resolve,200));}
+    assert.equal(cleanup,true);
+  }catch{process.exitCode=1;results.push('OWNED_DATABASE_CLEANUP_NOT_VERIFIED');}}
+  console.log(JSON.stringify({status:process.exitCode?'FAIL':'PASS',review:'DRAFT / UNASSIGNED',crypto:process.env.HIPASS_PATIENT_PROBE_BRIDGE?'VM_LOCAL_ACTUAL_AZURE_KEY_VAULT':'LOCAL_RSA_FIXTURE',data:phantomModality?'ACTUAL_A_SYNTHETIC_PACS_'+phantomModality:'ONE_PIXEL_PNG_FIXTURE',scope:'isolated synthetic PostgreSQL/tmpfs, dedicated login runtime, loopback HTTP and A/B AES-GCM; crypto/data modes explicitly reported; '+(browserRequested?'common Viewer actual Chrome/local trusted HTTPS; not full app/login/public deployment':'not public TLS/deployment/browser')+'; not disk crash durability',
+    checks:results,browser:browserEvidence,finalCounts,failureCode,cleanup,elapsedMs:Date.now()-start},null,2));
 }

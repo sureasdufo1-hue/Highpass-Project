@@ -139,7 +139,7 @@ const server = createServer(async (request, response) => {
   }
 });
 
-server.listen(port, () => {
+server.listen(port, process.env.HIPASS_LISTEN_HOST ?? '0.0.0.0', () => {
   console.log(`HiPass MVP is running at http://localhost:${port}`);
 });
 server.on('close',()=>{patientGrantRuntime?.close().catch(()=>console.warn('PATIENT_AUTHORITY_CLOSE_FAILED'));});

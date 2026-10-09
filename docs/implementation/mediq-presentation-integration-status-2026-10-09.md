@@ -2,6 +2,35 @@
 
 관측일: 2026-10-09 (Asia/Seoul). 신규 증적: DRAFT / UNASSIGNED.
 
+### 최신 체크포인트: 실제 환자 웹 종단 검증은 FAIL — 2026-10-10 (Asia/Seoul)
+
+커밋·푸시 요청에 따라 현재 검증 도구를 저장한다. 기준은 `c13c903c94a33a2822d4ac90b419ab93acfa048b` 이후 변경이며 공개 배포는 변경하지 않았다. `--phantom CT --browser --full-app`은 별도 tmpfs PostgreSQL·최소권한 LOGIN·실제 Control entrypoint·Mock IdP 환자 로그인·검사 선택·기존 환자 웹·공통 Viewer를 사용했다. 로컬 신뢰 HTTPS 및 VM-local 합성 PACS/Azure 경로이며 실제 배포 public ingress나 모바일 전체 앱 시험은 아니다.
+
+실행 `artifacts/workstation/patient-vault-20261009T151840Z-5a0659305a01/result.json`은 **전체 FAIL / exit1**이다. 브라우저 `patient-real-browser-4a0cb65f4f60/result.json`에서 TLS 검증, 실제 환자 웹 로그인·서버 검사 목록, 서로 다른 두256×256 SOP decode, 격리 SQL Grant 철회 후 거부·PACS 추가 읽기 없음까지 확인했으나 닫기 후 launcher focus 복귀 assertion에서 실패했다. 주기적인 목록 DOM 교체와 관련된 것으로 추정하며 수정 효과는 아직 미검증이다. 마지막 SQL 감사 검증 단계는 미실행이다. 브라우저50.048초/SQL harness72.857초, 각각 cleanup=true; VM 원래 서비스와 source staging 정리 확인. 이전 syntax 실패 실행 `…T151714Z-a9f45185b15d`도 삭제하거나 PASS로 바꾸지 않는다.
+
+해당 코드 기준 전체 Node **848/848 PASS / 55.8662834초 / exit0**, `artifacts/workstation/patient-full-app-node-regression-20261010.log`는 기존 실행 결과이며 이번 커밋 작업에서 다시 실행한 결과가 아니다. 실행 artifact는 ignored 로컬 자료로 커밋하지 않는다. 신규 증적은 **DRAFT / UNASSIGNED**이며 전체 MVP/v3 미완료. 관련 FR-006~013/014~041.
+
+**다음 작업 한 개: 실제 환자 웹에서 Viewer 닫기 후 focus 복귀 실패를 최소 수정하고 동일 CT 종단 시험을 재실행한다.** MR 전체 웹·모바일·공개 배포 활성화/rollback·최종 사람 검토는 남아 있다. 아래의 공통 Viewer PASS는 자체 launcher 범위의 이전 성공이며 이번 전체 앱 FAIL을 대체하지 않는다.
+
+### 최신 관측: 실제 PACS·Vault·SQL·Chrome 공통 Viewer 연결 — 2026-10-10 (Asia/Seoul)
+
+기준 HEAD `c13c903c94a33a2822d4ac90b419ab93acfa048b` + 이번 미커밋 검증 도구 변경. 기존 공개 배포 이미지는 유지했다. A `2c7b366483f1…`, B `940806f602ec…` healthy 및 원래 이미지 보존을 각 실행 후 확인했다. 원본 영상은 A 합성 PACS, 시험 권한·Grant·release·감사는 별도 tmpfs SQL, Azure wrap/unwrap은 기존 VM-local A/B 신원이다. PostgreSQL 스킬의 최소권한·bound query·기존 감사 chain을 유지했다.
+
+`patient-vault-integration-ops.py --phantom CT|MR --browser`로 현재 공통 `patient-pixel-viewer.js`를 실제 Chrome에 로드했다. 개발 CA/hostname 검증을 유지한 로컬 HTTPS → signed PATIENT 시험 인증·신뢰 ingress 서명 → SQL 본인 Grant/DPoP → A 실제 mTLS QIDO12 SOP → 선택 WADO pixel → actual Azure wrap/AES-GCM → B actual unwrap/release consume → 브라우저 256×256 decode·다음 영상까지 연결했다. UI 시험 화면의 launcher는 격리 adapter이며 **환자 포털/모바일 전체 앱의 로그인·메뉴 상호작용을 대체하지 않는다**. 임의 픽셀 응답으로 정상 표시하지 않는다. 선택한 두 목록 항목은 서로 다른 실제 SOP이며, 정렬·해부학적으로 인접한 슬라이스 또는12개 전체 pixel 검증으로 주장하지 않는다.
+
+| 실행 | 최신 결과 | 증적 |
+|---|---|---|
+| CT | wrapper7 PASS / SQL19 PASS, 32.115초 / Chrome5 PASS, 15.547초 / exit0 | `artifacts/workstation/patient-vault-20261009T150724Z-6ee23a7fc25d/result.json`, browser `patient-real-browser-00ed0068a506/result.json`·`viewer.png` |
+| MR | wrapper7 PASS / SQL19 PASS, 40.377초 / Chrome5 PASS, 17.174초 / exit0 | `artifacts/workstation/patient-vault-20261009T150852Z-bc5ce3db3f0a/result.json`, browser `patient-real-browser-80703b9fad84/result.json`·`viewer.png` |
+
+각 실행 grants5/audits75/proofs10, 브라우저 Grant의 release2개 CONSUMED·그 Grant REVOKED 확인, SQL hash chain PASS. 브라우저 재조회403 후 실제 A PACS rendered read는4 유지(앞선 API2 + 브라우저2), 닫기 후 이미지 제거·focus 복귀·storage0 확인. Grant 철회는 **격리 시험 DB에서의 명시적 상태 변경**이며 환자 화면의 동의 철회 버튼/업무 API 검증으로 승계하지 않는다. SQL·Chrome·remote stage cleanup=true, 기존 VM 서비스/DB/volume 변경 없음. raw DEK·identity 개인키는 VM 밖에 반환하지 않았으며 원문 토큰은 증적에 기록하지 않았다.
+
+실패 이력도 유지한다. 최초 로컬 RSA/CT 시도의 Docker 동기 호출15초 timeout은 이후 생성 자산 확인과 구분했다. 시작/정리를 비동기·30초 제한으로 바꾸고, 정확한 자체 이름·라벨·AutoRemove·비영구 mount 확인 후 회수 및 제거 완료 polling을 추가했다. 원인을 Docker Engine 결함으로 확정하지 않는다. `…T150449Z-72d71fe3d4da` 실행은 첫 브라우저 pixel 후 다음 SOP가 시험용1·2 whitelist 밖이어서 전체 FAIL; worker를 고정 합성 Series의12 SOP 범위로 정렬했다. 서버 권한/Study/Series/receipt 검증을 완화하지 않았다. 해당 실행의 cleanup=false는 당시 기록이며 이후 컨테이너 부재 확인으로 소급 PASS 처리하지 않는다. 잔여로 확인된 시험용 컨테이너3개(실행 중2·Created1)는 이름/라벨/생성시각을 확인해 삭제했고 tmpfs 이외 기존 데이터는 삭제하지 않았다.
+
+최종 전체 Node **848/848 PASS / 43.9685922초 / exit0**, `artifacts/workstation/patient-browser-pacs-node-regression-final-20261010.log`. 앞선 중간 회귀도848 PASS/50.3917379초이나 최종 결과와 구분한다. Node/Python 문법·secret 패턴 findings0·diff PASS. 관련 FR-006~013/014~031/032~041. 증적은 ignored 로컬 자료라 clone에 포함되지 않는다. 신규 증적 **DRAFT / UNASSIGNED**, 전체 MVP/v3 미완료.
+
+**다음 작업 한 개: 검증된 공통 Viewer를 실제 환자 포털·모바일 전체 앱의 로그인/검사 선택과 연결한 동일 격리 환경을 검증하고, 그 결과를 바탕으로 발표 배포 활성화·rollback을 준비한다.** 실 배포용 소유 ref/계정 등록, public ingress/A/B 활성화, patient UI 동의 철회·만료, 최종 독립 검토는 아직 미완료다. 아래 관측은 과거 이력이다.
+
 ### 커밋·푸시 체크포인트 — 2026-10-09
 
 사용자의 커밋·푸시 지시에 따라 환자 Viewer·DB 준비 도구·Compose overlay·검증 스크립트·테스트·문서를 기록한다. 이번 선택 회귀26/26 PASS, exit0, 765.2852ms 및 secret 패턴 검사 findings0, diff 검사 PASS. 전체848/848은 아래의 이전 실행 결과이며 이번에 재실행한 결과가 아니다. VM 설정·배경 이미지·secret·인증서·영상 payload·실행 artifact는 제외한다. 커밋·푸시는 배포나 전체 MVP 완료를 의미하지 않는다.
