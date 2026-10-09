@@ -2,6 +2,20 @@
 
 2026-10-09 · S1 USER-ADOPTED CONTRACT / IMPLEMENTATION IN PROGRESS
 
+## 2026-10-09 실제 합성 CT/MRI 전달 검증 범위
+
+`patient-vault-integration-ops.py --phantom CT|MR`는 고정된 PHANTOM Study/Series/SOP만 허용한다. 격리 SQL의 동일 환자 Grant/DPoP·receipt·release ledger에 결속하여 A 실제 private PACS mTLS QIDO12 SOP·두 WADO rendered slice → A actual Azure wrap/AES-GCM → B current release authorize/consume·actual unwrap →256×256 pixel 무결성을 검증했다. 재사용/토큰 변조/DPoP 재사용/SQL 철회 후 actual PACS read 증가 없음 및 감사 chain도 확인했다. 두 modality 모두 SQL17항목/exit0/PASS, 증적은 현재 상태 문서를 참조한다. actual PACS 데이터는 합성이며 운영 Cloud DB/기존 환자 ref는 수정하지 않았다.
+
+이는 public TLS patient Gateway·환자 웹 로그인·UI Viewer 전체12 slice 증거가 아니다. 새 candidate image3fdee566은 source10개 일치·취약점0으로 검증했으나 아직 배포/활성화하지 않았다. 전체 MVP/v3 미완료, 신규 증적 DRAFT / UNASSIGNED.
+
+## 2026-10-09 실제 VM-local patient Key Vault 검증과 영수증 시간 결속
+
+준비 영수증에 서버 `issuedAt`를 HMAC 서명 결속한다. `deadline - issuedAt`는 양수·최대30000ms, deadline은 Grant exp 이내다. 각 Gateway의 현재 절대 만료 확인은 유지하며 Control은 wrap/unwrap 전후에 원래 MAC·현재 시간·권한·철회를 다시 확인한다. 수신 VM의 wall clock으로 남은 시간이30000ms를 넘는지만 보고 TTL을 판단하지 않는다. 발급시각 없는 이전 영수증은 새 코드에서 fail-closed하며 런타임 default-off와 재시작 시 process-local MAC key 교체를 유지한다. 유효기간 연장이나 만료 우회가 아니다.
+
+`patient-vault-integration-ops.py`는 각 VM의 기존 nonroot 런타임에 공개 소스만 read-only mount하고 기존 VM-local Entra 개인키로 실제 Azure wrap/unwrap을 수행한다. Control은 격리 local SQL/loopback HTTP이며 SSH reverse tunnel로 연결한다. A와 B service key·원 요청 token은 암호화된 SSH의 transient stdin/loopback에만 전달하고 raw DEK·identity private key는 VM 밖에 반환하지 않는다. 실제 public edge TLS/운영 배포 검증은 아니다.
+
+실제 1픽셀 합성 PNG roundtrip·SQL release CONSUMED·재사용403·DPoP 재사용/변조/철회 거부·hash chain·전용 LOGIN startup 등16항목 PASS/21.806초. A/B 원래 image/healthy 보존과 owned stage cleanup PASS; VM source127개 aggregate hash 결속. 증적 `artifacts/workstation/patient-vault-20261009T134121Z-8d5e2b463965/result.json`, DRAFT / UNASSIGNED. 실제 PACS CT/MRI·환자 브라우저·전체 MVP는 미검증/미완료다. 기존 후보 이미지56405f81은 이 issuedAt 변경 이전이므로 새 후보 빌드·스캔 전 배포할 수 없다.
+
 사용자의 “권고안 실행”으로 S1 구현 방향을 채택했다. 별도 환자 authority/ledger/audience·명시적인 합성 계정/ref 증거·A 원본 유지·실제 Key Vault 경로를 적용한다. 이는 구현 방향 승인이지 신규 테스트 증적의 독립 사람 검토·운영 승인이나 구현 완료가 아니다. 신규 증적은 계속 DRAFT / UNASSIGNED다.
 
 ## 목적과 적용 범위

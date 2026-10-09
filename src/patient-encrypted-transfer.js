@@ -18,6 +18,10 @@ function context(receipt){
   const result=JSON.parse(Buffer.from(receipt.split('.')[0],'base64url'));
   if(result.type!=='PATIENT_RESPONSE_PREPARATION' || result.claims?.authorityType!=='PATIENT_SELF_VIEW'
     || result.claims.actorType!=='PATIENT' || result.claims.permission!=='VIEW_ONLY')throw new Error('PATIENT_PACKAGE_AUTHORITY_INVALID');
+  // Bound the SIGNED lifetime, not remaining wall time on a different host.
+  // Control still verifies original MAC/current absolute expiry before wrap and both unwrap phases.
+  if(!Number.isSafeInteger(result.issuedAt) || !Number.isSafeInteger(result.deadline)
+    || result.deadline<=result.issuedAt || result.deadline-result.issuedAt>30000)throw new Error('PATIENT_PACKAGE_LIFETIME_INVALID');
   return result;
 }
 function authority(c){return {type:'PATIENT_SELF_VIEW',grantId:c.claims.jti,
@@ -32,7 +36,7 @@ export function createPatientImageEncryptor({keyId,tokenProvider,control,keyTran
     const c=context(receipt),packageId=opaque();
     if(c.path!==new URL(route.externalUrl).pathname || c.claims.jti!==scope.tokenId || c.claims.sub!==scope.subject
       || c.claims.patientId!==scope.patientId || c.claims.studyInstanceUid!==route.studyInstanceUid
-      || c.claims.allowedSeriesUids?.[0]!==route.seriesInstanceUid || c.deadline<=now() || c.deadline-now()>30000)throw new Error('PATIENT_PACKAGE_SCOPE_INVALID');
+      || c.claims.allowedSeriesUids?.[0]!==route.seriesInstanceUid || c.deadline<=now())throw new Error('PATIENT_PACKAGE_SCOPE_INVALID');
     const manifest={version:1,packageId,authority:authority(c),studyInstanceUid:route.studyInstanceUid,seriesInstanceUid:route.seriesInstanceUid,
       sopInstanceUid:route.sopInstanceUid,contentType,plainSha256:hash(body),plainBytes:body.length};
     const client=new AzureKeyVaultDataPlane({keyId,tokenProvider,timeoutMs:25000,...(keyTransport?{transport:keyTransport}:{}),authorizeOperation:async operation=>{

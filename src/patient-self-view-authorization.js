@@ -46,7 +46,8 @@ export class PatientSelfViewAuthorization {
     const expected=Buffer.from(createHmac('sha256',this.receiptKey).update(parts[0]).digest('base64url')),supplied=Buffer.from(parts[1]);
     if(supplied.length!==expected.length || !timingSafeEqual(supplied,expected))throw new Error('PATIENT_RECEIPT_INVALID');
     const receipt=JSON.parse(Buffer.from(parts[0],'base64url'));
-    if(receipt.type!=='PATIENT_RESPONSE_PREPARATION' || !Number.isSafeInteger(receipt.deadline)
+    if(receipt.type!=='PATIENT_RESPONSE_PREPARATION' || !Number.isSafeInteger(receipt.issuedAt) || !Number.isSafeInteger(receipt.deadline)
+      || receipt.deadline<=receipt.issuedAt || receipt.deadline-receipt.issuedAt>30000 || receipt.issuedAt>this.clock()
       || this.clock()>=receipt.deadline || receipt.deadline>receipt.claims.exp*1000)throw new Error('PATIENT_RECEIPT_EXPIRED');
     const route=parsePatientDataPlaneRequest({method:'GET',path:receipt.path},this.publicBaseUrl);
     const key=typeof this.keyProvider?.getKeyAsync==='function'?await this.keyProvider.getKeyAsync(receipt.kid):this.keyProvider?.getKey(receipt.kid);
@@ -76,7 +77,8 @@ export class PatientSelfViewAuthorization {
       const supplied=Buffer.from(parts[1]);const calculated=Buffer.from(expected);
       if(supplied.length!==calculated.length || !timingSafeEqual(supplied,calculated))throw new Error('INVALID');
       receipt=JSON.parse(Buffer.from(parts[0],'base64url'));
-      if(receipt.type!=='PATIENT_RESPONSE_PREPARATION' || !Number.isSafeInteger(receipt.deadline)
+      if(receipt.type!=='PATIENT_RESPONSE_PREPARATION' || !Number.isSafeInteger(receipt.issuedAt) || !Number.isSafeInteger(receipt.deadline)
+        || receipt.deadline<=receipt.issuedAt || receipt.deadline-receipt.issuedAt>30000 || receipt.issuedAt>this.clock()
         || this.clock()>=receipt.deadline || receipt.deadline>receipt.claims.exp*1000)throw new Error('INVALID');
       parsePatientDataPlaneRequest({method:'GET',path:receipt.path},this.publicBaseUrl);
     }catch{return deny('PATIENT_RECEIPT_INVALID');}
@@ -155,8 +157,9 @@ export class PatientSelfViewAuthorization {
         sopInstanceUid:route.sopInstanceUid??null,action:AuditAction.PATIENT_SELF_VIEW_ACCESS_ALLOWED,result:'SUCCESS',skipAnomalyDetection:true});
       await this.service.store.save();
       if(!await readLive())return denied('PATIENT_GRANT_INACTIVE');
-      const encoded=Buffer.from(JSON.stringify({type:'PATIENT_RESPONSE_PREPARATION',claims,kid,tokenHash,path:input.path,
-        deadline:Math.min(this.clock()+30000,claims.exp*1000)})).toString('base64url');
+      const issuedAt=this.clock();
+      const encoded=Buffer.from(JSON.stringify({type:'PATIENT_RESPONSE_PREPARATION',claims,kid,tokenHash,path:input.path,issuedAt,
+        deadline:Math.min(issuedAt+30000,claims.exp*1000)})).toString('base64url');
       const receipt=`${encoded}.${createHmac('sha256',this.receiptKey).update(encoded).digest('base64url')}`;
       return {active:true,statusCode:200,receipt,scope:{authorityType:'PATIENT_SELF_VIEW',actorType:'PATIENT',subject:claims.sub,
         patientId:claims.patientId,tokenId:claims.jti,auditSessionId:claims.auditSessionId,sourceHospitalId:claims.sourceHospitalId,

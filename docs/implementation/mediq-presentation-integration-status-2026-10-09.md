@@ -2,6 +2,52 @@
 
 관측일: 2026-10-09 (Asia/Seoul). 신규 증적: DRAFT / UNASSIGNED.
 
+### 최신 커밋 전 회귀 및 런타임 설정 — 2026-10-09
+
+환자 런타임은 기본 비활성을 유지한다. 활성화 시 전용 `hipass_patient_authority` DB 연결과 외부 파일의 환자 A/B 서비스 자격증명을 읽으며, 기존 의료진·DB·발표 키 재사용과 잘못된 프로필은 시작 전에 거부한다. 실제 배포 DB 계정 생성·migration·서비스 활성화는 수행하지 않았다.
+
+`node --test --test-concurrency=4 --test-reporter=spec --test-reporter-destination=artifacts/workstation/patient-config-node-regression-20261009.log`: **838/838 PASS, 41.9254432초, exit0**. Secret 패턴 검사 findings0 및 staged diff 검사 exit0. 증적은 로컬 ignored artifact이며 clone에 포함되지 않는다. 아래 `3fdee566…` 후보 이미지는 이 런타임 설정 추가 이전 빌드이므로 최신 소스 이미지로 승계하지 않는다. 신규 증적 DRAFT / UNASSIGNED.
+
+사용자의 커밋·푸시 지시에 따라 소스·테스트·문서를 기록한다. VM 설정·배경 이미지·인증정보·영상 payload·실행 artifact는 이번 커밋에서 제외한다. **다음 작업: 최신 소스 후보 재빌드·검사 후 전용 계정/내부 자격증명 배포 준비와 환자 웹·모바일 실제 Viewer 연결.** 실제 배포 환자 브라우저 종단 검증과 전체 MVP/v3는 미완료다.
+
+### 최신 실제 합성 CT/MRI 환자 암호화 전달 — 2026-10-09
+
+실행 명령 `patient-vault-integration-ops.py --phantom CT`와 `--phantom MR` 각각 exit0. 격리 SQL의 Study/Series/owner ref를 실제 합성 PHANTOM UID에 바인딩했으며 실행 Cloud DB/환자 매핑을 수정하지 않았다. A VM은 현재 Docker private PACS proxy 주소를 inspect로 확인하고 기존 CA·gateway client cert/key·고정 servername을 유지해 QIDO/WADO를 mTLS로 조회했다. 개인키/DEK는 각 VM에 유지, A에서 실제 pixel 암호화 후 B에서 실제 Azure unwrap·AES-GCM 복호화. QIDO의 정확한12 SOP 목록, 첫째·둘째 SOP의256×256 및 서로 다른 pixel 확인. 12장 전체 pixel/브라우저는 시험하지 않았다.
+
+CT: SQL17항목 PASS/22.163초, `artifacts/workstation/patient-vault-20261009T135220Z-faa981f36441/result.json`. MR: SQL17항목 PASS/28.106초, `…T135356Z-cf2d98b82bf3/result.json`. 각각 grants4/audits59/proofs6, hash chain/cleanup PASS. 재사용 B authorize403, 변조·DPoP 재사용·철회 후 신규 접근 거부 및 **VM actual PACS rendered read counter가1→두번째 정상에서2→철회 후2 유지**. 기존 A/B image/healthy 보존, owned source stage 제거 PASS. worker source127개 aggregate `f883cba35d094b078a0e9f78fdf6af14e899164d3d9818780e08532f6cc53cdb`. 초기 CT FAIL `…T134945Z-671daef3f66e`도 보존: 당시 loopback PACS 주소 사용, raw transport code 미포착; current private proxy 주소 적용 후 PASS이며 최초 하위 오류를 connection refused 등으로 확정하지 않는다.
+
+최신 후보 `highpass-platform-mvp:capstone-patient-pacs-20261009` / `sha256:3fdee566d545839ad4f5cb31070d3820c32f5ae9008c32a66ca4bb5079318c54`, 빌드exit0, source10개 local/image SHA 일치 PASS. 정확한 digest Trivy HIGH/CRITICAL0 및 Container Gate PASS. 전체 Node **833/833 PASS/45.373618초/exit0**, `patient-pacs-node-regression-20261009.log`. 중간 image d4b220f3은 당시 후보 이력이지 최신 source 전체 증거가 아니다. PostgreSQL 스킬의 bound query·기존 최소권한 적용, 운영 DB/권한/VM 서비스 재배포 없음. 신규 증적 DRAFT / UNASSIGNED, 변경 미커밋.
+
+**다음 작업 한 개: 검증된 후보의 capstone patient runtime/전용 계정·내부 credential 활성화와 환자 웹·모바일 actual Viewer 연결**. 현재 시험은 실제 PACS/Vault이지만 격리 SQL·loopback A/B handler·SSH tunnel이며, 실제 public edge·환자 로그인/브라우저 Viewer·최종 전체 MVP/v3 완료가 아니다. Windows 시간서비스 복구와 최종 독립 검토는 계속 미완료다.
+
+### 최신 실제 환자 Key Vault·격리 SQL 연결 — 2026-10-09
+
+실제 VM-local patient 암호화 adapter → 기존 Azure RSA-OAEP-256 → 격리 SQL release precheck/consume → B AES-GCM 복호화·원본 1픽셀 PNG 무결성 PASS. `patient-vault-integration-ops.py` exit0, 전체 wrapper7항목 PASS 및 SQL16항목 PASS/21.806초(grants4/audits53/proofs5, cleanup=true). source127개 SHA aggregate `a2615801660d5c14a9603579b5fc3f60fe802764839bad0ac9a1702996420f19`; A/B 신원·소스 일치, 기존2c7b3664/940806f6 image/running/healthy 보존, 신규 owned source stage 정리 PASS. 재사용은 B Control authorize403/KV_POLICY_DENIED, DPoP 재사용·토큰 변조·SQL 철회 후 신규 조회의 PACS fixture 증가 없음 및 기존 감사 chain 확인. 기존 서비스/DB/volume/권한은 변경하지 않았다. 증적 `artifacts/workstation/patient-vault-20261009T134121Z-8d5e2b463965/result.json` — DRAFT / UNASSIGNED.
+
+초기 실행3건 FAIL을 삭제하지 않았다: `patient-vault-20261009T133234Z-dc75f7d55a43`, `…T133415Z-98767e1591e2`, `…T133544Z-ebd479ab540e`. 마지막 진단의 모든 scope 비교 true, A VM 잔여32552ms/관측 clock delta약-2.6초였다. 준비 영수증에 issuedAt를 서명 결속해 **deadline-issuedAt≤30초**를 검증하도록 수정했다. Gateway absolute expiry, Control의 MAC/현재시간/철회/권한 및 pre/post unwrap 검사 유지. 선택19/19 PASS/585.3222ms, 공식 동시성4 전체 Node **833/833 PASS/44.491868초/exit0** (`patient-vault-node-regression-20261009.log`). 발급시각 누락·30초 초과 거부, receiver clock뒤처짐에도 Control 만료 거부 테스트 포함. Windows w32time은 stopped이며 일반 권한의 Start-Service는 실패; A/B는 NTP=yes/NTPSynchronized=yes. Windows 시간서비스 복구는 발표 사전점검 미완료 항목으로 남기고 관리자 실행 결과를 요청했다.
+
+이 결과는 실제 Vault지만 **PACS가 아닌1픽셀 PNG·loopback A/B HTTP handler·격리 SQL·SSH tunnel** 범위다. 실제 환자 CT/MRI/browser/public TLS/배포/전체 MVP 완료 주장이 아니다. 후보 image56405f81은 이번 issuedAt 변경 이전으로 이 소스의 배포 증거로 승계하지 않는다. **다음 작업 한 개: 최신 소스로 후보 이미지 재빌드·스캔하고 실제 합성 CT/MRI를 patient Grant/Viewer 경로에 연결**한다. 신규 증적 독립 검토 미완료, 이번 변경 미커밋이다.
+
+### 최신 실제 병원 인증·Azure 역할 사전확인 — 2026-10-09
+
+`scripts/patient-key-identity-inventory.py`는 VMware 관리 채널의 공개 host key로 SSH를 pin하고 concealed stdin만으로 인증한다. 서비스/DB/인증서/권한을 변경하지 않는다. 실제 A runtime `2c7b366483f1…`와 B `940806f602ec…` running/healthy, 각 VM에서 실제 인증서 Entra HTTP200 및 등록 tenant/clientId 일치 **4항목 PASS/exit0**. 이전 batch public-key 거부를 VM 불능이나 자격증명 만료로 해석하지 않는다. 최종 증적 `artifacts/workstation/patient-key-inventory-20261009T132615Z/result.json`, DRAFT / UNASSIGNED. 초기 동일 실행의 신원 결속 미확인 결과는 `…T132447Z/result.json` 이력으로 보존한다. private key/assertion/access token/VM 암호를 결과 파일에 저장하지 않는다.
+
+Azure CLI 읽기 전용 조회 exit0: 지정 Key scope에서 A/B principal의 등록 custom-role 할당 확인. A role dataActions는 keys/read + keys/wrap/action, B는 keys/read + keys/unwrap/action이며 관리 actions는 비어 있다. 이는 이 두 직접 역할의 구성 확인이지 모든 group/inherited 유효 권한 부재나 실제 역방향 호출 DENY의 신규 증거는 아니다. Python 문법·secret scan(findings0)·diff 검사 PASS. 신규 inventory 도구는 기존 candidate 이미지의 런타임 검증 범위에 자동 포함시키지 않는다.
+
+**다음 작업 한 개: 격리 SQL 환자 authority/HTTP release를 실제 VM-local patient 암호화 adapter와 연결하는 검증 harness.** A/B identity key는 각 VM 안에 유지하고 raw DEK를 host/Control에 반환하지 않는다. 새 후보를 운영 서비스로 교체하기 전에 실제 wrap/unwrap·환자 release consume·무결성·철회·감사 실패를 함께 검증한다. 현재 actual patient Vault/배포/환자 CT-MRI Viewer는 NOT VERIFIED, 전체 MVP/v3 미완료다. 기존 의료진 crypto PASS를 승계하지 않는다.
+
+### 최신 환자 통합 후보 이미지 — 2026-10-09
+
+`Dockerfile.patient-capstone`으로 기존 a5487906 런타임에 src/scripts/db/public/config를 함께 복사했다. dependency 재설치·서비스 재배포·DB migration 없이 candidate `sha256:56405f81e58551a2651af078869ce550231b09abe0f35997e3e4f479dc9462c9` 빌드 exit0, 핵심 소스7개 local/container 해시 일치 PASS, 포장검사1/1 PASS. 정확한 image digest의 Trivy HIGH/CRITICAL 0 및 Container Gate exit0/PASS. 공식 package 테스트 설정과 동일한 `node --test --test-concurrency=4` **831/831 PASS/42.6667936초/exit0**. 앞선 기본 동시성 실행은830/831, Privacy HTTP 1개 FAIL(46.825211초)이었고 단독2/2 PASS(7.047745초); 최초 FAIL을 보존하며 원인은 NOT VERIFIED다. timeout/정책/fixture 변경 없음. 증적 `artifacts/workstation/patient-candidate-20261009.json` DRAFT / UNASSIGNED.
+
+실제 읽기 전용 Cloud 조회는 기존 auth-denial image의 Control·PG healthy를 확인했다. A SSH는 strict host 검증 후 비대화형 public-key 인증 거부여서 VM/Vault 재검증으로 승계하지 않는다. **다음 작업: 기존 concealed VM 인증 경로로 A/B를 재확인하고 이 후보의 실제 patient Azure wrap/unwrap 검증을 실행한다.** 후보는 미배포·flags 미활성이고 신규 코드/문서는 미커밋이다. 환자 브라우저 CT/MRI·전체 MVP/v3는 미완료다.
+
+### 최신 로컬 환자 런타임 시작 검증 — 2026-10-09
+
+코드 기준 `d0b979e15feb725572a5e895bb6577f4a332eced` + 이번 verifier/document dirty. 커밋·푸시는 직전 단계에서 완료했으며 이번 변경은 미커밋이다. `node scripts/verify-patient-self-view-postgres.js` exit0, **16개 확인 항목 PASS/20.542초**, grants4/audits53/proofs5, cleanup=true. 기존 SQL/HTTP/A/B AES-GCM·로컬 RSA·1픽셀 PNG fixture 흐름에 실제 별도 LOGIN을 추가하여 runtime 시작, metadata UPDATE 권한 부여 시 거부, superuser 시 거부, 권한 회수 후 시작 복구를 검증했다. PostgreSQL 스킬의 최소권한 지침에 따라 임시 DB 안에서만 권한을 변경하고 종료 시 제거했다. 경로의 공백 인코딩은 `fileURLToPath`로 처리했다. Secret findings0, 문법/diff 검사 exit0. 증적: `artifacts/workstation/patient-runtime-startup-20261009.json` — DRAFT / UNASSIGNED.
+
+**다음 작업 한 개: 기존 A/B 인증서를 그대로 안전하게 사용하는 실제 Azure patient wrap/unwrap 검증과 후보 배포 준비.** 실제 Vault·public TLS·실행 DB startup·환자 CT/MRI 브라우저는 NOT VERIFIED다. 이번 시험은 VM/Cloud/실행 DB를 변경하지 않았고 전체 MVP/v3 완료가 아니다. 아래 “다음 작업”은 해당 단계 당시 이력이다.
+
 ### 커밋 전 로컬 통합 확인 — 2026-10-09
 
 `node scripts/verify-patient-self-view-postgres.js` exit0, 15개 확인 항목 PASS, 20.528초, grants4/audits53/proofs5, cleanup=true. 실제 격리 PostgreSQL·JWT/DPoP·Control HTTP·A/B handler와 AES-GCM/로컬 RSA fixture를 연결하고 재사용·변조·철회 후 PACS fixture 조회 증가 없음 및 감사 chain을 확인했다. PACS 응답은 1픽셀 합성 PNG이며 실제 Azure Key Vault·TLS·배포·CT/MRI·브라우저 종단 증거가 아니다. 신규 증적은 DRAFT / UNASSIGNED이며 전체 MVP/v3 완료로 승격하지 않는다.

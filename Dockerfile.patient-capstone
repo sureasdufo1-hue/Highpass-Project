@@ -1,0 +1,10 @@
+# Unified patient candidate for Control/A/B. Build only from an independently
+# inspected, digest-pinned existing runtime; no dependency or registry refresh.
+# Runtime flags remain opt-in. Building this image does not migrate/activate DBs.
+ARG CAPSTONE_BASE_IMAGE
+FROM ${CAPSTONE_BASE_IMAGE}
+COPY src /app/src
+COPY scripts /app/scripts
+COPY db /app/db
+COPY public /app/public
+COPY config /app/config
