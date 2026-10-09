@@ -1,6 +1,59 @@
 # Medi Q 발표 환경 통합 상태와 실행 순서
 
-관측일: 2026-10-09 (Asia/Seoul). 신규 증적: DRAFT / UNASSIGNED.
+관측일: 2026-10-10 (Asia/Seoul). 신규 증적: DRAFT / UNASSIGNED.
+
+### 최신 관측: 실제 컨테이너 등록 CLI 검증 완료 — 2026-10-10 (Asia/Seoul)
+
+후보 `highpass-platform-mvp:capstone-patient-registration-cli-20261010`, image ID `sha256:30141f8128a26ab2b3ed987d419078382093e69310c768a4318786a71916b2df`의 격리 Compose 검증은 **11개 검사 PASS / exit0 / 297.103초 / cleanup=true**다. 증적: `artifacts/workstation/hp-patient-startup-e96e6d364eed.json` (ignored 로컬 생성물; clone에 포함되지 않음). 고정 합성 카탈로그는 기존 등록 함수를 non-superuser 앱 계정으로 실행한 시험 준비이며 HTTP 인증 증거가 아니다. 실제 operator CLI의 기본 사전검사에서 account/ref/audit 변경0, 명시적 적용에서 account1/ref2/audit1 및 hash chain 유효, 재적용 거부에서 부작용0을 확인했다. 기존 Control 준비·readiness·잘못된 입력/주체 거부·중복 secret 시작 거부 검사도 유지했다. 관련 FR-006~009/014~020/032~041.
+
+이 후보는 기존 검증된 local base에서 `--pull=false --network=none`으로 빌드했고 base image ID 전후 일치, build exit0다. 아래 이전 후보의 소스 해시·컨테이너 취약점 결과를 이 새 image ID에 승계하지 않는다. 신규 후보의 전체 소스 attestation·Container Scan/Gate는 **NOT VERIFIED**다. 실제 cloud DB 등록·기능 활성화·공개 배포·정상/음성·rollback도 **NOT VERIFIED**이며 이번 시험으로 대체하지 않는다. 신규 증적 **DRAFT / UNASSIGNED**, 전체 MVP/v3 미완료. 다음 작업 한 개: 신규 후보의 소스 일치와 Container Scan/Gate를 고정한 뒤 최신 독립 사람 검토에 제출한다. 아래 기록은 이전 이력이다.
+
+커밋 전 현재 소스의 Security Gate는 PASS/exit0: Node 테스트54.502초·secret scan1.161초·dependency audit1.606초, 단계별120초 제한. 직접 focused 등록/정책 거부 테스트6/6 PASS/637.8787ms/exit0 및 staged diff 검사 PASS. 전체 Node 개수는 gate가 보존하지 않아 주장하지 않는다. pnpm 실제11.7.0/lock9.0 일치, global manifest11.22.0 차이 경고 유지. 이 결과는 새 이미지 Container Gate나 배포 승인으로 승계하지 않는다.
+
+### 최신 관측: 정상·거부 응답 결속 보강 및 후보 재검증 — 2026-10-10 (Asia/Seoul)
+
+HEAD `6f00e2d54e28d695d4c4054184b5668580fb29ac` + dirty source. 정상 브라우저 영상과 철회 후 UI 오류/PACS read 불변만으로는503 장애를 정책 DENY로 오인할 수 있음을 확인했다. 실제 full-app의 forward 경계에서 철회 이후 rendered 응답의 status와 whitelist 오류 코드만 관측하고 **403 + PATIENT_ACCESS_DENIED**를 요구하도록 보강했다. body/token/key를 증적에 출력하지 않는다. `requirePatientPolicyDenial`은 미응답·503·500·401·다른403을 모두 거부한다. 기존 권한·암호화·TLS/mTLS·DPoP 정책과 Viewer 동작은 변경하지 않았다. 신규 테스트2 PASS, 등록/Viewer 포함 focused12/12 PASS/558.7037ms/exit0. 관련 FR-014~020/026~041.
+
+| 최신 실행 | 결과와 시간 | 증적 |
+|---|---|---|
+| 환자 웹 CT, 강화된 응답 검사 | wrapper7/SQL4/Chrome8 PASS/exit0; SQL64.058초/browser46.661초; policyDenial403/PATIENT_ACCESS_DENIED | `patient-vault-20261009T162247Z-ab1a67d7929e/result.json`; browser `patient-real-browser-63b93f6f5c05/result.json`·`viewer.png` |
+| 환자 웹 MR, 강화된 응답 검사 | wrapper7/SQL4/Chrome8 PASS/exit0; SQL64.432초/browser48.218초; policyDenial403/PATIENT_ACCESS_DENIED | `patient-vault-20261009T162114Z-6922c2f340a7/result.json`; browser `patient-real-browser-0c746a042b43/result.json`·`viewer.png` |
+| 모바일 MR, 강화된 응답 검사 | wrapper7/SQL4/Chrome8 PASS/exit0; SQL31.817초/browser18.320초; policyDenial403/PATIENT_ACCESS_DENIED | `patient-vault-20261009T161847Z-ff2ac490d7ec/result.json`; browser `patient-real-browser-7eb6e50429dc/result.json`·`viewer.png` |
+| 모바일 CT, 강화된 응답 검사 | wrapper7/SQL4/Chrome8 PASS/exit0; SQL35.671초/browser19.247초; policyDenial403/PATIENT_ACCESS_DENIED | `patient-vault-20261009T162004Z-89e1e3cb4041/result.json`; browser `patient-real-browser-33bef31a4d1d/result.json`·`viewer.png` |
+
+위 실행은 명시적 합성 소유권 등록→실제 서명 Mock IdP 로그인·검사 선택(모바일은 개발 unlock 포함)→현재 Control API·최소권한 SQL→A 실제 합성 PACS256×256 두 SOP→A 실제 Azure wrap/AES-GCM/B unwrap→SQL Grant 철회 후 실제403와 PACS read2 유지→hash chain/release2 CONSUMED→자체 SQL/브라우저/VM stage cleanup=true와 기존 A/B 이미지/healthy 보존을 확인했다. screenshot 직접 확인. 이번 모바일 및 웹 MR에서는 Page.navigate 응답 관측 timeout 후 같은 탭 URL/로그인 DOM 확인으로 진행한 분기가 실제 실행됐다. navigation 재발행·새 프로세스 재시작·TLS 완화 없음. Page.enable timeout 진단 분기의 효과는 여전히 NOT VERIFIED다.
+
+강화 이전의 이 turn MRI 웹 `patient-vault-20261009T161449Z-070d9bff3279`는 wrapper7/SQL4/Chrome6 PASS/exit0, SQL63.203초/browser45.459초, browser `3c65430f6548`였다. 모바일 CT `patient-vault-20261009T161639Z-da97666eb7f3`는7/4/7 PASS/exit0, SQL34.373초/browser19.185초, browser `cc2111cea957`였다. 이 이전 결과는 exact403를 보존하지 않았으므로 아래 강화된 결과로 승계하지 않는다. 모든 경로는 격리 합성 SQL/신뢰된 로컬 HTTPS/VM-local crypto이며 공개 배포·네이티브 기기/생체·환자 동의 철회 UI·전체12 SOP·수신 의료진 공유 E2E의 증거가 아니다.
+
+모바일 시험의 relay `ConnectionResetError / WinError10054` thread 경고2개는 지속 관측되었고 최종 웹 CT도 경고1개가 있었다. HTTP/crypto/SQL 결과와 cleanup은 PASS였지만 reset 원인/시점 분류는 NOT VERIFIED로 남긴다. 경고를 숨기거나 정책 DENY로 바꾸지 않는다. 신규 증적 DRAFT / UNASSIGNED, 전체 MVP/v3 미완료.
+
+통합 후보 `highpass-platform-mvp:capstone-patient-registration-20261010`를 기존 local base `fedbae566527…`와 `--pull=false --network=none`로 빌드/exit0 했다. Docker image ID **`sha256:2cce5a642ab287efa3396b92958e5418df73a6a11d253e7a6fd3654ca18e8a8f`**, BuildKit config digest `89714df…`와 구분한다. base ID 전후 일치 PASS. 최초 raw image ID를 FROM ARG로 전달한 빌드는 Docker가 `docker.io/library/sha256:…`로 해석해 registry insufficient_scope/exit1이었고 후보를 만들지 못했다. 검증된 기존 local tag를 사용한 재실행은 성공했다. ARG 기본값 없음 경고는 유지하며 registry/TLS 인증 검증을 완화하지 않았다. 의존성/lockfile 변경 없음.
+
+현재 src/public/db/config/scripts **445개**(미추적 등록 helper/CLI/SQL verifier와 read-only preflight 포함)의 로컬→이미지 해시 일치/불일치0/exit0, `artifacts/workstation/patient-registration-image-source-20261010.json`. Dockerignored 임상 payload/생성물은 제외했다. nonroot/network-none/read-only/cap-drop ALL의 실제 image ID 기반 조회다. docs/test는 이미지 COPY 대상이 아니다. Trivy Scan/Gate는 같은 image ID **HIGH0/CRITICAL0/exit0/PASS**, `artifacts/security/container-scan/patient-registration-20261010.json`; 기존 예외 추가/수정 없음. Security Gate **PASS/exit0**, unit-tests58.294초/secret1.080초/dependency audit1.517초, 단계별120초, `artifacts/workstation/patient-registration-security-gate-20261010.json`. gate는 test count를 보존하지 않아 전체 개수는 주장하지 않는다. pnpm11.7.0/lock9.0, global manifest11.22.0 경고 유지.
+
+이 image ID의 격리 Compose는 **7개 검사 PASS/exit0/197.550초/cleanup=true**, `artifacts/workstation/hp-patient-startup-b0d9f37ffb2d.json`: 실제 readonly secret mount·Control baseline ready·준비 CLI preflight/apply·재적용 거부·전용 authority LOGIN과 Control 시작·잘못된 입력400/잘못된 B 주체403·중복 서비스 secret 시작 거부·기존 격리 Control readiness를 확인했다. 생성한 project의 container/volume 잔여0을 별도 Docker 조회했다. 각 Docker 명령60초/Compose readiness45초, 외부 요청별 timeout 유지. 도중 일시적인 Dead prepare-run 상태가 조회되었으나 이후 같은 자산은 없어졌고 원래 실행은 종료0으로 완료했다. 이 관측만으로 daemon 장애나 작업 중단을 확정하지 않고 재시작하지 않았다.
+
+이미지 해시 일치는 host 브라우저 결과를 image public E2E로 승격시키지 않는다. 등록 helper는 실제 격리 SQL에서 검증했으나 **operator 등록 CLI의 실제 container 명령 성공**은 아직 NOT VERIFIED(위 preparation CLI와 다른 명령)다. 실제 cloud DB 등록/기능 활성화/public 정상·음성·rollback도 NOT VERIFIED이다. 실제 적용은 최신 사람 검토 전 수행하지 않는다. **다음 작업 한 개: 기존 격리 Compose fixture에 고정 합성 카탈로그와 등록 CLI preflight/apply/재등록 거부·감사 검증을 연결한다.** 이는 새 정책 모듈이 아니라 동일 사용자 흐름의 배포 준비 공백을 채우는 작업이다. 이후 최신 후보의 독립 검토→공개 배포 정상/음성/rollback→원래 환자 동의·QR·수신 의료진 공유 종단 흐름이 남는다. 문법/diff/민감정보 검사 PASS, 기존 변경/DB/VM/PACS 보존, 이번 turn commit/push/deploy 없음. 아래 관측은 이전 이력이다.
+
+### 최신 관측: 명시적 합성 환자 소유권 등록 준비 — 2026-10-10 (Asia/Seoul)
+
+기준 HEAD `6f00e2d54e28d695d4c4054184b5668580fb29ac` + 신규 dirty 변경. 기존 전체 앱 verifier의 직접 account/ref INSERT를 고정 카탈로그 기반 `registerPatientPhantom`의 기본 preflight→명시적 적용→재적용 거부로 교체했다. operator CLI는 서버 startup/HTTP에 연결하지 않는다. 기존 writer 정지·유지보수·재로드 전제가 있으며 외부 병원 소유권 검증/법률 판정을 대신하지 않는다. 기존 최소권한·동의·DPoP·mTLS·Vault 정책 변경 없음. 관련 FR-006~009/014~020/032~041.
+
+`node scripts/verify-patient-phantom-registration.js`의 최신 실제 격리 SQL 결과는 **6개 검사 PASS/exit0/13.561초/cleanup=true**, `artifacts/workstation/hp-patient-registration-a0be8cb69d3c/result.json`. 다른 app 연결이 살아 있으면 거부, 기본 preflight 변경0, Series 카탈로그 불일치 거부/계정·ref·감사 부작용0, 감사 INSERT 장애 시 account/ref rollback, 명시적 account1/ref2/audit1 commit와 재등록 거부, 기존 persisted hash chain 유효성을 확인했다. SQL schema bootstrap은 생성한 tmpfs DB에서만 수행했다. 원래 VM/cloud DB·PACS·volume 보존. 단위4/4 PASS/334.977ms/exit0, 문법/diff 검사 PASS.
+
+최종 parent Study 결속 보완 이후의 실제 SQL은 **7개 PASS/exit0/13.931초/cleanup=true**, `artifacts/workstation/hp-patient-registration-84d7cc611488/result.json`. 격리 DB의 CT Series를 MR Study에 잘못 결속한 음성 fixture도 거부하며 계정/ref/audit count 불변을 확인했다. 중간 `3e6915b1aa3a`는 parent 비교 포함/음성 fixture 추가 전6 PASS/20.831초였다. 최종 focused 등록/Viewer **10/10 PASS/375.4697ms/exit0**, Node/Python 문법·secret findings0·diff PASS. 아래 Security Gate는 parent 비교/추가 CDP 진단 이전 실행으로, 최종 전체 gate 재실행은 NOT VERIFIED이며 이 focused/SQL 결과로 대체하지 않는다.
+
+최초 `hp-patient-registration-498772faee61`은 업무5개 검사 후 cleanup 확인 FAIL/20.481초/exit1이었다. 이후 실제 Docker 조회에서는 해당 자산이 없어 삭제 완료를 확인했지만 최초 결과는 수정하지 않았다. `docker stop` 후 동일 owned 자산의 auto-remove 완료를10초 안에 관측하도록 보완했다. 중간 `3719d4e26ce5`는5개 PASS/15.311초/exit0/cleanup=true, 최신 실행은 app-writer 음성도 포함한다. 정리 이력은 제품 보안 거부로 분류하지 않는다.
+
+클라우드는 read-only 재조회했다: `artifacts/workstation/patient-deployment-preflight-20261009T160452Z/result.json`, **NOT VERIFIED**. Control/ingress a548790… 및 PostgreSQL8d0e686… baseline PASS, readOnly=on/5초 제한. 기존 schema와 합성 환자·ACTIVE HOSP-A·고정 CT/MR Study-Series2개 최소 메타데이터 존재 PASS. 이는 helper의 전체 필드 비교나 PACS 실물 검사/실제 migration preflight 실행이 아니다. 환자 flags=false, authority tables/role 없음, protected secret file3개 미확인 상태는 그대로다. Python 도구의 정의된 종료 코드는2이며 이번 PowerShell wrapper의 관측 종료 코드는1이었다. 실제 등록/활성화는 수행하지 않았다.
+
+Security Gate는 **PASS/exit0**, unit-tests58.709초/secret-scan1.486초/dependency-audit1.829초, 단계별120초 상한. stdout는 이번 터미널 출력이며 gate 자체는 테스트 count를 반환하지 않는다. pnpm11.7.0/lock9.0 일치, global manifest11.22.0 경고 보존; 서명/TLS 우회 없음. 새 unit 조건 보완은 직접4개 검사로 별도 확인했다.
+
+새 등록 경로를 사용하는 첫 실제 웹 CT 시험 `patient-vault-20261009T160523Z-9482a04802dc`는 **FAIL/exit1**: 등록·전용 SQL·Control readiness 성공 이후 로그인 전 `PATIENT_BROWSER_CDP_TIMEOUT_PAGE_ENABLE`, browser `patient-real-browser-9459bd122483`/15.579초, SQL harness33.788초. 두 번째 `patient-vault-20261009T160710Z-b503314c9ac7`도 같은 관측 timeout/FAIL/exit1, browser `aa237b2e5da6`/12.579초·SQL28.461초다. PACS/Vault 업무 호출은 없었다. SQL/브라우저/VM stage cleanup=true, 기존 A/B 보존 PASS. 권한 DENY나 암호화 실패로 해석하지 않는다. 독립 fresh Chrome154.0.8037.98 진단에서는 root CDP/REST 새 탭 양쪽의 Page.enable과 Runtime.evaluate가 응답해 원인을 확정하지 못했다. 검증기에는 Page.enable timeout 시 동일 탭 Page.getFrameTree만 확인한 뒤 원래 FAIL을 유지하는 진단을 추가했다. Chrome/TLS 정책이나 timeout을 늘려 PASS로 바꾸지 않았다.
+
+최종 CT `patient-vault-20261009T161039Z-39b144448742`는 **wrapper7/SQL4/Chrome6 PASS/exit0**, SQL64.713초/browser46.210초, browser `patient-real-browser-c503357a0828/result.json`·`viewer.png` 직접 확인. 명시적 등록 preflight/apply/reapply-deny→실제 PHANTOM 웹 로그인/검사 선택→Grant/DPoP→A mTLS PACS→실제 Azure wrap/AES-GCM/B unwrap→두256×256 SOP decode→격리 SQL Grant 철회 후 거부/read2 불변→화면 제거/focus/storage0→persisted hash chain/release2 CONSUMED→생성 SQL/브라우저/VM stage cleanup과 기존 A/B 보존까지 확인했다. 일반 동의 철회 UI·공개 배포·native mobile·전체12 SOP 검증은 아니다. 최종 실행은 Page.enable timeout 없이 통과했으므로 신규 진단 분기의 응답/원인은 NOT VERIFIED이다. 이후 추가한 Series의 parent Study 비교는 별도 단위·실제 SQL로 검증하며, 이 브라우저 기록에 소급 포함하지 않는다. 최신 소스 MR/모바일 재검증은 남아 있다.
+
+이전 후보 이미지 `a287821…`는 신규 등록 helper/CLI를 포함하지 않으므로 최신 배포 후보로 승계하지 않는다. 신규 증적 **DRAFT / UNASSIGNED**, ignored artifacts는 clone에 포함되지 않는다. **다음 작업 한 개: 새 등록 절차를 사용하는 웹·모바일의 실제 PACS/Vault 흐름을 끝내고 동일 소스의 후보 이미지·gate를 다시 고정한다.** 그 이후 최신 사람 검토/실제 cloud 적용·공개 정상/거부·rollback이 남으며 전체 공유 흐름/MVP/v3 미완료다.
 
 ### 최신 관측: 웹·모바일 통합 후보 검사 PASS / 실제 배포 준비 미완료 — 2026-10-10 (Asia/Seoul)
 

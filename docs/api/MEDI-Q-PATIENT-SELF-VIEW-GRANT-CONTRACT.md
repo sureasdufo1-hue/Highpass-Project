@@ -4,6 +4,12 @@
 
 ## 환자 Control 배포 준비 계약
 
+Full-app 브라우저의 철회 검증은 UI 오류만으로 PASS를 내리지 않는다. 기존 forward 경계에서 실제 rendered 응답의 whitelist 오류 코드와 HTTP status만 관측해 `403 / PATIENT_ACCESS_DENIED`를 요구하며, 미응답·503·500·401·다른403은 정책 DENY 증거로 거부한다. PACS read 불변과 SQL hash chain/release 확인도 유지한다. 최신 증적의 `policyDenial` 필드로 관측 status/code를 확인한다. 토큰·원문 응답·키를 출력하지 않는다. 이 시험은 격리 SQL Grant 철회이며 환자 동의 철회 UI/실제 공개 ingress 전체 흐름을 대신하지 않는다.
+
+고정 합성 소유권 등록: `scripts/register-capstone-patient-phantom.js`는 TEST/Control-only operator 전용이며 기본은 rollback-only다. 임의 사용자·환자·UID를 받지 않고 `SYNTHETIC_PHANTOM_24_SLICE_V1`의 환자/활성 HOSP-A/CT·MR Study·Series 메타데이터를 기존 `phantomCatalog`와 정확히 비교한다. 기존 계정/ref나 app/authority/bootstrap의 다른 DB 연결이 있으면 중단한다. 실제 적용은 명시적 `--apply`에서만 계정1/ref2와 기존 감사 hash chain의 이벤트1개를 같은 트랜잭션에 INSERT한다. UPDATE/upsert/기존 권한 확대/동의·Grant 발급 없음. SQL 잠금/연결 검사는 HA의 전역 정지를 증명하지 않으므로, 배포 작업자는 Control·authority writer를 정지하고 새 연결이 생기지 않는 유지보수 구간에서 실행한 뒤 기존 앱을 재로드해야 한다. 런타임 계정에 등록 INSERT 권한을 추가하지 않는다.
+
+실제 적용 전 독립 검토와 새 이미지 source/gate 검증이 필요하다. 기존 preparation Compose profile에서 Control을 정지한 유지보수 구간에 `docker compose -f infra/azure/capstone-control.compose.yml -f infra/azure/capstone-patient-preparation.compose.yml --profile patient-preparation run --rm patient-prepare scripts/register-capstone-patient-phantom.js`로 사전검사한다. `--apply`는 승인된 변경에서만 추가한다. 전용 스키마 준비(033~036)와 합성 카탈로그가 선행되어야 하며 이번에는 실제 cloud DB에서 이 등록 명령을 실행하지 않았다. COMMIT 결과 불명 시 자동 재시도하지 않고 account/ref/audit를 재조회해 조정한다. 이미 등록된 상태는 재적용 거부하며 철회/삭제를 복구로 위장하지 않는다. 실패 rollback은 신규 트랜잭션의 변경만 되돌린다. 적용 후 복구는 기존 이미지·feature-off와 DB 보존이며 기존 감사/계정/ref를 삭제하는 명령을 제공하지 않는다.
+
 전체 앱 격리 검증은 같은 명령에 `--full-app`을 추가하면 실제 환자 웹 로그인/검사 선택을 사용한다. `--full-app --mobile`은 실제 모바일 PWA의 서명 로그인·개발용 PIN 화면 체험·검사 선택을375px 브라우저에서 검증한다. `--mobile`은 `--full-app` 없이는 시작 전 거부하며 `--full-app`은 `--browser --phantom CT|MR`를 요구한다. CT·MR 웹/모바일 최신 결과와 실패 이력은 현재 상태 문서를 참조한다. 공개 배포 ingress·native hardware·동의 철회 UI의 완료 증거가 아니며, Grant 철회 거부는 격리 SQL 상태 변경을 사용한다. 최신 증적 DRAFT / UNASSIGNED, 독립 검토·배포 활성화/rollback은 남아 있다.
 
 2026-10-10 검증 추가: `python scripts/patient-vault-integration-ops.py --phantom CT --browser` 및 `--phantom MR --browser`는 실제 VM-local Vault·고정 합성 PACS·격리 SQL에 공통 Viewer의 Chrome 검증을 연결한다. VM 암호는 concealed 로컬 입력에만 전달한다. `--browser` 단독 실행은 거부한다. 신뢰된 로컬 HTTPS에 자체 launcher/메모리 시험 PATIENT JWT를 제공하고 API/영상 요청은 실제 기존 handler에 전달한다. DPoP·서명 ingress·authority·release 정책을 mock PASS로 대체하지 않는다. 각 modality의 두 실제256×256 SOP와 Grant 철회 후 신규 접근 거부/PACS 읽기 불변을 확인했다. 현재 상태 문서의 신규 증적은 DRAFT / UNASSIGNED이다. 이는 실제 공개 배포 ingress·전체 환자/모바일 로그인 화면·동의 철회 API 또는12개 전체 pixel 검증이 아니다.

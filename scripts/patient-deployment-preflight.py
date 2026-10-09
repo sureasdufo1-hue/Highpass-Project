@@ -64,6 +64,7 @@ print(json.dumps(out))"""
         phase = "READ_ONLY_SQL_AUTHORITY_METADATA"
         sql = """BEGIN READ ONLY; SET LOCAL statement_timeout='5s';
 SELECT json_build_object('readOnly',current_setting('transaction_read_only'),
+'baselineReady',to_regclass('public.patients') IS NOT NULL AND to_regclass('public.hospitals') IS NOT NULL AND to_regclass('public.imaging_studies') IS NOT NULL AND to_regclass('public.imaging_series') IS NOT NULL AND to_regclass('public.audit_logs') IS NOT NULL,
 'accounts',to_regclass('public.capstone_patient_accounts') IS NOT NULL,
 'ownershipRefs',to_regclass('public.capstone_patient_ownership_refs') IS NOT NULL,
 'grants',to_regclass('public.capstone_patient_self_view_grants') IS NOT NULL,
@@ -74,6 +75,24 @@ ROLLBACK;"""
         if metadata.get("readOnly") != "on":
             raise RuntimeError("READ_ONLY_TRANSACTION_REQUIRED")
         checks.append({"test": phase, "status": "PASS" if all(metadata[k] is True for k in ["accounts", "ownershipRefs", "grants", "releases", "authorityRole"]) else "NOT VERIFIED", "metadata": metadata})
+        if metadata.get("baselineReady") is True:
+            phase = "READ_ONLY_FIXED_PHANTOM_REGISTRATION_PREREQUISITES"
+            prerequisite_sql = """BEGIN READ ONLY; SET LOCAL statement_timeout='5s';
+SELECT json_build_object('readOnly',current_setting('transaction_read_only'),
+'sourceActive',EXISTS(SELECT 1 FROM hospitals WHERE hospital_id='HOSP-A' AND status='ACTIVE'),
+'fixedPatientPresent',EXISTS(SELECT 1 FROM patients WHERE patient_id='HP-TEST-PHANTOM-001' AND name='합성 팬텀 환자' AND birth_date=DATE '1970-01-01' AND phone IS NULL),
+'fixedStudySeriesCount',(SELECT count(*) FROM imaging_studies s JOIN imaging_series r USING(study_instance_uid)
+ WHERE s.patient_id='HP-TEST-PHANTOM-001' AND s.source_hospital_id='HOSP-A' AND s.metadata_only
+ AND s.body_part='GEOMETRIC_PHANTOM' AND s.study_date=DATE '2026-10-09'
+ AND ((s.study_id='HP-PHANTOM-CT-001' AND s.study_instance_uid='1.2.826.0.1.3680043.10.5432.20261009.1' AND s.modality='CT')
+ OR (s.study_id='HP-PHANTOM-MR-001' AND s.study_instance_uid='1.2.826.0.1.3680043.10.5432.20261009.2' AND s.modality='MR'))
+ AND r.series_instance_uid=s.study_instance_uid||'.1' AND r.modality=s.modality AND r.instance_count=12 AND r.preview_image_url IS NULL));
+ROLLBACK;"""
+            prerequisites = json.loads(run("docker exec hp-capstone-control-postgres-1 psql -X -qAt -U hipass_bootstrap -d hipass -c " + shlex.quote(prerequisite_sql)))
+            if prerequisites.get("readOnly") != "on":
+                raise RuntimeError("READ_ONLY_TRANSACTION_REQUIRED")
+            ok = prerequisites.get("sourceActive") is True and prerequisites.get("fixedPatientPresent") is True and prerequisites.get("fixedStudySeriesCount") == 2
+            checks.append({"test": phase, "status": "PASS" if ok else "NOT VERIFIED", "metadata": prerequisites, "scope": "minimum fixed synthetic metadata presence only; full registration-helper comparisons and PACS contents not verified"})
     except Exception as error:
         checks.append({"test": phase, "status": "NOT VERIFIED", "reason": str(error) if isinstance(error, RuntimeError) else type(error).__name__})
     finally:

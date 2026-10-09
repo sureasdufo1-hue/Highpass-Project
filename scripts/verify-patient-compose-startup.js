@@ -15,6 +15,30 @@ const compose=(args,patient=false)=>docker(['compose','--project-name',project,'
   '-f','infra/azure/capstone-patient-preparation.compose.yml',...(patient?['-f','infra/azure/capstone-control-patient.compose.yml']:[]),
   '-f',override,'--profile','patient-preparation',...args],{env});
 const write=async(name,value)=>{const file=path.join(directory,name);await writeFile(file,value,{mode:0o600});files.push(file);return file;};
+// Fixture catalog only: reuse the approved fixed synthetic operator, never SQL
+// metadata/ownership seeding. This is not an HTTP authentication/browser test.
+const catalogFixture=`import {readFileSync} from 'node:fs';
+import {PostgresStore} from './src/postgres-store.js';import {HipassService} from './src/services.js';
+import {registerPhantomCatalog,PHANTOM_DATASET_ID} from './src/capstone-phantom-catalog.js';
+let store;try{const password=readFileSync('/run/secrets/app-password','utf8').trim();
+store=new PostgresStore('postgresql://hipass_app:'+encodeURIComponent(password)+'@postgres:5432/hipass');await store.load();
+const service=new HipassService(store);const result=await registerPhantomCatalog({service,
+principal:{role:'SECURITY_ADMIN',hospitalId:'HOSP-A',actorId:'synthetic-compose-catalog-operator'},input:{datasetId:PHANTOM_DATASET_ID},
+env:{HIPASS_CAPSTONE_PHANTOM_CATALOG:'1',HIPASS_CAPSTONE_MOCK_IDP:'1',HIPASS_CONTROL_PLANE_ONLY:'1',HIPASS_STORE:'postgres',NODE_ENV:'production',AUTH_MODE:'TEST'}});
+if(!result.registrationCommitAcknowledged||!service.verifyAuditIntegrity().ok)throw new Error();
+console.log('FIXED_SYNTHETIC_CATALOG=PASS');}catch{console.error('FIXED_SYNTHETIC_CATALOG=FAIL');process.exitCode=1;}finally{await store?.close();}`;
+const registrationSnapshot=`import {readFileSync} from 'node:fs';import pg from 'pg';
+import {PostgresStore} from './src/postgres-store.js';import {HipassService} from './src/services.js';
+let client;try{client=new pg.Client({host:'postgres',database:'hipass',user:'hipass_bootstrap',
+password:readFileSync(process.env.CAPSTONE_ADMIN_PASSWORD_FILE,'utf8').trim(),connectionTimeoutMillis:5000,query_timeout:6000,statement_timeout:5000});
+client.on('error',()=>{});await client.connect();await client.query('BEGIN READ ONLY');
+const counts=(await client.query("SELECT (SELECT count(*)::int FROM capstone_patient_accounts) AS accounts,(SELECT count(*)::int FROM capstone_patient_ownership_refs) AS refs,(SELECT count(*)::int FROM audit_logs) AS audit")).rows[0];
+const logs=await PostgresStore.prototype.readTable.call({client},'auditLogs');
+const auditValid=HipassService.prototype.verifyAuditIntegrity.call({store:{get:()=>logs}}).ok;
+const linked=(await client.query("SELECT count(*)::int AS n FROM capstone_patient_ownership_refs r JOIN capstone_patient_accounts a USING(subject,patient_id) WHERE a.subject='synthetic-phantom-account' AND a.patient_id='HP-TEST-PHANTOM-001' AND a.status='ACTIVE' AND a.evidence_kind='CAPSTONE_MOCK_IDP' AND r.status='ACTIVE' AND r.version=1 AND r.source_hospital_id='HOSP-A' AND r.study_instance_uid IN ('1.2.826.0.1.3680043.10.5432.20261009.1','1.2.826.0.1.3680043.10.5432.20261009.2')")).rows[0].n;
+await client.query('ROLLBACK');console.log(JSON.stringify({...counts,auditValid,linkedRefs:linked}));
+}catch{console.error('PATIENT_FIXTURE_SNAPSHOT=FAIL');process.exitCode=1;}finally{await client?.end();}`;
+const snapshot=()=>JSON.parse(compose(['run','--rm','--no-deps','patient-prepare','--input-type=module','-e',registrationSnapshot]));
 try{
   const postgres=docker(['inspect','hipass-postgres','--format','{{.Image}}']);
   imageId=docker(['image','inspect',image,'--format','{{.Id}}']);
@@ -23,12 +47,15 @@ try{
   assert.equal(path.dirname(directory),path.resolve(tmpdir()));
   for(const name of ['admin-password','app-password','token-secret','test-auth-secret','ingress-secret','data-plane-secret',
     'patient-authority-password','patient-a-service-secret','patient-b-service-secret'])await write(name,randomBytes(32).toString('hex'));
-  override=await write('compose.json',JSON.stringify({services:{control:{restart:'no'},postgres:{restart:'no'}}}));
+  override=await write('compose.json',JSON.stringify({services:{control:{restart:'no'},postgres:{restart:'no'},
+    'patient-catalog-fixture':{profiles:['patient-preparation'],image:imageId,command:['--input-type=module','-e',catalogFixture],
+      volumes:[directory.replaceAll('\\','/')+'/app-password:/run/secrets/app-password:ro'],networks:['db_private'],restart:'no'}}}));
   env={...process.env,HIPASS_POSTGRES_IMAGE:postgres,HIPASS_APP_IMAGE:imageId,HIPASS_CLOUD_SECRET_DIR:directory,
     HIPASS_CAPSTONE_PUBLIC_ORIGIN:'https://synthetic.invalid',HIPASS_PATIENT_KEY_VAULT_KEY_ID:'https://synthetic-demo.vault.azure.net/keys/demo/'+'a'.repeat(32)};
   const configuration=JSON.parse(compose(['config','--format','json'],true));
   for(const volume of Object.values(configuration.volumes))assert.ok(volume.name.startsWith(project+'_'));
   assert.equal(configuration.services.control.ports,undefined);assert.equal(configuration.services.postgres.ports,undefined);
+  assert.equal(configuration.services['patient-catalog-fixture'].ports,undefined);
   stage='postgres-and-bootstrap';compose(['up','-d','--wait','--wait-timeout','45','postgres']);
   assert.match(compose(['run','--rm','--no-deps','bootstrap']),/CAPSTONE_DB_ROLE=PASS/);
   stage='baseline-control';compose(['up','-d','--no-deps','--wait','--wait-timeout','45','control']);
@@ -42,6 +69,21 @@ try{
   try{compose(['run','--rm','--no-deps','patient-prepare','scripts/prepare-capstone-patient-database.js','--apply']);}
   catch(error){rejected=error.status===1 && String(error.stderr).includes('PATIENT_DATABASE_PREPARATION=FAIL');}
   assert.ok(rejected);checks.push('REPEATED_PREPARATION_DENIED_PRESERVING_EXISTING_STATE');
+  stage='fixed-synthetic-catalog';
+  assert.match(compose(['run','--rm','--no-deps','patient-catalog-fixture']),/FIXED_SYNTHETIC_CATALOG=PASS/);
+  checks.push('NON_SUPERUSER_FIXED_CATALOG_OPERATOR_NO_HTTP_AUTH_CLAIM');
+  stage='registration-preflight';
+  const before=snapshot();assert.equal(before.auditValid,true);assert.equal(before.accounts,0);assert.equal(before.refs,0);
+  assert.match(compose(['run','--rm','--no-deps','patient-prepare','scripts/register-capstone-patient-phantom.js']),/"applied":false/);
+  assert.deepEqual(snapshot(),before);checks.push('ACTUAL_REGISTRATION_CLI_PREFLIGHT_NO_ACCOUNT_REF_OR_AUDIT_CHANGE');
+  stage='registration-apply';
+  assert.match(compose(['run','--rm','--no-deps','patient-prepare','scripts/register-capstone-patient-phantom.js','--apply']),/"applied":true/);
+  const registered=snapshot();assert.deepEqual(registered,{accounts:1,refs:2,audit:before.audit+1,auditValid:true,linkedRefs:2});
+  checks.push('ACTUAL_REGISTRATION_CLI_ONE_ACCOUNT_TWO_REFS_ONE_VALID_AUDIT');
+  stage='registration-reapply-negative';rejected=false;
+  try{compose(['run','--rm','--no-deps','patient-prepare','scripts/register-capstone-patient-phantom.js','--apply']);}
+  catch(error){rejected=error.status===1&&String(error.stderr).includes('PATIENT_REGISTRATION_EXISTING_STATE_PRESERVED');}
+  assert.ok(rejected);assert.deepEqual(snapshot(),registered);checks.push('ACTUAL_REGISTRATION_CLI_REAPPLY_DENIED_NO_SIDE_EFFECT');
   stage='patient-control';compose(['up','-d','--no-deps','--wait','--wait-timeout','45','control'],true);
   checks.push('PATIENT_CONTROL_REAL_ENTRYPOINT_DEDICATED_LOGIN_READY');
   const control=compose(['ps','-q','control'],true);assert.match(control,/^[a-f0-9]{64}$/);
@@ -79,7 +121,7 @@ finally{
     process.exitCode=1;cleanup=false;checks.push('SECRET_FIXTURE_CLEANUP_FAILED');
   });}
   const result={status:process.exitCode?'FAIL':'PASS',review:'DRAFT / UNASSIGNED',project,imageId,checks,cleanup,elapsedMs:Date.now()-start,
-    scope:'isolated Compose, actual readonly secret files and Control entrypoint; no public TLS, real Azure, patient registration, browser or deployed database'};
+    scope:'isolated Compose, readonly secret files, fixed synthetic catalog operator, actual registration CLI and audit, Control entrypoint; no HTTP catalog auth, public TLS, real Azure, browser or deployed database'};
   await mkdir('artifacts/workstation',{recursive:true});
   await writeFile('artifacts/workstation/'+project+'.json',JSON.stringify(result,null,2));
   console.log(JSON.stringify(result,null,2));

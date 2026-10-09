@@ -2,7 +2,7 @@
 import {spawn} from 'node:child_process';
 import {createServer} from 'node:http';
 import {createServer as reservePort} from 'node:net';
-import {randomBytes,randomUUID,createHash} from 'node:crypto';
+import {randomBytes,createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
 import pg from 'pg';
@@ -10,6 +10,7 @@ import {PostgresStore} from '../src/postgres-store.js';
 import {HipassService} from '../src/services.js';
 import {registerPhantomCatalog,PHANTOM_DATASET_ID} from '../src/capstone-phantom-catalog.js';
 import {preparePatientDatabase} from './lib/patient-database-preparation.js';
+import {registerPatientPhantom} from './lib/patient-phantom-registration.js';
 import {createPatientBrowserProbe} from './lib/patient-browser-integration.js';
 import {createPatientDataPlaneHandler} from '../src/patient-data-plane-gateway.js';
 import {createCapstoneBPortal} from '../src/capstone-b-portal.js';
@@ -17,7 +18,7 @@ import {signIngress} from '../src/ingress.js';
 
 const secret=()=>randomBytes(32).toString('hex'),name='hp-patient-full-app-'+randomBytes(6).toString('hex');
 const checks=[],start=Date.now(),password=secret(),appPassword=secret(),patientPassword=secret(),aKey=secret(),bKey=secret(),ingressSecret=secret(),loginKey=secret();
-let ownedId,admin,store,child,probe,aHttp,bHttp,controlPort,browserEvidence,grantHash,cleanup=false,phase='preflight';
+let ownedId,admin,store,child,probe,aHttp,bHttp,controlPort,browserEvidence,grantHash,grantRevoked=false,deniedAccess,cleanup=false,phase='preflight';
 const modality=process.env.HIPASS_PATIENT_PROBE_PHANTOM,studyUid='1.2.826.0.1.3680043.10.5432.20261009.'+(modality==='CT'?'1':'2'),seriesUid=studyUid+'.1';
 const mobile=process.env.HIPASS_PATIENT_PROBE_MOBILE==='1';
 const docker=args=>new Promise((resolve,reject)=>{const process=spawn('docker',args,{env:{...globalThis.process.env,POSTGRES_PASSWORD:password},windowsHide:true,stdio:['ignore','pipe','pipe']});let text='',done=false;
@@ -37,6 +38,10 @@ try{
     const upstream=await fetch(`http://127.0.0.1:${api?controlPort:bHttp.address().port}${req.url}`,{method:req.method,headers,body:chunks.length?Buffer.concat(chunks):undefined,signal:AbortSignal.timeout(35000)});
     const body=Buffer.from(await upstream.arrayBuffer());assert.ok(body.length<=33554432);
     if(req.url.endsWith('/self-view-grants')&&upstream.status===201)grantHash=createHash('sha256').update(JSON.parse(body).accessToken).digest('hex');
+    if(grantRevoked&&req.url.startsWith('/patient-dicomweb/')&&req.url.endsWith('/rendered')){
+      let code;try{code=JSON.parse(body).error;}catch{}
+      deniedAccess={status:upstream.status,error:typeof code==='string'&&/^PATIENT_[A-Z_]{1,96}$/.test(code)?code:'NOT_VERIFIED'};
+    }
     res.writeHead(upstream.status,{'content-type':upstream.headers.get('content-type')??'application/json','cache-control':'no-store'});res.end(body);
   }});
   phase='owned-db-start';const image=await docker(['inspect','hipass-postgres','--format','{{.Image}}']);assert.match(image,/^sha256:[a-f0-9]{64}$/);
@@ -53,8 +58,9 @@ try{
   await registerPhantomCatalog({service,principal:{role:'SECURITY_ADMIN',hospitalId:'HOSP-A',actorId:'synthetic-source-admin'},input:{datasetId:PHANTOM_DATASET_ID},env:{HIPASS_CAPSTONE_PHANTOM_CATALOG:'1',HIPASS_CAPSTONE_MOCK_IDP:'1',HIPASS_CONTROL_PLANE_ONLY:'1',HIPASS_STORE:'postgres',NODE_ENV:'production',AUTH_MODE:'TEST'}});
   assert.equal(service.verifyAuditIntegrity().ok,true);await store.close();store=undefined;
   await preparePatientDatabase(admin,{password:patientPassword,apply:true});
-  await admin.query("INSERT INTO capstone_patient_accounts VALUES ('synthetic-phantom-account','HP-TEST-PHANTOM-001','CAPSTONE_MOCK_IDP','ACTIVE',$1)",[randomUUID()]);
-  for(const n of [1,2])await admin.query("INSERT INTO capstone_patient_ownership_refs VALUES ($1,'synthetic-phantom-account','HP-TEST-PHANTOM-001',$2,'HOSP-A','ACTIVE',1)",[randomUUID(),'1.2.826.0.1.3680043.10.5432.20261009.'+n]);
+  assert.equal((await registerPatientPhantom(admin,{datasetId:PHANTOM_DATASET_ID})).applied,false);
+  assert.equal((await registerPatientPhantom(admin,{datasetId:PHANTOM_DATASET_ID,apply:true})).applied,true);
+  await assert.rejects(registerPatientPhantom(admin,{datasetId:PHANTOM_DATASET_ID,apply:true}),/EXISTING_STATE_PRESERVED/);
   checks.push('FULL_NON_SUPERUSER_STORE_FIXED_CATALOG_AND_EXPLICIT_OWNERSHIP');
   controlPort=await reserve();
   const environment={...process.env,NODE_ENV:'production',AUTH_MODE:'TEST',HIPASS_STORE:'postgres',DATABASE_URL:uri('hipass_app',appPassword),PORT:String(controlPort),HIPASS_LISTEN_HOST:'127.0.0.1',HIPASS_CONTROL_PLANE_ONLY:'1',HIPASS_DPOP_REQUIRED:'1',HIPASS_CAPSTONE_SINGLE_WRITER:'1',HIPASS_CAPSTONE_PATIENT_GRANTS:'1',HIPASS_CAPSTONE_PATIENT_KEY_RELEASE:'1',HIPASS_CAPSTONE_MOCK_IDP:'1',HIPASS_CAPSTONE_PHANTOM_CATALOG:'1',HIPASS_PATIENT_AUTHORITY_DATABASE_URL:uri('hipass_patient_authority',patientPassword),HIPASS_PATIENT_SELF_VIEW_SERVICE_TOKEN:aKey,HIPASS_PATIENT_KEY_RELEASE_SERVICE_TOKEN:bKey,HIPASS_PATIENT_KEY_VAULT_KEY_ID:process.env.HIPASS_PATIENT_PROBE_KEY_ID,HIPASS_DATA_PLANE_SOURCE_HOSPITAL_ID:'HOSP-A',HIPASS_PUBLIC_BASE_URL:probe.origin,HIPASS_DATA_PLANE_PUBLIC_BASE_URL:probe.origin,DICOM_TOKEN_SECRET:secret(),TEST_JWT_SECRET:secret(),HIPASS_CAPSTONE_LOGIN_KEY:loginKey,HIPASS_INGRESS_SECRET:ingressSecret,HIPASS_DATA_PLANE_SERVICE_TOKEN:secret(),JWT_ISSUER:'highpass-capstone-test-idp',JWT_AUDIENCE:'highpass-capstone-api',HIPASS_ENABLE_CURATED_DICOM:'0'};
@@ -74,8 +80,9 @@ try{
     assert.equal(origin,'https://10.90.88.2:9443');const r=await fetch('http://127.0.0.1:'+aHttp.address().port+path,{headers:options.headers,signal:AbortSignal.timeout(35000)});return {status:r.status,contentType:r.headers.get('content-type'),body:Buffer.from(await r.arrayBuffer())};
   }}));bHttp.requestTimeout=40000;bHttp.headersTimeout=10000;await new Promise(resolve=>bHttp.listen(0,'127.0.0.1',resolve));
   phase='full-web-browser';
-  browserEvidence=await probe.verify({fullApp:true,mobile,patientId:'HP-TEST-PHANTOM-001',study:{studyInstanceUid:studyUid},loginKey,stats:()=>bridge('stats',aKey,{}),revoke:async()=>{
+  browserEvidence=await probe.verify({fullApp:true,mobile,patientId:'HP-TEST-PHANTOM-001',study:{studyInstanceUid:studyUid},loginKey,stats:()=>bridge('stats',aKey,{}),denial:()=>deniedAccess,revoke:async()=>{
     assert.match(grantHash,/^[a-f0-9]{64}$/);const rows=(await admin.query("UPDATE capstone_patient_self_view_grants SET status='REVOKED' WHERE token_hash=$1 AND status='ACTIVE' RETURNING grant_id",[grantHash])).rows;assert.equal(rows.length,1);
+    grantRevoked=true;
   }});assert.equal(browserEvidence.status,'PASS');
   checks.push(mobile?'REAL_MOBILE_PWA_LOGIN_SELECTION_PACS_VAULT_AND_SQL_REVOCATION':'REAL_PATIENT_WEB_LOGIN_SELECTION_PACS_VAULT_AND_SQL_REVOCATION');
   phase='final-audit';child.kill();await until(()=>child.exitCode!==null || child.signalCode!==null,5000);child=undefined;
