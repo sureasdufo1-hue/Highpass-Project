@@ -8,7 +8,7 @@ import {
   assertDoctorPrincipal,
   assertDoctorPrincipalAudited,
   assertPatientPrincipal,
-  authenticateRequest,
+  authenticateRequest as authenticateBaseRequest,
   canReadAuditLogs,
   isPrivilegedAdmin,
   requireInternalServiceScope,
@@ -28,6 +28,7 @@ import { PrivacyTextInspectionService } from "./privacy-service.js";
 import { createPrivacyHttpHandler } from "./privacy-http-handler.js";
 import { createCapstoneMockIdp } from "./capstone-mock-idp.js";
 import { registerPhantomCatalog, isPhantomCatalogCommitted } from "./capstone-phantom-catalog.js";
+import { registerHccCatalog, isHccCatalogCommitted, HCC_PATIENT_ID } from './capstone-hcc-catalog.js';
 import { createKeyReleaseHttpHandler, keyReleasePaths } from "./key-release-http-handler.js";
 import { PostgresKeyReleaseRepository } from "./consent-bound-key-release.js";
 import {patientKeyReleasePaths} from './patient-key-release-http-handler.js';
@@ -35,6 +36,13 @@ import { createPatientSelfViewGrantRuntime } from './patient-self-view-grant-run
 import { createPatientSelfViewGrantHttpHandler, createPatientGrantAuthenticationAudit } from './patient-self-view-grant-http-handler.js';
 
 const port = Number(process.env.PORT ?? 3000);
+function authenticateRequest(request) {
+  const principal = authenticateBaseRequest(request);
+  if (process.env.HIPASS_CAPSTONE_MAIN_SCENARIO === 'HCC' && principal.role === PrincipalRole.PATIENT && principal.patientId !== HCC_PATIENT_ID) {
+    throw new AuthError(403, 'DEMO_PROFILE_ARCHIVED');
+  }
+  return principal;
+}
 validateAuthConfiguration(process.env);
 validateIngressConfig(process.env);
 const store = createStoreFromEnv();
@@ -127,6 +135,11 @@ const server = createServer(async (request, response) => {
   } catch (error) {
     if (response.destroyed) return;
     if (error instanceof AuthError) {
+      if (error.code === 'DEMO_PROFILE_ARCHIVED') {
+        await service.writeAudit({ actorType: 'SYSTEM', actorId: 'capstone-main-scenario', action: 'ACCESS_DENIED', result: 'FAIL', reasonCode: error.code,
+          ipAddress: requestMeta(request).ipAddress });
+        await store.save();
+      }
       sendJson(response, error.statusCode, { error: error.code });
       return;
     }
@@ -148,13 +161,21 @@ async function routeApi(request, response, url) {
   const segments = url.pathname.split("/").filter(Boolean);
   const method = request.method;
 
+  if (method === 'GET' && url.pathname === '/api/capstone-demo/scenario') {
+    if (!capstoneMockIdp) return sendJson(response, 404, { error: 'DEMO_IDP_NOT_ENABLED' });
+    return sendJson(response, 200, { mainScenario: process.env.HIPASS_CAPSTONE_MAIN_SCENARIO === 'HCC',
+      patientProfile: process.env.HIPASS_CAPSTONE_MAIN_SCENARIO === 'HCC' ? 'HCC_SYNTHETIC' : 'DEFAULT',
+      catalogRegistered: isHccCatalogCommitted(store), synthetic: true });
+  }
+
   if (url.pathname === "/api/capstone-demo/login") {
     if (!capstoneMockIdp) return sendJson(response, 404, { error: "DEMO_IDP_NOT_ENABLED" });
     if (method !== "POST") return sendJson(response, 405, { error: "METHOD_NOT_ALLOWED" });
     const meta = requestMeta(request);
     if (!meta.ingressTrusted) return sendJson(response, 403, { error: "TRUSTED_INGRESS_REQUIRED" });
     const body = await readJson(request, { maxBytes: 2048, strictUtf8: true });
-    const result = capstoneMockIdp({ key: body.key, ip: meta.ipAddress, patientProfile: body.patientProfile, phantomRegistered: isPhantomCatalogCommitted(store) });
+    const result = capstoneMockIdp({ key: body.key, username: body.username, password: body.password, ip: meta.ipAddress, patientProfile: body.patientProfile, entryRole: body.entryRole,
+      phantomRegistered: isPhantomCatalogCommitted(store), hccRegistered: isHccCatalogCommitted(store) });
     await service.writeAudit({ actorType: "SYSTEM", actorId: "synthetic-capstone-presenter", action: result.status === 200 ? "LOGIN_SUCCESS" : "LOGIN_FAILURE", result: result.status === 200 ? "SUCCESS" : "FAIL", reason: "CAPSTONE_MOCK_IDP_ONLY", ipAddress: meta.ipAddress });
     await store.save(); // No signed credentials are released if audit persistence fails.
     response.setHeader("cache-control", "no-store");
@@ -210,6 +231,26 @@ async function routeApi(request, response, url) {
       if (process.env.HIPASS_CAPSTONE_PHANTOM_CATALOG === '1') {
         const meta = requestMeta(request, principal);
         await service.writeAudit({ actorType: principal.role, actorId: meta.actorId, hospitalId: principal.hospitalId, action: 'SYNTHETIC_CATALOG_REGISTRATION_DENIED', result: 'FAIL', reasonCode: error instanceof AuthError || error instanceof ServiceValidationError ? error.code : 'CATALOG_REGISTRATION_UNAVAILABLE', ipAddress: meta.ipAddress });
+        if (store.appendOnlyChanges?.() === null) throw new AuthError(503, 'CATALOG_DENIAL_AUDIT_UNAVAILABLE');
+        await store.save();
+      }
+      if (error instanceof ServiceValidationError) return sendJson(response, error.statusCode, { error: error.code });
+      throw error;
+    }
+  }
+
+  if (method === 'POST' && url.pathname === '/api/capstone-demo/hcc-catalog') {
+    response.setHeader('cache-control', 'no-store');
+    try {
+      const input = await readJson(request, { maxBytes: 2048, strictUtf8: true });
+      const result = await registerHccCatalog({ service, principal, input, env: process.env, meta: requestMeta(request, principal) });
+      return sendJson(response, 200, result);
+    } catch (error) {
+      if (process.env.HIPASS_CAPSTONE_HCC_CATALOG === '1') {
+        const meta = requestMeta(request, principal);
+        await service.writeAudit({ actorType: principal.role, actorId: meta.actorId, hospitalId: principal.hospitalId,
+          action: 'SYNTHETIC_CATALOG_REGISTRATION_DENIED', result: 'FAIL',
+          reasonCode: error instanceof AuthError || error instanceof ServiceValidationError ? error.code : 'CATALOG_REGISTRATION_UNAVAILABLE', ipAddress: meta.ipAddress });
         if (store.appendOnlyChanges?.() === null) throw new AuthError(503, 'CATALOG_DENIAL_AUDIT_UNAVAILABLE');
         await store.save();
       }
@@ -479,7 +520,8 @@ async function routeApi(request, response, url) {
   }
 
   if (method === "GET" && url.pathname === "/api/imaging-studies") {
-    const patientId = url.searchParams.get("patientId") ?? principal.patientId;
+    const patientId = url.searchParams.get("patientId") ?? principal.patientId ?? (process.env.HIPASS_CAPSTONE_MAIN_SCENARIO === 'HCC' ? HCC_PATIENT_ID : undefined);
+    if (process.env.HIPASS_CAPSTONE_MAIN_SCENARIO === 'HCC' && patientId !== HCC_PATIENT_ID) throw new AuthError(403, 'DEMO_PROFILE_ARCHIVED');
     if (principal.role === PrincipalRole.PATIENT) assertPatientPrincipal(principal, patientId);
     else requireRoles(principal, [PrincipalRole.SECURITY_ADMIN, PrincipalRole.PLATFORM_ADMIN]);
     sendJson(response, 200, service.listStudies(patientId, {

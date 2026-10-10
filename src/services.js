@@ -872,7 +872,7 @@ export class HipassService {
     if (ticket.status !== TransferTicketStatus.ISSUED) {
       return denied("TICKET_INVALID");
     }
-    if (new Date(ticket.expiresAt).getTime() < new Date(this.clock()).getTime()) {
+    if (new Date(ticket.expiresAt).getTime() <= new Date(this.clock()).getTime()) {
       ticket.status = TransferTicketStatus.EXPIRED;
       return denied("TICKET_EXPIRED");
     }
@@ -903,7 +903,7 @@ export class HipassService {
       if (!proof.valid) return denied(proof.reason, proof.statusCode);
       // Awaiting proof verification must not create a second redemption window.
       if (ticket.status !== TransferTicketStatus.ISSUED) return denied(ticket.status === TransferTicketStatus.USED ? "TICKET_ALREADY_USED" : "TICKET_INVALID");
-      if (new Date(ticket.expiresAt).getTime() < new Date(this.clock()).getTime()) return denied("TICKET_EXPIRED");
+      if (new Date(ticket.expiresAt).getTime() <= new Date(this.clock()).getTime()) return denied("TICKET_EXPIRED");
       this.dpopIssuanceBindings.set(requestMeta, proof);
     }
     ticket.status = TransferTicketStatus.USED;

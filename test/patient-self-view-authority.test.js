@@ -31,6 +31,26 @@ test('fresh bound snapshot returns only own VIEW scope and changes revision on r
   assert.equal(calls, 5);
 });
 
+test('fixed HCC synthetic account maps only to its cataloged patient and remains ownership-gated', async () => {
+  const request = input();
+  request.principal.subject = 'synthetic-hcc-account';
+  request.principal.patientId = 'MEDIQ-SYN-HCC-001';
+  request.patientId = 'MEDIQ-SYN-HCC-001';
+  request.studyInstanceUid = '2.25.152777456946664835845078803762098392542';
+  request.seriesInstanceUid = '2.25.86753037210924062883543336599417733350';
+  let rows = [{ ...row(), subject: 'synthetic-hcc-account', patient_id: 'MEDIQ-SYN-HCC-001',
+    study_instance_uid: request.studyInstanceUid, series_instance_uid: request.seriesInstanceUid }];
+  const reader = new PatientSelfViewAuthorityReader({ enabled: true, clock: () => 1000, pool: { async query(query) {
+    assert.deepEqual(query.values, ['synthetic-hcc-account', 'MEDIQ-SYN-HCC-001', request.studyInstanceUid, request.seriesInstanceUid]);
+    return { rows };
+  } } });
+  assert.equal((await reader.authorize(request)).decision, 'ALLOWED');
+  rows = [];
+  assert.equal((await reader.authorize(request)).reasonCode, 'PATIENT_OWNERSHIP_UNVERIFIED');
+  request.principal.patientId = 'HP-TEST-PHANTOM-001';
+  assert.equal((await reader.authorize(request)).reasonCode, 'PATIENT_SUBJECT_MISMATCH');
+});
+
 test('foreign role, subject, profile, authentication provenance and expired session deny before database', async () => {
   const reader = new PatientSelfViewAuthorityReader({ enabled: true, clock: () => 1000, pool: { query() { assert.fail('untrusted query'); } } });
   for (const change of [x=>x.principal.role='DOCTOR', x=>x.principal.subject='other', x=>x.patientId='other',

@@ -29,3 +29,27 @@ test('expired stale ticket, malformed deadline and an already terminal ticket ca
     assert.equal(current.qr.payload,'current');
   }
 });
+
+test('auth-expired status followed by QR deadline still clears capability without claiming a server receipt',async()=>{
+  const deadline=Date.parse('2026-10-10T01:10:00Z');
+  const ticket={ticketId:'owned-unit-ticket',qr:{expiresAt:new Date(deadline).toISOString(),payload:'opaque-unit-capability'}};
+  const state={activeTicket:ticket,activeConsent:{consentId:'owned-unit-consent',status:'ACTIVE'},isAuthenticated:true,countdownTimer:42,ticketStatusTimer:73};
+  const nodes=new Map(),clearedIntervals=[],clearedPolls=[];
+  const context=vm.createContext({state,Date,AbortSignal,encodeURIComponent,
+    patientHeaders(){throw Object.assign(new Error('hidden diagnostic'),{code:'CAPSTONE_SESSION_EXPIRED'});},
+    fetch(){assert.fail('Expired authentication must not send a request');},
+    clearInterval(id){clearedIntervals.push(id);},clearTimeout(id){clearedPolls.push(id);},
+    document:{querySelector(selector){if(!nodes.has(selector))nodes.set(selector,{});return nodes.get(selector);}}});
+  vm.runInContext(code+'\n'+source.slice(source.indexOf('function stopTicketStatusPolling('),source.indexOf('async function requestMobileRevocation(')),context);
+  await vm.runInContext('refreshActiveTicketStatus()',context);
+  assert.equal(ticket.statusAuthExpired,true);assert.equal(state.countdownTimer,42);
+  assert.match(nodes.get('#qr-status-pill').textContent,/다시 로그인/);
+  vm.runInContext(`expireActiveMobileTicket(state.activeTicket,${deadline-1})`,context);
+  assert.equal(ticket.qr.payload,'opaque-unit-capability');
+  vm.runInContext(`expireActiveMobileTicket(state.activeTicket,${deadline})`,context);
+  assert.equal(ticket.qr.payload,null);assert.equal(ticket.terminal,true);
+  assert.equal(state.countdownTimer,null);assert.equal(state.ticketStatusTimer,null);
+  assert.deepEqual(clearedIntervals,[42]);assert.deepEqual(clearedPolls,[73]);
+  assert.match(nodes.get('#qr-status-pill').textContent,/EXPIRED.*서버 접수 여부 미확인/);
+  assert.doesNotMatch(nodes.get('#qr-status-pill').textContent,/hidden|서버 확인 ·|사용 완료/);
+});

@@ -13,6 +13,21 @@ async function start(t, transport, configuration = {}) {
   return (pathname, options) => fetch(origin + pathname, { ...options, signal: AbortSignal.timeout(3000) });
 }
 
+test('patient self-hosted font is an exact public asset; arbitrary fonts and secrets stay blocked', async t => {
+  const get=await start(t,()=>{throw new Error('Unexpected upstream');});
+  const response=await get('/fonts/pretendard/PretendardVariable.woff2');
+  assert.equal(response.status,200);
+  assert.equal(response.headers.get('content-type'),'font/woff2');
+  assert.equal(response.headers.get('x-content-type-options'),'nosniff');
+  assert.match(response.headers.get('content-security-policy'),/font-src 'self'/);
+  const bytes=Buffer.from(await response.arrayBuffer());
+  assert.equal(bytes.subarray(0,4).toString(),'wOF2');
+  assert.ok(bytes.length<=2097152);
+  for(const route of ['/fonts/unknown.woff2','/fonts/pretendard/secret.json','/fonts/pretendard/PretendardVariable.woff2?key=synthetic']) {
+    assert.ok([400,404].includes((await get(route)).status));
+  }
+});
+
 test('patient B metadata is default-off, forwards only to A and never borrows doctor pixel decryption',async t=>{
   const route='/patient-dicomweb/studies/1.2/series/1.2.3/instances',calls=[];
   const disabled=await start(t,async()=>{throw new Error('unexpected');});

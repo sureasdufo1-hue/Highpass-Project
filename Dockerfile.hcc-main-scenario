@@ -1,0 +1,13 @@
+ARG CAPSTONE_BASE_IMAGE
+FROM ${CAPSTONE_BASE_IMAGE}
+COPY src/capstone-hcc-catalog.js src/capstone-mock-idp.js src/patient-self-view-authority.js src/server.js /app/src/
+COPY src/capstone-b-portal.js src/http-utils.js /app/src/
+COPY src/services.js src/capstone-control-ingress.js /app/src/
+COPY public/capstone-auth.js public/app.js public/patient-pixel-viewer.js public/index.html /app/public/
+COPY public/ui/patient.js public/ui/capstone-login.css public/ui/patient-home-premium.css /app/public/ui/
+COPY public/ui/clinician.js public/ui/clinician-desk.css public/ui/viewer-studio.js public/ui/viewer-studio.css public/ui/mobile.css /app/public/ui/
+COPY public/ui/faq-assistant.js public/ui/faq-assistant.css public/ui/faq-catalog.js /app/public/ui/
+COPY public/fonts/pretendard/ /app/public/fonts/pretendard/
+COPY public/mobile/app.js public/mobile/sw.js public/mobile/index.html /app/public/mobile/
+COPY scripts/register-capstone-patient-hcc.js scripts/reset-capstone-patient-scenario.js /app/scripts/
+COPY scripts/lib/patient-hcc-registration.js scripts/lib/retire-capstone-patients.js /app/scripts/lib/

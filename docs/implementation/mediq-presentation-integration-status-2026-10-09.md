@@ -1,12 +1,558 @@
 # Medi Q 발표 환경 통합 상태와 실행 순서
 
-관측일: 2026-10-10 (Asia/Seoul). 신규 증적: DRAFT / UNASSIGNED.
+## 2026-10-10 디자인 통합 커밋 준비 — DRAFT / UNASSIGNED
+
+환자 웹·의료진 데스크·Viewer·모바일과 공통 ID/PW 인증의 기존 변경을 한 배포 소스 묶음으로 정리했다. `Dockerfile.hcc-main-scenario`에서 누락됐던 의료진/Viewer/mobile CSS·FAQ·서비스·ingress 소스를 포함하고 후보 해시 검증 목록도 일치시켰다. 새 `test/presentation-bundle.test.js`는 각 화면과 인증 소스의 이미지 포함 여부를 검사한다. DB 등록/기존 합성 환자 보관 스크립트는 이미지 의존 파일로 보존할 뿐 이번 작업에서 실행하지 않았다. FR-001~041의 해당 UI/인증/QR/Viewer 경로를 유지하며 계약이나 보안 정책을 완화하지 않았다.
+
+첫 전체 Node 실행: 905 중 904 PASS, FAQ의 과거 5탭 기대값 1 FAIL. 승인된 4탭 및 보조 화면 접근을 함께 검사하도록 수정 후 `node --test --test-concurrency=4`: **906 PASS, 0 FAIL, exit0, 57.655초**(현재 작업 트리 기준; 실제 외부 E2E 스크립트는 이 명령으로 실행되지 않음). 비밀정보 패턴 검사 PASS/0건, staged JS 로컬 의존 파일 누락 0건, 문법 검사 exit0. diff check는 원문 보존한 OFL LICENSE.txt의 trailing whitespace 1건을 제외하면 exit0.
+
+커밋 대상은 디자인·인증 의존 코드/테스트/폰트와 라이선스/로컬 프로토타입/상태 문서이다. `.env`, 비밀정보, VM 설정, DICOM·영상 데이터, 스크린샷, 브라우저 프로필, 런타임 증적 및 무관한 작업은 제외하고 로컬에 보존한다. 실제 이미지 빌드·VM 재배포·새 디자인의 실제 로그인→동의→QR→CT 종단은 **NOT VERIFIED**. 로컬 기존 서버의 scenario 401도 아직 해결된 것으로 기록하지 않는다. 다음 작업은 검증된 대상 환경에서 최신 서버/정적 파일을 함께 배포하고 같은 환자 흐름을 재검증하는 것이다.
+
+## 2026-10-10 모바일 로그인 시안 적용 — DRAFT / UNASSIGNED
+
+모바일 HTML의 capstone 표시를 기본화하여 개발용 인증 화면 대신 기존 signed ID/PW 로그인으로 진입한다. 인증 API·DB·권한 계약은 유지한다. 모바일 전용 단일 열, 중앙 로고, 절제된 버튼, 3열 미연동 소셜 로그인, 접힌 발표자 설정을 적용했다. 웹 로그인 레이아웃은 변경하지 않았다. 관련 요구사항: FR-001~005 동의 진입 및 FR-014~020 접근정책의 인증 선행조건(UI 영향).
+
+Node focused tests **34 PASS / exit0 / 1.071초**. 브라우저 fixture: 회원가입 미리보기 열기/닫기, 로그인 401 오류 표시·비밀번호 제거·로그인 화면 유지, 320/390/768px 가로 넘침 없음. 실제 로컬 scenario API는 401을 반환하여 로그인 차단됨(우회하지 않음). 실제 로그인 성공·VM 배포·PWA 갱신은 NOT VERIFIED. `output/playwright/mobile-login-mockup-aligned.png`는 실제 차단 상태이며, `output/playwright/mobile-login-design-ready-fixture.png`는 scenario 응답만 대체한 디자인 확인용이다. 실제 계정으로 로그인 성공을 주장하지 않는다.
+
+## 2026-10-10 모바일 시안 우선 재정리 — DRAFT / UNASSIGNED
+
+기존 상태 카드·인증 정보·기록 필터가 시안 위에 중첩된 것이 홈의 정보 밀도 증가 원인이었다. 홈은 진료 카드 → 간결한 검사 목록 → 도움말 순으로 정리하고 공유 현황/잠금은 내 정보로 이동했다. 긴 CSS 덧쓰기 구간을 읽을 수 있는 규칙으로 교체했다. 검사일 미확인 시 임의 날짜를 표시하지 않는다. 인증·동의·QR API 계약은 변경하지 않았다. 관련 FR-001~005, FR-006~009, FR-021~025, FR-032~036의 UI 영향 범위다.
+
+관련 Node 시험 33 PASS, 문법 검사 exit0. 390px 실제 브라우저에서 합성 API fixture 기반 홈 렌더링 확인: `output/playwright/wallet-refined-home-fixture.png`. 실제 인증 성공 또는 서버 종단 증적이 아니다. 중간 브라우저 재연결로 한 확인 명령이 실패했고 새 세션에서 홈 캡처를 재실행했다. 로그인·승인·QR 전체 시안 일치 검증, 설치된 PWA 갱신, VM 배포는 NOT VERIFIED. 네 화면 전체 디자인 완료를 선언하지 않는다. 다음 한 작업은 실제 로그인 진입 구조를 유지하면서 로그인 → 승인 → QR의 화면별 시안 대조 검증이다.
+
+관측일: 2026-10-10 (Asia/Seoul). 아래 명시된 검토 대상 외 신규 증적: DRAFT / UNASSIGNED.
+
+### 최신 UI 적용: 실제 모바일 Wallet 레이아웃 — 2026-10-10 14:41 KST
+
+독립 시안이 아닌 `public/mobile/index.html`, `public/mobile/app.js`, `public/ui/mobile.css`에 디자인을 적용했다. 홈의 다음 진료 카드에는 context 환자명과 조회한 Study 명칭/검사일/촬영 병원을 표시하며 빈 목록에서는 공유 진입 버튼을 비활성화한다. 고정 홍길동/CT/기한이나 생성 시안 이미지를 실제 데이터로 사용하지 않는다. 메뉴는 홈/영상검사/공유 내역/내 정보 네 개로 정리하고 기존 records/vault는 내 정보에서 유지했다. 선택·기관·기간 설정 단계는 유지하고 승인 요약에는 실제 선택 명칭과 요청에 사용되는 제공 기관을 표시한다. QR의 기존 발급/상태 polling/만료 제거/철회 로직은 유지하며 공유 동의 종료시각을 QR 타이머와 분리 표시했다. 기존 로그인 모듈을 유지했고 인증 조건은 변경하지 않았다. `public/mobile/sw.js`의 정적 shell 버전 v9 갱신; 민감 경로 cache 금지 유지. 신규 `test/mobile-wallet-design.test.js` 2검사 추가.
+
+frontend-design 스킬의 정보 계층·여백·선형 아이콘을 적용했다. 관련 FR-001~009/014~025/037~041; API/DB 계약 변경 없음. 집중 명령 `node --test test/mobile-wallet-design.test.js test/mobile-capstone-auth.test.js test/mobile-ticket-status-client.test.js test/mobile-qr-local-expiry.test.js test/capstone-mock-idp.test.js`: **33 PASS/exit0/0.922초**. syntax/diff exit0, secret scan PASS/findings0.
+
+현재 로컬 서버 `http://127.0.0.1:3000/mobile/`의 모바일 인증 receipt 확인은 실패하여 잠금을 유지했다. 이후 별도 소유 Chrome 세션에서 모든 API를 browser route 합성 응답으로 대체한 **UI fixture 시험**만 진행했다: 홈 metadata/선택→기관→승인→QR SVG, 공유 기한 구분, 내 정보/기존 진료기록 접근, 공유 내역 진입 확인. 320/390/1280px 가로 넘침 없음. 마지막 아이콘 정리 후 390px 재확인(아이콘4개). fixture의 동의/QR는 실제 서버에 생성되지 않았다. 캡처 `output/playwright/mobile-wallet-home-fixture.png`, `mobile-wallet-consent-fixture.png`, `mobile-wallet-qr-fixture.png`. 실제 로그인 이후 서버 종단, 설치된 PWA 갱신, VM 배포는 **NOT VERIFIED**. 이 결과를 전체 모바일 E2E PASS로 해석하지 않는다.
+
+배포/서버 재시작/commit/push 없음. 기존 사용자 변경 보존. 신규 증적 DRAFT / UNASSIGNED. 다음 한 작업은 준비한 ID/PW 설정 및 최신 런타임을 정렬한 뒤 실제 인증→환자 홈→승인→QR 정상·거부 흐름을 검증하는 것이다.
+
+### 최신 디자인 작업: 모바일 4화면 로컬 프로토타입 — 2026-10-10 14:34 KST
+
+`public/mockups/mobile-flow/index.html`, `style.css`, `app.js`를 추가했다. 기존 프레임워크/인증/DB 수정 없이 로그인 화면 체험 → 환자 홈 → 공유 조건 확인 → QR 시안을 HTML/CSS 버튼으로 연결했다. URL: `http://127.0.0.1:3000/mockups/mobile-flow/index.html`. frontend-design 스킬의 계층·여백·일관된 타이포그래피를 적용했다. 새 의존성 없음. 합성 홍길동/검사일/기간은 고정 디자인 예시이며 실제 서버 데이터가 아니다. 입력 자격증명, API, storage, 실제 QR 토큰을 사용하지 않는다. 기존 ID/PW 후보의 실행 서버 적용은 여전히 미완료다.
+
+Playwright 실제 Chrome 검증 exit0: 네 화면 이동, 승인 후 QR 표시, 중단창 Escape 취소 시 QR 유지, 사용됨/만료/확인실패에서 QR 숨김, 명시적 중단 및 재실행 비활성, 공유 내역 상태 반영, 처음부터 초기화 확인. 320/390/1440px 가로 넘침 없음. 해당 검증 구간 API/DICOMweb 호출0, pageerror0. 최초 favicon404는 빈 아이콘 선언으로 해소했다. JS 문법 검사 exit0. 화면 캡처 `output/playwright/mobile-flow-login.png`, `mobile-flow-home.png`, `mobile-flow-consent.png`, `mobile-flow-qr.png`.
+
+이는 **디자인 프로토타입 동작 PASS**일 뿐 실제 인증·동의·서버 만료·DICOM/Key Vault 종단 증거가 아니다. 관련 화면 FR-001~009/014~025/032~036 참고; 요구사항 구현 완료로 승격하지 않는다. 새 증적 DRAFT / UNASSIGNED. 배포/commit/push 및 기존 데이터 변경 없음. 다음 작업은 시안 확정 후 기존 모바일 화면에 이 레이아웃을 적용하며 실제 서버 상태 계약을 유지하는 것이다.
+
+### 최신 작업: 웹·모바일 공통 ID/PW 로그인 후보 — 2026-10-10 14:25 KST
+
+사용자 요청에 따라 공통 `public/capstone-auth.js`에 ID/PW 로그인, 회원가입 dialog, Google/네이버/카카오 준비 중 버튼을 추가했다. 회원가입은 비활성 입력 화면이며 계정 생성·개인정보 수집을 수행하지 않는다. 실제 SSO 계약/공급자 등록은 이번 범위에 없으며 인증 성공처럼 표시하지 않는다. 로그인 전 환자명·진단 문구를 일반 안내로 교체했다. 기존 의료진/발표자 키 방식은 별도 선택으로 유지한다.
+
+`src/capstone-mock-idp.js`와 `src/server.js`의 기존 POST `/api/capstone-demo/login`에 username/password 방식을 추가했다. scrypt 솔트 해시 검증, 기존 IP별 시도 제한, trusted ingress 및 감사 저장 후 JWT 반환을 유지한다. 새 계정은 서버의 고정 HCC 합성 환자에만 연결되고 PATIENT JWT만 발급한다. caller가 의료진/관리자 역할·다른 환자 profile을 요청하면 거부한다. 기존 발표자 키의 다중 시연 역할을 이 환자 계정에 승계하지 않았다. `public/app.js`에서도 사용 가능 역할을 넘어선 화면 전환을 안내하고 차단한다. 서버 권한검증을 대체하지 않는다.
+
+요청된 ID는 `Ycdc`. 지정 비밀번호의 솔트 해시는 Git ignored `.env.capstone-patient.local`에 준비했고 평문 비밀번호는 코드/문서/설정 파일에 넣지 않았다. 변수는 `HIPASS_CAPSTONE_PATIENT_USERNAME`, `HIPASS_CAPSTONE_PATIENT_PASSWORD_HASH`다. 이 파일은 일반 서버가 자동 로드하지 않는다. 기존 배포의 Mock IdP/JWT/ingress 비밀 설정과 함께 서버 런타임에 안전하게 주입해야 한다. 구성 파일만으로 새 서버를 시작하거나 실제 운영 인증으로 사용해서는 안 된다. 사용자에게 공유된 시연 자격증명이므로 합성 비운영 환경 한정이며 발표 후 폐기한다.
+
+검증: `node --test test/capstone-mock-idp.test.js test/mobile-capstone-auth.test.js test/clinical-theme-navigation.test.js` **25 PASS/exit0/0.707초**, syntax/diff check exit0, secret scan PASS/findings0. 지정 자격증명과 로컬 해시의 직접 서비스 검증 status200/PATIENT만 발급 확인(카탈로그 준비 조건을 fixture로 주입한 범위이며 HTTP/DB/VM 증거 아님). 브라우저에서 기존 서버의 공통 컴포넌트만 명시적으로 렌더하여 1440×1000/390×844 레이아웃, 회원가입 열기/Escape 닫기 확인. 기존 서버가 새 인증 설정을 로드하지 않아 scenario 요청 실패와 로그인 비활성을 관측했으며 이를 로그인 성공으로 기록하지 않는다. 스크린샷은 `output/playwright/mediq-id-login-web.png`, `mediq-id-login-phone.png`, `mediq-signup-preview.png`.
+
+관련 FR-001~005/014~025/037~041의 인증 경계와 감사 영향. 변경 파일은 위 JS 4개, `public/ui/capstone-login.css`, `test/capstone-mock-idp.test.js`, 이 문서 및 ignored 해시 설정이다. 배포/재시작/commit/push 없음. 실제 웹·모바일 HTTP 로그인과 로그인 후 환자 흐름은 **NOT VERIFIED**. 회원가입 저장·SSO는 **미구현**. 신규 증적 DRAFT / UNASSIGNED. 다음 작업은 기존 합성 시연 런타임에 자격증명 해시를 주입하고 trusted ingress·감사까지 포함해 웹/모바일 로그인 정상·실패를 확인하는 것이다.
+
+### 최신 작업: 의료진 홈 — 환자 중심 Clinical Desk 재구성 — 2026-10-10 14:15 KST
+
+환자 전원 카드와 다음 행동을 상단에 두고, 선택 검사 미리보기 → 가로 검사 목록 → 해당 검사의 최근 활동 순서로 로컬 화면을 재구성했다. 공유 세부정보는 키보드 포커스와 Escape 닫기를 지원하는 native dialog로 분리했다. 서버 context의 환자 정보만 표시하며 홍길동/간암 진단을 하드코딩하지 않는다. 자체 호스팅 폰트, 절제된 블루, 넓은 여백과 모바일 수평 메뉴를 적용했다. frontend-design의 정보 계층과 ui-ux-pro-max의 반응형·키보드 접근성 원칙을 활용했다.
+
+동의 없음은 QR 연결, 승인 대기는 상태 확인, 철회/만료는 공유 내용 확인, 유효 동의는 기존 서버 접근 확인 경로로 연결한다. 살아 있는 동일 Study 토큰과 표시 픽셀이 함께 있을 때만 ‘Viewer로 돌아가기’로 표시한다. 동의 유효 표시를 접근 허용으로 대체하지 않는다. 최근 활동은 기존 조회 결과 중 선택 Study에 해당하는 항목만 사용하고 원문 secret이나 내부 오류를 출력하지 않는다. API/DB/권한/감사 계약 변경 없음. 관련 FR-006~013/032~036; FR-014~031/037~041의 검증 경로 유지.
+
+이번 변경 파일: `public/index.html`, `public/app.js`, `public/ui/clinician.js`, `public/ui/clinician-desk.css`, `test/clinical-dossier.test.js`, 이 상태 문서. 기존 미커밋 변경은 보존했다.
+
+검증 명령: `node --check public/app.js`, `node --check public/ui/clinician.js` 모두 exit0. `node --test test/clinical-dossier.test.js test/clinician-detail.test.js test/clinical-theme-navigation.test.js test/clinician-ui-preview.test.js test/consent-operations.test.js`는 **23 PASS / 0 FAIL / exit0 / 0.431초**. `node scripts/security-secret-scan.js` PASS/findings0/exit0. 변경 코드 diff check exit0(CRLF 경고만 존재).
+
+실제 로컬 Chrome `http://127.0.0.1:3000/hipass/#doctor`: 1586×992/390×844 배치 확인, 모바일 문서 가로 넘침 없음, 상세 창 열기/포커스/Escape 닫기 확인. 동의 없는 합성 CT 선택 → ‘환자 QR 연결’ → 실제 QR 화면 이동을 확인했고 영상 hidden을 유지했다. 최신 console 오류0/경고0. 오래된 DOM 참조 클릭 2회는 실패하여 현재 accessible name으로 재선택했으며 업무 상태 변경은 없었다. 스크린샷: `output/playwright/mediq-clinical-desk-case-first.png`, `output/playwright/mediq-clinical-desk-case-phone.png`, `output/playwright/mediq-clinical-sharing-drawer.png`.
+
+**범위 제한:** 기존 로컬 합성 데이터로 UI/분기만 검증했다. 홍길동 CT 실제 픽셀·VM 배포·Key Vault 종단·최신 전체 회귀는 NOT VERIFIED. 실제 동의/토큰/DB/PACS 변경, 배포, commit/push 없음. 신규 증적 DRAFT / UNASSIGNED. 다음 한 작업은 승인된 합성 CT를 기존 인증 흐름으로 열고 홈 → Viewer → 다음 슬라이스 → 홈 복귀를 확인하는 것이다. 아래 기록은 이전 작업 이력이다.
+
+### 최신 작업: CT Viewer Imaging Studio 디자인 정리 — 2026-10-10 14:04 KST
+
+사용자 요청에 따라 CT Viewer에 집중하여 얇은 검사/환자 상단 바, 차콜 패널, 자체 호스팅 Pretendard, 절제된 블루, 직접 작성한 선형 SVG 아이콘을 적용했다. 큰 홍보형 제목을 제거하고 도구를 영상 위로, 재생/슬라이스 이동을 아래로 모았다. 검사 정보는 기본 접힘이며 버튼/Escape로 열고 닫는다. 화면이 좁으면 Series 목록은 가로로 배치한다. 기존 단일 보호 영상 요소·워터마크·동의·토큰·철회·감사 경로를 유지한다. FR-032~036 중심 변경이며 FR-014~031/037~041의 서버 계약 변경은 없다.
+
+신규 `public/ui/viewer-studio.css`, `public/ui/viewer-studio.js`; 수정 `public/index.html`, `public/app.js`, `scripts/verify-hcc-scenario-candidates.js`. 새 JS는 정보 패널, 기존 openViewer 호출/중복 클릭 방지/로딩 및 오류 표시, 승인된 표시 영상의 pointer 이동을 담당한다. 확대·대비의 기존 아이콘을 유지하고 토글에 aria-pressed, 좁은 화면의 아이콘에 접근성 이름을 붙였다. 임상 HU Window/Level과 화면 대비의 구분은 유지한다. 미구현 비교 레이아웃은 노출하지 않으며 실제 Series 명칭만 표시한다. 새 파일 두 개를 향후 이미지 hash 확인 목록에 포함했다.
+
+실제 로컬 Chrome 확인: `http://127.0.0.1:3000/hipass/#doctor`, 1586×992에서 viewport1400×724, 정보 패널을 열면1152×724; 가로/세로 넘침 없음. 390×844에서도 넘침 없음, 정보 패널/키보드 Escape·접근성 이름 확인. 확대→scale1.5/반전→invert1을 확인하고 초기화 후 두 스타일이 비워지는 것을 관측했으며 아이콘5개 유지. 권한 확인 전 pixel hidden, slider disabled, 폰트 loaded 확인. **이 실행은 영상 대기 화면의 디자인/조작 상태 검증이며 실제 승인된 CT 픽셀 위 drag·Cine·홍길동720장/VM/Key Vault 종단은 NOT VERIFIED**다. 초기 favicon404 이후 새로고침한 앱 console 오류0. 기존 개발 서버/데이터는 유지했다.
+
+검증: 문법 검사 exit0; Viewer/철회경합/슬라이스/요청예산/화면 계약 **25 PASS/exit0/0.620초**, secret scan PASS/findings0. 이번 변경 이후 전체 Node/Security/Container Gate는 재실행하지 않았으므로 앞선899PASS를 최신 전체 결과로 승계하지 않는다. 스크린샷 `output/playwright/mediq-studio-refined-desktop.png`, `output/playwright/mediq-studio-refined-phone.png`. 배포/commit/push 없음. 신규 증적 **DRAFT / UNASSIGNED**. 다음 작업은 실제 승인된 합성 CT로 전체 화면·Series·슬라이스·영상 이동을 확인하는 것이다.
+
+### 최신 작업: 의료진 Clinical Desk / Imaging Studio 로컬 구현 — 2026-10-10 13:52 KST
+
+승인된 밝은 기본 화면과 어두운 CT Viewer 시안을 기존 vanilla JS 화면에 적용했다. 구현 순서는 진료 데스크(수평 메뉴·검사 선택·환자 dossier·동의와 다음 행동) → 기존 단일 Viewer의 다크 레이아웃 → 집중 회귀 및 실제 로컬 브라우저 점검이다. 신규 프레임워크·의존성·API·DB·인증·인가 모델을 추가하지 않았다. frontend-design의 정보 계층·여백과 ui-ux-pro-max의 키보드 focus·반응형 원칙을 적용했다. 스킬 검색의 마케팅 Hero 제안은 의료진 업무 화면에 맞지 않아 채택하지 않았고, 기존 자체 호스팅 Pretendard와 절제된 #3566B8을 유지했다.
+
+이번 수정: `public/index.html`, `public/app.js`, `public/ui/clinician.js`, 신규 `public/ui/clinician-desk.css`, 신규 `test/clinical-dossier.test.js`. 관련 FR-006~009/010~013/032~036; FR-001~005/014~031/037~041의 기존 경로와 보안 검증은 유지한다. 환자 이름·나이는 서버 context에서만 표시하며 동의가 유효해도 접근 허용/영상 전달 완료로 표시하지 않는다. 실제 승인된 blob 픽셀 하나만 기존 controller가 이동하고 생성 시안의 CT 사진은 앱에 넣지 않았다. Viewer의 CSS 밝기·대비를 임상 DICOM W/L로 오인하지 않도록 표시를 수정했다. 기존 QR/감사/관리/비상 열람 hook을 삭제하지 않았다.
+
+검증: `node --check public/app.js` exit0; focused 21검사 PASS/exit0; 전체 `node --test --test-concurrency=4` **899 PASS/exit0/56.350초**. 전체 회귀 이후 서버 context age 표시와 표시 문구를 소폭 보완했으며 집중 회귀를 다시 실행했다. `node scripts/security-secret-scan.js` PASS/exit0/findings0, `git diff --check` exit0(기존 CRLF 경고). Security Gate 전체·container/image 검사·HTTPS 병원 종단은 이번 디자인 작업에서 실행하지 않았다.
+
+기존 로컬 `http://127.0.0.1:3000/hipass/#doctor`를 실제 Chrome에서 확인했다. 1586×992/1280×900/390×844 가로 넘침 없음, 자체 호스팅 폰트 loaded, MRI 검색 7건→1건, 데스크→Viewer→데스크 이동과 선택 유지, 서버 검증 대기/픽셀 hidden/다운로드 disabled 확인. 로컬의 기존 개발용 합성 목록 기준이며 **홍길동720장 CT·Key Vault·A/B VM 브라우저 종단 검증이 아니다**. 초기 favicon.ico404만 관측했고 앱 console 예외는 없었다. 이미지: `output/playwright/mediq-clinical-desk-local.png`, `output/playwright/mediq-imaging-studio-local.png`, `output/playwright/mediq-clinical-desk-phone-local.png`.
+
+VM/Cloud 배포·DB/PACS·기존 환자 초기화·commit/push/merge는 수행하지 않았다. 이전 HCC 후보 image/manifest는 이번 수정 소스의 증거가 아니다. `scripts/verify-hcc-scenario-candidates.js`의 향후 source binding 대상에 clinician renderer와 신규 CSS를 추가했으나 새 image 생성/manifest 실행은 NOT VERIFIED다. 신규 작업·증적은 **DRAFT / UNASSIGNED**. **다음 한 작업:** 새 화면의 실제 홍길동 CT 연결을 현재 배포 기준으로 확인하고, 필요 시 새 후보 이미지 검사·검토·rollback 검증 후 배포한다. 전체 MVP/v3 완료는 선언하지 않는다. 아래 최신 절은 이전 시점 이력이다.
+
+### 최신 작업: 홍길동56세 CT·로그인·초기화 후보 — 2026-10-10 13:32 KST
+
+환자/의료진 로그인 선택과 모바일 시연 세션 확인, 홈 전원 안내 및 기존 열람/동의 callback을 연결했다. 초기화는 삭제가 아닌 기존 계정 중지·동의/토큰/QR/소유권 철회이며 durable backup이 선행한다. 별도56세 CT복사본(4×180장/512²)은 원본 픽셀과 합성 식별자를 보존하고 새 UID를 사용한다. 간암 진단은 발표용 가상 설정이다.
+
+Node896/896·최종 Security Gate PASS, isolated 실제 Chrome 로그인 및 tmpfs PostgreSQL 초기화/rollback/hash chain PASS. 최종 두 이미지 Trivy HIGH/CRITICAL0, 각각21개 runtime파일의 소스 해시 일치. 정확한 이미지·증적·한계·활성화/복구 순서는 [HCC 시나리오 기록](synthetic-hcc-study-transfer-2026-10-10.md#latest-hong-gildong-main-scenario-candidate--2026-10-10-1332-kst)에 있다. 검토 상태는 **DRAFT / UNASSIGNED**다.
+
+현재 배포는 여전히 Bfa5f/Cloud11a23/A30141이며 DB/PACS/기존 환자 목록은 변경하지 않았다. **실제 초기화·Highpass A CT 적재·새 이미지 배포·홍길동 CT 공개 사이트 표시는 미실행/NOT VERIFIED**다. 다음 작업은 정확한 후보와 초기화 범위 검토 후 동일 환자의 source 등록→배포→실제 브라우저 정상·거부를 끝내는 것이다. 전체 MVP/v3 완료를 선언하지 않는다. 아래 ‘최신’ 절은 해당 시점 이력이다.
+
+### 최신 작업: 환자 홈 concept 02 로컬 구현 — 2026-10-10 11:29 KST
+
+사용자가 발표용 재현 검증을 직접 담당하고 디자인 개선을 우선하도록 변경했다. 이는 기존 보안·완료 기준이나 검토 범위를 축소하는 지시가 아니다. 두 번째 화이트 시안을 실제 기존 vanilla JS/Node ESM 화면에 적용했으며 VM/Cloud/A/DB/PACS/인증서/이미지 배포는 변경하지 않았다. B의 실제 배포는 아래 fa5f/Cloud11a23 조합을 유지한다. 현재 디자인은 **로컬 소스 구현/DRAFT / UNASSIGNED**, 기존 사람 승인을 승계하지 않는다.
+
+필요 요소는 별도 프레임워크가 아닌 자체 호스팅 Pretendard Variable1.3.9(OFL1.1 원문 포함/2057688bytes/SHA9599f12f…), 환자 role에만 적용되는 `public/ui/patient-home-premium.css`, 기존 `ui/patient.js` SVG 아이콘이다. 공식 배포 원본 URL/hash는 `public/fonts/pretendard/PROVENANCE.json`에 기록했다. SF Pro/SF Symbols를 배포하지 않고 한글은 Pretendard로 유사한 인상을 구현한다. 외부 CDN 런타임 호출·npm dependency·lockfile 변경 없음. 브라우저 실측 폰트 loaded/제목650weight/primary rgb(53,102,184)=#3566B8. frontend-design의 여백·타이포 계층 및 ui-ux-pro-max의 focus/버튼/정상·오류 표시 지침을 적용했다.
+
+기존 동의/철회/search/Viewer/공유 callback과 API 계약을 보존했다. 공유 동의 카드를 먼저 배치하고 요약은 details로 접었다. 큰 글씨 모드는 기존 쉬운 설명 동작을 유지하며 환자 화면에만18px 확대를 추가했다. 예시 요청·완료 활동을 만들지 않으며 공유 현황의 미연결 안내도 유지한다. 카드의 실제 픽셀은 기존 승인된 Viewer에서만 확인하고 임의 사진을 붙이지 않았다. 서버 변경은 `http-utils.js`의 font/woff2 MIME 및 B Portal의 **단일 exact public font 경로** 허용/MIME뿐이다. B2MiB 제한·CSP font-src self·nosniff·API/DPoP/TLS/원본 접근 차단을 유지한다. 관련 FR-001~009/032~036, 보안 요구사항은 변경 없음.
+
+검증: 집중 UI/QR/환자 context/PHR/Viewer17검사 PASS 및 폰트 경로/정적 계약/안전 text·callback11검사 PASS(모두exit0). 추가 focused6검사 PASS. 실제 기존 로컬 `http://127.0.0.1:3000/hipass/#patient`에서1586×992/1280×900/390×844 가로 넘침 없음·폰트 loaded, MRI 검색·대표 공유 버튼의 영상 목록 진입·카드 공유하기의 선택 Study 유지/동의 설정 진입·큰 글씨18px/aria-pressed·FAQ dialog 열기/닫기를 관측했다. 동의 생성/철회 클릭·실제 Viewer/Key Vault/VM 배포 종단은 이 디자인 시험에서 실행하지 않았다. 기존 로컬 개발용 합성 목록/동의 상태를 조회했으며 원격 캡스톤 환자 데이터 검증으로 확대하지 않는다. localhost favicon.ico404만 console에 있었고 임의 서버/DB 재시작 없음. CLI 최초 설치/실행 오류는 이후 bundled Node로 복구했으며 제품 정책 DENY로 분류하지 않는다.
+
+실제 화면 스크린샷: `output/playwright/mediq-patient-home-premium-final.png`, `output/playwright/mediq-patient-home-premium-phone-final.png`. 신규 source/evidence는 DRAFT / UNASSIGNED. **다음 한 작업:** 사용자 디자인 확인 후 실제 권한을 지키는 썸네일 표시와 동의 상세 화면의 시각적 정렬을 진행한다. 배포가 필요하면 현재 runtime 기준으로 별도 image 구성·검사·복구·검토를 수행하며 기존 fa5f 승인에 새 폰트/server 변경을 승계하지 않는다. 전체 MVP/v3 미완료, commit/push/merge 없음.
+
+최종 source Security Gate **PASS/exit0**: `artifacts/security/patient-home-premium-final-security-gate-20261010.json`(unit63180ms/secret5587ms/dependency4654ms), 기존120초 유한 예산. 실행 pnpm11.7.0/project pin 일치/global manifest11.22 경고 보존. 이는 실제 VM image scan·배포·병원 E2E 결과가 아니다. 발표용 재현 검증은 사용자 담당이나 구현 변경의 집중 회귀·비밀정보 검사는 계속 수행한다.
+
+### 최신 결과: fa5f 실제 인증·QR 만료 및 감사 완료 — 2026-10-10 10:57 KST
+
+기존25011 실행은 재시작 없이 **PASS/exit0/633.299초**로 종료했다. `artifacts/workstation/b-browser-2026-10-10T01-56-13.153679+00-00/result.json`의 **5검사 PASS**: 실제 모바일 개발용 로그인·CT 동의/QR, 실제 인증 기한 후 재로그인 안내와 원래 QR 기한 유지, QR 기한 경과 후 제거, exact 서버 EXPIRED(200/동의·Ticket·expiresAt 일치/서버 시각 기한 경과), fresh DPoP 인증 API의 사용 거부. QR 관측 대기615.799초/서버 관측5.115초, owned 동의 cleanup PASS. 같은 B fa5f/Cloud11a23, `consent_d74d6fb9de2b603`/`ticket_a1bcf76f6b5cd846` 기준이다. verifier API 재인증은 실제 모바일 수동 새로고침/재로그인 성공의 증거가 아니며 Viewer 픽셀·카메라·생체인증도 이 실행 범위 밖이다.
+
+첫 후속 감사는 **exit1/OWNED_PHANTOM_BINDING_REQUIRED**였다. 기존 `makeId`가 두 Uint32의 unpadded hex를 결합하지만 읽기 전용 도구가16자리로 고정한 계약 불일치가 원인이다. 서버 ID 생성·접근정책·DB는 변경하지 않고 Python/원격 JS 도구만 기존2~16자리 소문자 hex 계약과 맞췄다. exact receipt·소유 환자/기관·단일 Ticket·서버 결과 검증, parameterized SQL/read-only transaction은 유지했다. 회귀를 먼저 추가해 Python5PASS/1ERROR로 재현한 뒤6PASS/exit0, JS syntax exit0을 확인했다. 신규 도구/시험은 DRAFT / UNASSIGNED다.
+
+동일 원본 receipt 재감사 **5검사 PASS/exit0**, `artifacts/workstation/phantom-audit-2026-10-10T01-57-07.958408+00-00/result.json`: exact Ticket EXPIRED/동의 REVOKED, 사용 이력 없음, token0/key release0/금지 SUCCESS0, 인증된 TICKET_EXPIRED 거부 감사1건, persisted hash chain **7633 PASS**. 첫 도구 실패를 제품 정책 DENY나 성공으로 바꾸지 않는다. 실제 감사는 cloud service log/packet capture를 대신하지 않는다.
+
+**다음 한 작업:** 실제 모바일에서 안내대로 새로고침→명시적 재로그인→기존 동의 이력 복구/철회까지 확인한다. 설치 PWA migration·재시작 반복·전체 승인된 P0/v3 조건은 미완료다. 신규 실행 증적은 기존 후보 승인에 승계하지 않으며 DRAFT / UNASSIGNED, 전체 MVP/v3 완료·commit/push/merge 없음. 아래 RUNNING 설명은 종료 전 이력이다.
+
+후속 JS ID 경계 시험1PASS/exit0/164.9712ms, secret scan findings0/PASS/exit0, diff check exit0(기존 CRLF 경고). owned CDP9352/9354 Chrome main process가 남지 않았음을 읽기 전용 확인했다. 이 도구 변경 후 전체 Security Gate는 재실행하지 않았으므로 이전 Gate 결과를 신규 전체 회귀로 주장하지 않는다.
+
+### 최신 결과: fa5f 배포 MRI 공유·거부·감사 완료 — 2026-10-10 10:54 KST
+
+기존 실행1682를 재시작하지 않고 관측했으며 **exit0/PASS/202.149초**로 종료했다. B fa5f/Cloud11a23, 합성 HP-TEST-PHANTOM-001의 MRI 동의 `consent_d3336d3884c4a41e`/Ticket `ticket_1cd8f971dde782a5` 기준이다. `artifacts/workstation/b-browser-2026-10-10T01-52-33.837967+00-00/result.json`: 실제 모바일 명시적 승인·QR 연결→의료진 로그인/접수 버튼→256×256 픽셀/다음 슬라이스→동일 동의 모바일 철회/신규 접근 거부의 **7검사 PASS**, 별도 같은 동의에 결속된 API 음성 **9조건 PASS**. 각 거부 사유 감사·token/release/consumed/SUCCESS counter 부작용 부재를 확인했다. 12 SOP metadata 확인을 12장 전체 픽셀 검증으로 확대하지 않는다. owned 동의 cleanup PASS, 카메라·네이티브 생체인증·이 실행의 실제 만료는 NOT VERIFIED다.
+
+Exact MRI receipt의 읽기 전용 PG 감사 **6검사 PASS/exit0**, `artifacts/workstation/phantom-audit-2026-10-10T01-54-32.306918+00-00/result.json`: 동의 REVOKED, 인증/범위/권한/철회/DPoP 거부 사유, versioned Vault release **5건 모두 CONSUMED** 및 감사 연결, 전체 persisted chain **7628 PASS**. Azure Vault 서비스 자체 로그 검증은 아니다. 신규 결과는 **DRAFT / UNASSIGNED**, fa5f 후보 사람 검토를 이후 실행 증적에 승계하지 않는다.
+
+별도 실제 인증/QR 만료 실행25011은 10:55 KST 현재 같은 handle에서 진행 중이다. 다음 한 작업은 해당 실행의 서버 EXPIRED·인증 사용 거부·owned cleanup 및 exact receipt 감사를 확인하는 것이다. 실제 모바일 수동 새로고침/재로그인·설치 PWA migration·전체 MVP/v3 완료는 아직 NOT VERIFIED/미완료다. 아래 RUNNING MRI 설명은 종료 전 이력이다.
+
+### 최신 결과: fa5f 배포 CT 공유·감사 및 병원 패킷 재검증 — 2026-10-10 10:49 KST
+
+10:50:53 KST 후속 실제 관측: 동일25011 owned tab에서 `시연 인증 만료 · 새로고침하여 다시 로그인하세요 · 서버 접수 여부 미확인`, QR 잔여00:04:42/QR 존재=true를 확인했다. 이는 재로그인 안내와 원래 QR 기한 유지의 실제 DOM 관측이며 전체 만료 실행 PASS/서버 EXPIRED/실제 사용자 재로그인 성공을 아직 뜻하지 않는다. 같은 handle이 계속 살아 있다.
+
+실행 중인 B fa5f/Cloud11a23을 보존하고 별도 합성 CT 동의 `consent_3a29a35e436b0bc4`/Ticket `ticket_17fc5a809336f9f9`로 모바일 명시적 동의→실제 의료진 접수→256×256 픽셀/다음 슬라이스→모바일 철회→신규 접근 거부를 완료했다. **정상/철회7검사 및 음성9조건 PASS/exit0/94.944초**, `artifacts/workstation/b-browser-2026-10-10T01-48-58.516663+00-00/result.json`. 실제12 SOP metadata와 다음 슬라이스 관측이며12장 전체 픽셀 검증으로 확대하지 않는다. 각 음성의 정확한 reason audit·token/release/consumed/SUCCESS counter 부작용 부재 확인. 카메라/생체인증/실제 만료는 별도 범위다.
+
+Exact CT receipt 감사 **6검사 PASS/exit0**, `artifacts/workstation/phantom-audit-2026-10-10T01-49-08.487113+00-00/result.json`: owned 동의 REVOKED, 인증·scope·권한·철회·DPoP 거부사유, versioned Vault release4건 모두 CONSUMED와 감사 연결, persisted chain **7509 PASS**. 원격 Vault 서비스 자체 log 검증이 아니다.
+
+`capstone-hospital-packet-check.py`의 기존 default/분류/관측/timeout/cleanup을 유지하고 새 exact SESSION_PORTAL SHA만 allowlist에 추가했다. Python classifier **6PASS/exit0/0.007초**, compile PASS. 실제 `--expected-portal-image sha256:fa5f…` **PASS/exit0/13.825초**, `artifacts/workstation/hospital-packet-20261010T014807Z/result.json`: B source/A host SYN 각1·동일seq3172091127, A PACS 음성0/정상1·CONNECTED, direct ECONNREFUSED, loss0/owned capture cleanup=true. payload·firewall/서비스 변경 없음. 관련 FR-026~041, 새 host 코드/증적 DRAFT / UNASSIGNED, 기존 후보 검토 승계 없음. rollout Python3검사도 PASS/exit0/0.071초 및 secret findings0.
+
+MRI 동일 회귀는 exec**1682**/CDP9354에서 RUNNING, 아직 최종 결과 NOT VERIFIED다. 별도 실제 인증/QR 만료 실행**25011**/CDP9352는 계속 살아 있고 owned mobile tab에서 ISSUED·잔여00:06:59·QR 존재를 안전한 상태 필드만 읽어 관측했다. TTL/clock/session/서비스를 변경하거나 두 실행을 재시작하지 않는다. **다음 한 작업:** 이 두 exact handle의 종료/owned cleanup과 감사 확인, 그 후 실제 모바일 수동 재로그인 흐름을 끝낸다. 전체 MVP/v3·최신 전체 packet/mTLS/재시작 반복·PWA 설치 migration 미완료, commit/push/merge 없음. 아래는 이전 이력이다.
+
+### 최신 결과: 검토된 인증 만료 UI의 B-only 적용·복구·재적용 — 2026-10-10 10:45 KST
+
+후속 source Security Gate **PASS/exit0**, `artifacts/security/session-expiry-ui-rollout-security-gate-20261010.json`: unit54542ms/secret1255ms/dependency1497ms. 실제 pnpm11.7.0과 project pin 일치/global manifest11.22 차이 경고 유지. Node Gate는 Python3검사나 실제 배포/브라우저를 대신하지 않는다. 새 증적 DRAFT / UNASSIGNED.
+
+승인된 B UI **sha256:fa5f382a79f30bce50580c5128599a8567e32407bc4a95ea242f05888ab0dc7e**를 실제 B Portal에 적용했다. 신규 `scripts/session-expiry-ui-rollout.py`는 default 읽기 전용/명시적 --apply, 기존 사람 PASS/13 SHA/HEAD·fresh exact B preflight·24시간 내 exact zero High/Critical scan·target runtime를 확인하고 strict SSH/image archive hash와 기존 bounded 운영 함수를 재사용한다. 기존 FAQ operator 파일/pins는 바꾸지 않았다. 후속 도구/증적은 후보 사람 승인 범위 밖이며 DRAFT / UNASSIGNED다. Python rollout 경계3검사 PASS/exit0/0.082초, preflight3검사 유지; compile/secret findings0.
+
+실제 `session-expiry-ui-rollout.py --apply --preflight artifacts/workstation/faq-expiry-preflight-b-20261010T013817Z/result.json`은 **5검사 PASS/exit0/80.954초**, `artifacts/workstation/session-expiry-ui-rollout-20261010T014346Z/result.json`. dcc15 baseline strict TLS→fa5f 적용→dcc15 실제 복구→fa5f 재적용 및 readiness를 확인했고 이미지 외 runtime config 차이0이다. 활성 context는 기존 portal/encryption/patient/FAQ overlay4파일에 `session-expiry-reviewed-20261010.yml` 하나를 더한 **5파일**이다. 복구는 이 다섯 번째만 제외한 원래4파일/dcc15를 사용한다. 기존 FAQ·환자 secret mount·DB/PACS/Cloud/A·volume·TLS 검증을 보존했고 down-v/migration/TTL 변경 없음. image 전달을 위한 owned archive는 검증 artifact이며 Git 추적/secret 자료가 아니다. 실행한 operator는 교체 이전 containerId/context에 고정돼 있으므로 활성 후보를 old baseline으로 간주해 재실행하지 않는다.
+
+실제 모바일 후속 만료 검증 **RUNNING / 최종 결과 NOT VERIFIED**: `$env:HIPASS_BROWSER_SESSION_EXPIRY_UI='1'; ./scripts/run-browser-authorization-trace.ps1 -Port 9352 -Capstone -MobileQr -MobileQrExpiry -BrowserUrl https://192.168.111.149:9443/hipass/`, exec session**25011**, Chrome154 CDP ready. 검증기 optional flag는 기존 expiry mode에서만 허용하며 server login.expiresAt과 원래 QR.expiresAt을 구분한5분 만료/재로그인 안내·QR 존속 확인 후 기존10분 QR 제거/서버 EXPIRED/인증 사용 거부 검증을 유지한다. verifier 자신의 후속 인증만 재로그인하며 모바일 TTL/clock/session은 바꾸지 않는다. 실제 사용자 수동 새로고침 후 기존 동의 복구/PWA 설치 캐시 migration은 아직 별도 NOT VERIFIED다. 새 Node verifier syntax exit0이며 기존 mode의 기대 동작은 유지했다.
+
+**다음 한 작업:** 동일25011 handle의 종료·owned cleanup 및 exact receipt PG 감사를 확인하고 실제 모바일 재로그인 흐름을 끝낸다. 이 실행을 중복 시작하거나 기다리는 중 서비스 재시작하지 않는다. 이전 dcc15/11a23 CT/MR·packet PASS는 역사적 조합이며 새 fa5f의 전체 회귀/packet/재시작·반복 시연으로 승계하지 않는다. 전체 MVP/v3 미완료, commit/push/merge 없음. 아래는 이전 이력이다.
+
+### 최신 결과: 새 인증 만료 UI 후보 사람 검토 PASS — 2026-10-10
+
+승인 후 실제 B 읽기 전용 재점검도 **PASS/exit0**로 종료했다: `artifacts/workstation/faq-expiry-preflight-b-20261010T013817Z/result.json`. 같은 dcc15 containerId/4개 Compose file hash/config digest, healthy·env·bind mounts 일치, 변경은 portal.image만 가능하고 baseline image 존재를 다시 확인했다. 새 후보 전송·배포·TLS readiness·실제 rollback은 수행하지 않았다. 이 신규 receipt는 **DRAFT / UNASSIGNED**, 후보 검토 승인에 포함하지 않는다. 최종 secret findings0/PASS, diff check exit0(기존 CRLF 경고).
+
+사용자 직접 응답 **김범희 / 2026-10-10 / PASS / 예외 없음**을 정확한 B UI 후보 `sha256:fa5f382a79f30bce50580c5128599a8567e32407bc4a95ea242f05888ab0dc7e`와 검토 manifest에 결속된 기존5증적·8소스에 기록했다. 기록 전13파일 SHA를 재검증했고 변경0/PASS, HEAD4ea53 일치였다. `artifacts/workstation/session-expiry-ui-review-manifest-20261010.json`의 reviewer/date/decision을 실제 사람 판정으로 갱신했으며 기존 DRAFT/null 설명은 검토 이전 이력이다. 추가 countdown follow-up 시험·신규 배포 도구·이후 실제 배포/복구/브라우저 결과와 전체 MVP는 승인 범위 밖이며 DRAFT / UNASSIGNED를 유지한다.
+
+승인 부재 차단은 해소됐으나 아직 새 UI 배포/복구·실제5분 만료 안내·재로그인/PWA 갱신은 NOT VERIFIED다. 현재 B dcc15/Cloud11a23을 보존한 채 exact B4파일/target runtime 읽기 전용 사전점검을 새로 실행한다. 이후 fresh receipt에 고정된 B-only image 적용·복구·재적용과 실제 사용자 흐름을 진행한다. Cloud/A/PACS/PG/DB/TTL 변경은 필요하지 않다. 전체 MVP/v3 완료·commit/push/merge 없음. 아래는 이전 이력이다.
+
+### 최신 작업: 인증 만료 UI 후보 검토 자료·현재 B 배포 읽기 전용 점검 — 2026-10-10 10:30 KST
+
+후속 추가 검증: `test/mobile-qr-local-expiry.test.js`에 **인증 만료 안내→QR 기한1ms 전→정각**을 같은 Ticket/DOM/context에서 연결하는 시험을 추가했다. 실제 소스 함수로 expiry 오류가 요청 없이 polling만 정지하고 QR timer는 보존한 뒤 기한에 메모리 capability/QR 표시를 제거하는 것을 검증했다. server receipt 없이 서버 확인/사용 완료라고 표시하지 않고 countdown/polling timer를 정확히 정리한다. 관련4파일 집중 **28PASS/exit0**, `artifacts/workstation/session-expiry-countdown-followup-20261010.txt`. 이 추가 unit 증거·테스트 파일은 앞서 결속한5증적/8소스 사람 검토 범위 밖의 **DRAFT / UNASSIGNED**다. 후보 static3파일/image/SHA는 변경하지 않았으며 실제 배포·5분 브라우저 관측·재로그인 증거로 확대하지 않는다. 새 후보의 사람 판정은 여전히 null이므로 배포하지 않았다. secret findings0/PASS 및 diff check exit0(기존 CRLF 경고).
+
+새 후보 **sha256:fa5f382a79f30bce50580c5128599a8567e32407bc4a95ea242f05888ab0dc7e**의 검토 packet은 `artifacts/workstation/session-expiry-ui-review-manifest-20261010.json`이다. 기존 후보 승인 승계 없이 reviewer/date/decision은 null, **DRAFT / UNASSIGNED**. 정확한 후보/base·HEAD4ea53+dirty, 기존 소스 Security Gate/후보 scan/Container Gate/선택된 정적·서버 hash delta/이번 preflight의5증적 SHA 및 코드·테스트·Dockerfile·preflight8파일 SHA를 결속했다. 제품 구현 완료·실제 배포·rollback·모바일5분 기한 안내·재로그인·기존 PWA 업데이트·후속 결과 승인 자료가 아니다.
+
+`scripts/session-expiry-ui-preflight.py`는 역사적 operator 파일/pins를 바꾸지 않고 별도 import instance의 exact B dcc15→fa5f와 **현재4개** Compose context만 사용한다. 기존 strict VM host trust/MAC, concealed credential/stdin, bounded SSH/명령, environment/bind mount/render 비교를 재사용한다. Cloud role/3개·5개·순서 변경 파일/다른 image/mount 변경 거부 및 generated remote compile의 Python **3검사 PASS/exit0/0.005초**. 새 도구는 쓰기·image 전송·실행 변경 옵션이 없다. Node Gate를 Python 증거로 대신하지 않는다.
+
+실제 B strict SSH 사전점검 **PASS/exit0**, `artifacts/workstation/faq-expiry-preflight-b-20261010T013010Z/result.json`: Portal dcc15 healthy·exact containerId, portal/encryption/patient/FAQ overlay4파일 및 SHA, Compose/render/runtime env·bind mounts 일치, candidate stdin render에서 **portal.image만 변경**, baseline dcc15 image 존재 확인. 원격에 새 후보가 적재됐다고 주장하지 않으며 baseline availability는 실제 rollback PASS가 아니다. target container/config hashes는 향후 적용 직전에 다시 확인해야 한다. Cloud/A/PACS/DB/secret/volume/서비스 변경·artifact 전송 없음. secret findings0/PASS, 신규 도구 py_compile exit0.
+
+검토 요점: 기존5분 인증 기한을 유지하면서 명시적 만료 안내/수동 새로고침·재로그인, QR countdown 유지, 인증 만료≠Ticket 만료/사용 완료, 일반 장애와 구분. 대상 후보·5증적·8소스만 독립 사람 검토 요청 대상이다. **다음 한 작업:** 새 후보 검토 결과를 확인하고 현재4파일/target SHA에 고정된 B-only 적용·복구와 실제 사용자 재로그인/만료 흐름을 검증한다. 아직 미배포, 전체 MVP 미완료. 아래는 이전 이력이다.
+
+### 최신 작업: 모바일 인증 만료 안내 최소 수정·로컬 후보 — 2026-10-10 10:28 KST
+
+현재 실행 B dcc15/Cloud11a23은 변경하지 않았다. `public/capstone-auth.js`는 기존 동일 기한 비교에서 던지는 Error에 `CAPSTONE_SESSION_EXPIRED` 코드만 추가했다. `public/mobile/app.js`는 그 코드만 인증 만료로 구분해 `시연 인증 만료 · 새로고침하여 다시 로그인하세요 · 서버 접수 여부 미확인`을 표시하고 해당 Ticket의 상태 polling만 멈춘다. QR countdown/기한/terminal 판정은 보존하며 인증 만료를 Ticket EXPIRED/USED로 표시하지 않는다. generic 오류·잘못된 응답은 기존 조회 실패 안내를 유지한다. 자동 재로그인/role fallback/TTL 연장/secret 저장/오류 원문 표시 없음. PWA public shell은 v6→v7로 갱신했으나 기존 설치 캐시의 실제 업데이트는 NOT VERIFIED다. UI/UX 스킬의 확인된 error-recovery 지침(명확한 다음 행동)을 적용했으며 디자인 재설계 없음. 관련 FR-021~025/032~036, 서버/API/DB 계약 변경 없음.
+
+회귀 시험을 먼저 추가해 기존 코드 **5PASS/1FAIL/exit1**(인증 만료를 generic 조회 실패로 표시)로 재현했다. 수정 후 집중 **25PASS/exit0/265.4661ms**, 실제 header 함수의 기한1ms 전/정각/1ms 후, role 거부, auth expiry의 요청0/새 polling0/QR deadline timer 유지, 코드 없는 같은 문구를 expiry로 오판하지 않음을 검증했다. 기존 terminal/late response/foreign receipt/잠금/인증 fallback 거부 시험 유지. Node syntax 및 diff check exit0(CRLF 경고 보존).
+
+최종 Security Gate **PASS/exit0**: `artifacts/security/mobile-session-expiry-ux-final-security-gate-20261010.json`, unit56124ms/secret3787ms/dependency2957ms. pnpm11.7.0 pin 일치/global manifest11.22 경고 유지. 앞선 gate도 별도 PASS였으나 SW 변경 후 이 최종 gate를 재실행했다. `Dockerfile.session-expiry-ui`는 exact B dcc15 기반 정적3파일만 복사한다. `--pull=false --network=none` 로컬 빌드 exit0, 후보 **sha256:fa5f382a79f30bce50580c5128599a8567e32407bc4a95ea242f05888ab0dc7e**. 필수 base ARG의 InvalidDefaultArgInFrom 경고를 보존하며 명시적 base 없이 사용하지 않는다.
+
+후보 차이 `artifacts/workstation/session-expiry-ui-delta-20261010.json` **3검사 PASS/exit0**: Config 차이0/base layer prefix, 정적3파일 exact source SHA, services/B portal source 보존. 전체 filesystem/모든 secret 부재 증거로 확대하지 않는다. 고정 Trivy0.58.2 scan은 exact 후보 ID·Critical0/High0, `artifacts/security/container-scan/session-expiry-ui-20261010.json`이다. image/container gate와 소스 시험은 실제 배포/브라우저/10분 대기/재로그인 후 동의 복구 검증을 대신하지 않는다. 신규 코드·후보·증적 **DRAFT / UNASSIGNED**, 기존 후보 PASS 승계 없음.
+
+**다음 한 작업:** exact 새 UI 후보의 검토용 증적을 결속하고 현재 B4개 Compose context에 고정된 image-only 적용/복구를 준비한 뒤, 실제 모바일의5분 인증 만료 안내와 QR10분 서버 만료/재로그인 흐름을 끝낸다. Cloud/A/PG/PACS/TTL 변경 불필요. 이후 재시작·반복 시연·남은 승인된 P0 요구사항 감사가 남는다. 미배포/전체 MVP 미완료, commit/push/merge 없음. 아래는 이전 이력이다.
+
+### 최신 결과: 실제 QR 만료·사용 거부 및 감사 완료 — 2026-10-10 10:23 KST
+
+기존 실행61057을 재시작하지 않고 끝까지 관측했으며 **exit0/PASS/632.986초**로 종료했다. B dcc15/Cloud11a23, 합성 CT 환자 HP-TEST-PHANTOM-001의 exact 동의 `consent_4c6225bd40edeb84`/Ticket `ticket_6f48706283748bc2` 기준이다. `artifacts/workstation/b-browser-2026-10-10T01-23-00.606051+00-00/result.json`: 로그인/동의·QR/실제 QR 제거/서버 EXPIRED·사용 거부의 **4검사 PASS**, 실제 expiryWait602.975초. 서버 상태200/EXPIRED와 동의·Ticket·expiresAt 일치, 서버 시각이 기한 전이 아님을 확인한 뒤 fresh DPoP를 사용하는 인증 API로 한 번 사용 시도해 TICKET_EXPIRED를 확인했다. QR 제거만으로 서버 차단을 선언하지 않았다. TTL·시계·모바일 세션 변경 없음; verifier 자신의 만료 인증만 재로그인했다. owned 동의 철회 cleanup PASS. 이 실행은 실제 의료진 UI/Viewer 픽셀·카메라·네이티브 생체인증의 증거가 아니다.
+
+후속 `python scripts/capstone-phantom-audit-check.py --ticket-expiry <exact browser receipt>` **5검사 PASS/exit0**: `artifacts/workstation/phantom-audit-2026-10-10T01-23-15.429091+00-00/result.json`. 정확한 EXPIRED Ticket/owned 동의 REVOKED, 사용 안 됨, token0/key release0/금지 SUCCESS0, 해당 인증 사용 거부 감사1건, 전체 persisted chain **7374 PASS**. 이는 DB 감사이며 원본 PACS 조회 패킷/클라우드 서비스 audit log까지 증명하지 않는다. 신규 증적 **DRAFT / UNASSIGNED**, 후보 사람 PASS 승계 없음.
+
+남은 실제 문제: 대기 중 모바일 상태가 일반 `서버 상태 확인 실패 · 접수 여부 미확인`으로 바뀐다. 코드상 capstone-auth의 인증 기한 경과는 headers 생성 시 요청 전에 throw되고 refreshActiveTicketStatus가 모든 오류를 동일 안내로 처리한다. owned CDP의 각15초 관측2회는 해당 상태 응답을 보지 못했으므로 HTTP401 또는 네트워크 장애로 확정하지 않는다. 관련 기존 인증/상태 시험17개 PASS/exit0/219.371ms지만 실제 오류 원인 확정이나 UX 해결 증거는 아니다. **다음 한 작업은 인증 만료와 서버 상태 장애를 구분하고 재로그인을 안내하는 최소 UX 변경·정상/음성 검증**이다. 인증/QR TTL 연장·자동 재로그인·권한 우회 없이 처리하며 그 후 최신 재시작/반복 시연을 진행한다. 아래 RUNNING 설명은 종료 전 이력이다. 전체 MVP/v3 완료·commit/push/merge 없음.
+
+### 최신 결과: 최신 배포 CT·MRI 공유 정상/거부·감사 및 통신 경계 재검증 — 2026-10-10
+
+추가 관측(2026-10-10 01:18 UTC): 실제10분 QR 만료 실행61057은 같은 handle에서 살아 있다. 같은 owned mobile tab의 안전한 상태 필드만 읽었으며, `서버 상태 확인 실패 · 접수 여부 미확인`, 잔여 `00:04:36`, QR 존재=true를 확인했다. 이는 서버 만료/사용 차단 판정이 아니며 원인도 미확정이다. 최초 수동 관측 명령은 PowerShell quoting 문법 오류로 exit1이었고 stdin 관측 재실행은 exit0; 제품 DENY로 분류하지 않는다. 기존 실행·TTL·시계·서비스·browser session을 변경하지 않았다. 종료 receipt의 서버 EXPIRED/사용 거부/정리·감사를 확인한 뒤 이 화면 실패를 별도 안정성 문제로 평가한다. DEMO-RUNBOOK과 Release Runbook은 최신 재현 절과 과거 상태를 분리했고 MVP-SCOPE는 학생용 실제 Key Vault 시연 증거와 미완료 운영 KMS/HSM을 구분했다. 문서 변경 후 secret scan findings0/PASS 및 diff check exit0(기존 CRLF 경고), 새 기술 검토/전체 완료 승격 없음.
+
+HEAD4ea53c28b6eb1b59e15b8ee02a3e9cdf37ddc401+dirty. 먼저 실제 strict SSH inventory `artifacts/workstation/packet-inventory-20261010T010543Z/result.json` (exit0)를 수집해 B Portal **dcc15c29…**, Cloud Control **11a23eea…**, A Gateway30141/PACS9f74/mTLS proxy853ed, ingress9c210/PG8d0e의 running/healthy 및 네트워크를 확인했다. ingress Docker health 미설정과 종료된 one-shot bootstrap/migration은 실행 서비스 healthy라고 표시하지 않았다. 재배포·DB/schema/volume/인증서 변경 없음.
+
+같은 합성 환자 HP-TEST-PHANTOM-001, A→B, 각 Study/Series 하나, TREATMENT/VIEW_ONLY로 **모바일 명시적 동의/QR→실제 의료진 로그인/접수 버튼→A Gateway의 CT/MR Viewer→동일 동의 모바일 철회→신규 접근 거부**를 다시 끝냈다. 카메라 scan 대신 제공되는 QR 연결 버튼을 썼다. 실제256×256 픽셀/다음 슬라이스를 관측했고12개 exact instance metadata를 확인했다. 원본 검사 이름의 `12_SLICES`를 모든12장 픽셀 검증으로 해석하지 않는다. 음성 API는 정상 UI token과 별개의 verifier-key-bound token이며 같은 동의를 사용한다.
+
+| 동일 흐름 | 정상/철회 및 음성 | 실행시간/종료 | artifacts/workstation 원본 |
+|---|---|---|---|
+| CT | 7검사 PASS + 아래9조건 PASS | 90.127초/exit0 | b-browser-2026-10-10T01-07-35.411092+00-00/result.json |
+| MR | 7검사 PASS + 아래9조건 PASS | 202.176초/exit0 | b-browser-2026-10-10T01-11-09.333082+00-00/result.json |
+
+각9조건은 다른 Series, 잘못된 병원, 환자 역할의 의료진 token 발급, 의료진 ID 위장, 동의 ID 누락, 존재하지 않는 동의, token 변조, DPoP 누락, DPoP 재사용이다. 각 요청 전후 read-only PG에서 token/release/consumed/SUCCESS count 및 consent scope hash 동일성과 정확한 거부 사유 audit 증가를 확인했다. 응답에 token/암호문/키 envelope 없음. 403만으로 PASS 처리하지 않았으며 Study 범위·VIEW_ONLY 다운로드·철회 거부 사유는 후속 감사와 연결했다. QR 재사용도 서버 거부를 확인했다. 카메라/생체인증/실제 만료는 이 실행 범위 밖이다.
+
+각 exact receipt의 감사 **6검사 PASS/exit0**: CT `phantom-audit-2026-10-10T01-07-44.579274+00-00/result.json`, MR `phantom-audit-2026-10-10T01-11-55.440962+00-00/result.json`. 정확한 동의 REVOKED와 actor/Study/Series/권한/철회/DPoP 사유, CT4건·MR5건 release가 모두 CONSUMED/versioned Vault binding/audit linkage를 확인했다. 정상 prefetch 수를 고정4건이라고 주장하지 않는다. 마지막 전체 persisted hash chain **7327 PASS**. Azure Vault 서비스 자체 audit log 검증이 아니다. owned 동의 cleanup PASS; exact 두 Chrome PID/profile/해당 profile child process가 모두 사라졌음을 `latest-shared-browser-cleanup-20261010.json`에 기록했다.
+
+최신 image pins의 통신 경계도 재검증했다. host 패킷 도구는 기존 legacy pin을 default로 보존하고 검토된 새 exact image를 명시하는 allowlist 옵션만 추가했다. 임의 image/SHA wildcard·classifier·정상 대조군·timeout·cleanup 조건 완화 없음. Cloud ingress→PG `cloud-packet-20261010T010933Z.json` **PASS/exit0**: negative source SYN3/destination0, 정상 control SYN1/CONNECTED, loss0/capture cleanup=true. B→A raw PACS `hospital-packet-20261010T011002Z/result.json` **PASS/exit0/13.475초**: source/host 동일seq1816102805 SYN 각1, PACS negative0/normal1, direct ECONNREFUSED, loss0/cleanup=true. transport 차단을 사용자 인가 DENY로 분류하지 않았다. 특정 firewall 규칙·모든 포트·운영 보안 승인으로 확대하지 않는다.
+
+A mTLS `current-mtls-2026-10-10T01-10-41.786816+00-00/result.json` **8검사 PASS/exit0**: valid ALLOW, 무인증/wrong issuer/SAN/EKU/expired/bad DENY 및 정확한 test key cleanup. runtime cert 교체/CA private key 전송/seed/TLS 우회 없음. Python packet classifier 각6개 PASS/compile exit0, 최신 source Security Gate PASS/exit0(unit54924ms/secret1390ms/dependency1635ms), `artifacts/security/latest-shared-flow-security-gate-20261010.json`. Node gate는 Python 시험을 대신하지 않는다. pnpm11.7.0 pin 일치/global manifest 차이 경고 유지. host pins/tests만 수정했고 앱/API/DB/동의/TTL 정책은 변경하지 않았다. 관련 FR-001~005/010~041. 새 코드·10개 실행 증적 hash는 `artifacts/workstation/latest-shared-flow-manifest-20261010.json`에 결속했으며 **DRAFT / UNASSIGNED**, 이전 사람 PASS 승계 없음.
+
+**지정한 CT·MRI 공유 사용자 흐름 — 정상·거부 종단 검증 완료.** 전체 MVP/v3 완료가 아니다. 다음 한 작업인 **최신11a23 배포에서 실제10분 QR 기한 경과→서버 EXPIRED→사용 거부→감사/부작용 부재**를 이미 착수했다: `run-browser-authorization-trace.ps1 -Port 9350 -Capstone -MobileQr -MobileQrExpiry -BrowserUrl https://192.168.111.149:9443/hipass/`, exec session61057. 동일 Chrome/tab에서 ISSUED·QR 존재·00:09:48을 01:13 UTC에 관측했다. **RUNNING / 최종 결과·정리 NOT VERIFIED**이며 재시작/TTL/clock 변경 없이 같은 handle을 관측한다. 이후 최신 재시작/반복 시연·Runbook·전체 완료 감사 및 남은 승인된 P0 요구사항이 필요하다. commit/push/merge 없음. 아래는 이전 이력이다.
+
+### 최신 결과: 검토 후보 실제 적용·복구와 FAQ/본인 CT·MRI 브라우저 검증 — 2026-10-10
+
+김범희님의 exact 두 후보/기존6증적 PASS를 확인한 뒤 **B Portal UI와 Cloud Control service만 순차 교체**했다. 신규 `scripts/faq-expiry-rollout.py`는 읽기 전용 default/명시적 `--apply`, 검토된6증적 SHA·HEAD·동일 source delta·24시간 내 zero High/Critical scan·1시간 내 exact 역할 preflight·실제 target ID 및 config/file hashes를 확인한다. strict SSH, archive SHA, concealed VM credential/stdin, public CA만 사용했다. 새 host operator와 아래 실행 증적은 DRAFT / UNASSIGNED이며 후보 승인에 승계하지 않는다. A Gateway30141/PACS9f74/mTLS proxy853ed·Cloud ingress9c210/PG8d0e는 교체하지 않았다. Azure-deploy 스킬은 AZD plan 부재로 적용할 수 없어 기존 VM Compose 경로를 사용했으며 새 Azure 리소스/배포 체계는 생성하지 않았다.
+
+| 적용/복구 | 현재 실행 exact image | 실제 결과 | 증적 (artifacts/workstation/) |
+|---|---|---|---|
+| B Portal | sha256:dcc15c29e5344265a74908a41d33c48fe5ca5ceb06057107d4a9098c20b340b1 | 5검사 PASS/exit0/83.626초 | faq-expiry-rollout-b-20261010T005751Z/result.json |
+| Cloud Control | sha256:11a23eea8a6181b697beec13827addc5b8b391eb5314e190243e083c5c48b92b | 5검사 PASS/exit0/118.658초 | faq-expiry-rollout-cloud-20261010T010009Z/result.json |
+
+각 baseline→candidate→baseline 복구→candidate 재적용에서 TLS chain/hostname readiness와 environment/mount/command/security/port/network 차이0을 확인했다. Cloud ingress/PG container ID 보존. B는 기존3개+`faq-expiry-reviewed-20261010.yml`의4개 파일, Cloud Control은 ingress overlay를 보존한 기존7개+동일 명칭 role overlay의8개 파일로 실행 중이다. 복구 시 B3개/Cloud7개를 유지한다. Cloud Control 원래6개 creation label은 복구 후7개로 바뀌었지만 기존 active ingress 구성을 유지한 image-only 복구이며 환경 차이0이다. 원본 Config/DB/volume/secret/인증서 overwrite, down-v, migration 없음. 이 operator는 **교체 이전 ID/config에 고정된 일회성 검증**이며 이미 활성화된 후보를 옛 baseline으로 간주해 재실행하지 않는다.
+
+직접 HTTPS 공개 B ingress와 owned Chrome profile을 사용해 실제 login→Study 선택→본인 Viewer→FAQ를 4조합으로 검증했다. 동의 공유를 대신하는 self-view 증거가 아니다. 각9검사에는 정확한 patient/Study VIEW_ONLY Grant, 실제256×256 픽셀/서로 다른2슬라이스, Viewer close 픽셀 제거·초점 복원, 저장소 token 없음, FAQ 추천 답변·대화 지우기·의료 판독 요청 거절/입력 비우기·Escape close/초점 복원·가로 overflow 없음이 포함된다. 모바일375px PWA/개발용 잠금 해제이며 실제 생체인증/네이티브 앱이 아니다. 모바일 FAQ screenshot을 직접 확인했다. 링크 클릭 이동/오프라인 SW/기존 설치 캐시 업데이트/모든 개인정보 입력 패턴/스크린리더는 이번 후보 실행에서 NOT VERIFIED다.
+
+| 실제 브라우저 | 결과/소요 | 원본 (artifacts/workstation/) |
+|---|---|---|
+| CT / 환자 웹 | PASS/exit0/10.408초/cleanup=true | patient-real-browser-9dd9d487a3f4/result.json |
+| MR / 모바일 | PASS/exit0/12.309초/cleanup=true | patient-real-browser-e78ebcfa7110/result.json |
+| MR / 환자 웹 | PASS/exit0/11.822초/cleanup=true | patient-real-browser-620e6b1f1361/result.json |
+| CT / 모바일 | PASS/exit0/12.372초/cleanup=true | patient-real-browser-e004501ea686/result.json |
+
+동일4개 exact receipt의 read-only PG 감사 **13검사 PASS/exit0**: self-view Grant scope/owner/gateway, key release 총8건 모두 CONSUMED/versioned Vault binding, Grant·wrap·release auditSession 연결, 전체 persisted hash chain **7118 PASS**. `artifacts/workstation/patient-public-audit-20261010T010350Z.json`. Azure 서비스 자체 audit log, 전체 공유 동의/철회·만료·DPoP 음성 증거로 확대하지 않는다. 감사 DB 직접 수정·영상 원본 중앙 저장 없음.
+
+신규 host 경계 Python4+4개 PASS/compile exit0. Node FAQ/browser focused8개 PASS/212.1815ms. 배포 전 Security Gate PASS/exit0(unit55638ms/secret1315ms/dependency1777ms), `artifacts/security/faq-expiry-rollout-security-gate-20261010.json`. 실제 FAQ 검증기 보강 후 Security Gate도 PASS/exit0(unit54862ms/secret1152ms/dependency1651ms), `artifacts/security/faq-deployed-browser-tool-security-gate-20261010.json`; pin11.7.0/global manifest 차이 경고 유지. rollout Python fixture는 ignored 실제 검토 자료 없이도 synthetic tmp evidence로 실행 가능하게 했으며 마지막4개 PASS와 secret findings0을 재실행했다. 관련 FR-001~005/014~025/032~041, SEC-QR-01, API/DB/TTL/권한 계약 변경 없음.
+
+**완료 범위: 검토된 역할별 image 적용·실제 복구·재적용 및 실제 환자 웹/모바일 CT·MRI 본인 열람과 지정 FAQ 상호작용·감사 검증.** 모든 실행 handle은 exit0로 종료했고 owned Chrome/profile cleanup=true다. 전체 MVP/v3 미완료. **다음 한 작업은 최신 dcc15 UI/11a23 Control 조합에서 모바일 명시적 동의→QR→실제 의료진 CT/MR Viewer→철회와 기존9개 음성 조건·감사를 다시 끝내는 것**이다. 신규 정확한 만료 경계의 deployed 상태/사용 거부, 최종 mTLS/packet 재검증, 재시작/반복 시연 및 Runbook/전체 완료 감사는 별도 미완료다. commit/push/merge 없음. 아래는 이전 이력이다.
+
+### 최신 결과: 후보 사람 검토와 실제 배포 사전점검 — 미배포 / 2026-10-10
+
+사용자가 지정한 **김범희 / 2026-10-10 / PASS / 예외 없음**을 B UI `dcc15c29…` 및 Cloud Control `11a23eea…`의 정확한 image와 아래 후보 준비 단계의 기존6개 증적에 한정해 기록했다. `artifacts/workstation/faq-expiry-candidate-review-20261010.json`에 exact IDs·HEAD4ea53c2+dirty·증적 SHA-256을 결속했다. 신규 host 사전점검/배포 도구·이후 실행 결과·배포/복구/브라우저 E2E·전체 MVP는 승인 범위 밖이다. 이전 DRAFT 문구는 이 사람 검토 이전 이력이며 전체 코드/향후 증적 PASS를 의미하지 않는다.
+
+신규 `scripts/faq-expiry-deployment-preflight.py --role CLOUD` 및 `--role B`를 실제 strict SSH에서 실행했다. 쓰기/전송/컨테이너 교체 없이 Docker image availability·healthy·exact project/path/file list·runtime 환경/마운트와 Compose render 일치·stdin 후보 overlay의 **대상 image 한 필드만 변경**을 검증했다. 비밀값과 전체 inspect/config는 출력하지 않는다. 별도 IPv4/hostname TLS readiness 또는 actual rollback 증적은 아니다.
+
+| 대상 | 현재 baseline → 검토된 후보 | 현재 실제 결과 | 원본 증적 |
+|---|---|---|---|
+| B Portal | 27e1bd82… → dcc15c29… | PASS/exit0, portal image 외 변경0, baseline image 존재 | artifacts/workstation/faq-expiry-preflight-b-20261010T005058Z/result.json |
+| Cloud Control | 30141f81… → 11a23eea… | PASS/exit0, control image 외 변경0, ingress9c210/PG8d0e 보존 | artifacts/workstation/faq-expiry-preflight-cloud-20261010T005016Z/result.json |
+
+현재 Cloud Control은 원래6개 생성 label을 유지하고 ingress는 추가 `patient-ingress-reviewed-20261010.yml`을 포함한7개 label을 가진다. 같은 stage/앞6개 일치를 확인하고 **현재 ingress overlay를 보존한7개**로 배포 계획을 렌더링했다. 기존 Control6개 label을 전체 project의 최신7개라고 잘못 주장하지 않는다. B는 현재3개 `portal.yml/encryption.yml/patient.yml`를 유지한다. 각 receipt에 exact file hashes/target container ID/config digest/복구 image와 보호 대상 container ID를 기록했다.
+
+최초 cloud 사전점검은 위6/7개 구분 미반영으로 BASELINE/ValueError **NOT VERIFIED**, `faq-expiry-preflight-cloud-20261010T004933Z/result.json`에 보존했다. 최초 B는 Portal runtime에 존재하지 않는 key-release 서비스 env를 읽어 CURRENT_COMPOSE/KeyError **NOT VERIFIED**, `faq-expiry-preflight-b-20261010T005022Z/result.json`에 보존했다. B의 기존 배포에 쓰인 공개 versioned Vault ID를 Compose 입력으로 사용하고 runtime에 새 env/secret을 추가하지 않았다. 두 오류는 인증/인가 DENY나 정상 배포로 분류하지 않는다. 수정 후 role/file/image/env 변경 거부 및 생성 remote 문법 **Python4개 PASS/exit0/0.007초**. 신규 host 자료는 DRAFT / UNASSIGNED다.
+
+최종 source Security Gate도 **PASS/exit0**(unit54555ms/secret1110ms/dependency1550ms), `artifacts/security/faq-expiry-preflight-security-gate-20261010.json`. Node gate는 별도 Python4개 시험을 대신하지 않는다. Python compile/secret findings0/문서 diff check exit0, 기존 CRLF 경고 유지. 모든 SSH/PTY 검증 handle은 종료됐고 재시작/배포하지 않았다.
+
+**다음 한 작업:** 검토 image/evidence hash와 최신 preflight baseline을 재확인하는 역할별 image-only 적용·baseline 복구·재적용 도구를 준비·시험하고 실행한 뒤, 실제 FAQ 웹/모바일 및 같은 CT/MR 정상·거부·감사를 재검증한다. 적용 시 B와 Cloud를 순차 처리하고 A/PACS/ingress/PG·DB·volume·secret mount는 교체하지 않는다. image만 복구하더라도 환자 overlay와 ingress overlay를 함께 보존하며 down-v/migration은 금지한다. **아직 후보 배포/실제 rollback/최신 후보 브라우저 E2E NOT VERIFIED, 전체 MVP/v3 미완료.** commit/push/merge 없음. 아래는 이전 이력이다.
+
+### 최신 결과: FAQ·QR 만료 역할별 후보 준비 — 미배포 / 2026-10-10
+
+HEAD `4ea53c28b6eb1b59e15b8ee02a3e9cdf37ddc401` + dirty. 기존 실행 환경은 교체하지 않았다. B Portal27e1의 UI overlay 후보는 `sha256:dcc15c29e5344265a74908a41d33c48fe5ca5ceb06057107d4a9098c20b340b1`, Cloud Control30141의 service 후보는 `sha256:11a23eea8a6181b697beec13827addc5b8b391eb5314e190243e083c5c48b92b`다. `--pull=false --network=none`으로 로컬 exact base에 기반해 빌드했고 각 exit0. A Gateway/PACS/ingress/PG는 대상이 아니다. Dockerfile의 필수 base ARG에 대한 InvalidDefaultArgInFrom 경고는 보존하며 명시적 base 없이 빌드하지 않는다.
+
+| 검증 | 실제 결과 | 증적 (artifacts/ 아래, clone 미포함) |
+|---|---|---|
+| UI 정적 자산 소스 일치 | 35개 PASS / exit0 | workstation/faq-ui-candidate-manifest-20261010.json |
+| 역할별 config·base layer·파일 차이 | 4검사 PASS / exit0 | workstation/faq-expiry-candidate-delta-20261010.json |
+| UI Container Gate | PASS / exit0, Critical0 / High0 | security/faq-ui-container-gate-20261010.json |
+| Control Container Gate | PASS / exit0, Critical0 / High0 | security/qr-expiry-control-container-gate-20261010.json |
+| Control 후보 내부 만료 smoke | 4검사 PASS / exit0 | workstation/qr-expiry-candidate-smoke-20261010.json |
+| FAQ·환자 context·Ticket focused | 30/30 PASS / exit0 / 3348.6455ms | 해당 Node 테스트 실행 결과 |
+
+고정 Trivy0.58.2 scanner 결과의 실제 ImageID와 각 Gate 대상을 일치시켰으며 예외·보안 정책 완화 없음. 두 후보의 inherited Config 차이0/base layer prefix 보존을 확인했다. 35개 UI manifest 대상 중 변경은 app/index, mobile app/index/sw, FAQ js/catalog/css의 정확한8개이며 UI 서버 서비스 파일은 보존했다. Control 서비스는 기존 image와 LF 정규화 비교 시 만료 비교 `<`→`<=` 두 곳만 다르다. 이것을 전체 파일시스템/모든 secret 부재 검사로 확대하지 않는다.
+
+최신 전체 Security Gate **PASS/exit0**: unit54798ms/secret1146ms/dependency1512ms, `artifacts/security/faq-expiry-candidate-security-gate-20261010.json`. 120초 제한은 `HIPASS_SECURITY_GATE_TIMEOUT_MS=120000`으로 설정했다. 실행 pnpm11.7.0은 project pin과 일치하며 global manifest11.22.0 차이 경고는 유지한다. Gate의 소스 Node 시험·secret scan·의존성 감사는 후보의 실제 브라우저/API/PG 회귀와 별도 검증이다.
+
+Control smoke는 network-none/read-only/cap-drop/no-new-privileges 컨테이너와 owned tmpfs JSON store의 합성 환자만 사용했다. 기한1ms 전 ALLOWED/토큰1, 같은 시각·1ms 후·proof await 중 기한 도달 시 TICKET_EXPIRED/DENIED, 토큰 발급0·USED/usedAt 없음·거부 감사 확인. 실제 PostgreSQL·배포 API·DPoP 암호 검증은 이 smoke 범위가 아니다. `--rm`으로 컨테이너/tmpfs를 정리했고 기존 DB·volume·서비스·인증서는 변경하지 않았다. 관련 FR-001~005/014~025/032~041(FAQ는 안내 지원), SEC-QR-01. 새 검증 스크립트2개 문법 검사 exit0.
+
+증적 SHA-256: UI manifest `ba5ff471b1abfaf23b6edd12276e8d35b44e62775e48e7daa449e8fac737b74b`; delta `c4f0aef29279adaa5098bba3c9b0868945ab5cd5837ac9c19121cd509eb8bb0f`; smoke `ebc3571c44833f8f5a819e484bf56a30d53fd46fcb1d5b003a95e572ac414683`; UI Gate `868b1f6b9b8c38c8c7866249560e5dd8608d809d6bfeb4453e98a0f4c2352f74`; Control Gate `d409c458bab36e5e70a6edeb0420d26ba0ac30d55e5ffa20c216c4b3ae72f8e5`.
+
+**판정: 후보 준비·격리 검증 완료, DRAFT / UNASSIGNED, 미배포.** 신규 사람 검토·현재 Compose/config 기반 후보 rollback·실제 FAQ 브라우저·배포 후 동일 CT/MR 정상/거부·재시작 시연은 NOT VERIFIED다. 기존27e1 사람 승인과 과거 rollback 결과를 이 두 후보에 승계하지 않는다. 다음 한 작업은 **exact 두 후보와 증적 검토 및 역할별 현재 baseline에 고정된 적용/복구 절차 준비**다. 전체 MVP/v3 완료·법률 적합성·운영 승인 주장 없음. commit/push/merge 없음. 아래는 이전 이력이다.
+
+### 최신 결과: B→A 원본 PACS 다중 VM 패킷 경계 완료 — 2026-10-10
+
+`scripts/capstone-hospital-packet-check.py`는 실제 B portal27e1/A Orthanc9f74/mTLS proxy853ed의 exact image·running/PID·healthy, PACS host binding없음, 정상 대조군의 A PACS network 연결을 확인하고 **B portal namespace→A host192.168.111.129:8042**를 관측했다. VMware local public-host-key/MAC/strict SSH는 기존 도구를 재사용한다. 겹치는172.18.0.2를 원격 대상이라고 추정하지 않는다. B source/A host/A PACS namespace에서 임시 source port 두 개의 SYN header만 capture하며 proxy→PACS의 CONNECTED를 listener/목적지 capture positive control로 대조한다. TLS/mTLS 인증 자체의 재검증은 아니며 정상 대조군도 DICOM payload를 요청하지 않는다.
+
+첫 실행 PASS/exit0: `artifacts/workstation/hospital-packet-20261010T003646Z/result.json`; 반복 PASS/exit0/13.773초: `hospital-packet-20261010T003800Z/result.json`. 이후 B 송신/A 수신 header의 destination/port 및 **TCP sequence 동일성**까지 classifier에 보강했고, 최종 실제 재실행 **PASS/exit0/13.215초**: `artifacts/workstation/hospital-packet-20261010T003911Z/result.json`. 마지막 host tool hash305d1bfa606662b04808995b914348373a1d88ec6f28c974e0b4d19d2eef6a21. B source SYN1/A host SYN1(동일seq2953658171), PACS 도착 음성 SYN0, 정상 control SYN1/CONNECTED, B 직접접속 ECONNREFUSED, 세 capture kernel drop0/정확한 child process cleanup=true. 원격 프로세스20초/30초 및 SSH drain/readiness/probe에 유한 기한을 두고 capture 프로세스 그룹만 종료한다. 서비스/DB/volume/방화벽/인증서 변경, 소프트웨어 추가설치, packet payload·인증정보·DICOM 수집 없음.
+
+Classifier는 정상대조군 없음·DNS/bind/timeout 오류·missing capture·패킷손실·미정리·source/host sequence 불일치이면 NOT VERIFIED, 직접 CONNECTED이면 FAIL이다. Python5개(여러 subcases) PASS/exit0/0.003초; 기존 cloud classifier5개도 PASS/exit0/0.004초. compile PASS, 최종 secret findings0. Security Gate **PASS/exit0**(unit55143ms/secret1345ms/dependency1562ms), `artifacts/security/hospital-packet-security-gate-20261010.json`; sequence 보강 뒤 별도 Python5개/compile/secret을 재실행했다. Node gate는 Python 실행 증적을 대신하지 않는다. 관련 FR-026~031 및 의료영상 원본 분산/네트워크 최소노출 invariant.
+
+**완료 범위: 실제 B portal→A host 원본 PACS 포트 비연결과 PACS namespace 비도달을 정상 listener 대조군·상관 패킷과 함께 검증.** 특정 firewall rule·모든 병원/포트·사용자 인가 정책 DENY나 운영망 보안 승인까지 증명한 것은 아니다. 앞선 Cloud ingress→PG packet gate와도 scope를 구분한다. 신규 host 코드/증적은 DRAFT / UNASSIGNED, 기존 사람 검토 승계 없음. 전체 MVP/v3 미완료.
+
+다음 한 작업은 **미배포 FAQ와 정확한 QR 만료 경계 수정의 역할별 후보 이미지 준비·차이/보안 검증**이다. B는 검토된27e1 기반 UI overlay, Cloud Control은30141 기반 service 변경만 검토하며 A Gateway/PACS/ingress/PG의 불필요한 교체는 하지 않는다. 실제 적용은 후보 검토·rollback 계획을 정리한 뒤 진행하고, 현재 실행 image에 로컬 변경이 이미 포함됐다고 주장하지 않는다. 이후 동일 CT/MR 정상·거부 E2E/재시작/발표 Runbook/전체 완료 감사가 남는다. commit/push/merge 없음. 아래는 이전 이력이다.
+
+### 최신 결과: 실제 클라우드 ingress→PostgreSQL 패킷 경계 — 2026-10-10
+
+`capstone-packet-inventory.py`로 A/B/Cloud의 현재 image/PID/health/port binding/network 및 tcpdump/nsenter/timeout 존재를 수집했다. strict VMware-host-key/MAC 및 cloud known_hosts 경계 유지, credential은 concealed stdin/memory-only. `artifacts/workstation/packet-inventory-20261010T003047Z/result.json`, exit0. B는 승인된27e1, A Gateway/Cloud API30141, ingress9c210, PG8d0 image로 실행 중이었다. 이 inventory 자체는 packet gate PASS가 아니다. 기존 packet-boundary-check는 단일 로컬 합성 Compose prefix에 한정되므로 VM/클라우드 결과로 승계하지 않았다.
+
+실제 Cloud에서는 새 host 검증기 `scripts/capstone-cloud-packet-check.py`가 **image3개 exact pin/running/PID·ingress/DB network 비공유·API/DB network 공유·DB host port 비노출**을 확인한 뒤, ingress와 PostgreSQL의 network namespace 양쪽에서 SYN header만 수집했다. 임시 TCP source port 두 개로 정상/음성 probe를 구분하고, API→PG 실제 CONNECTED를 positive control로 사용했다. ingress→PG는 실제 ETIMEDOUT, source SYN3개/DB 도착0개, positive SYN DB도착1개, 양쪽 kernel drop0, capture cleanup=true였다. 정상 연결 대조군/관측 SYN/무손실 capture가 없으면 NOT VERIFIED이고 예상 밖 CONNECTED이면 FAIL이다. 패킷 payload·TLS/JWT/key/영상/DB 내용 수집, DB login·SQL, 서비스 재시작·방화벽/네트워크 변경은 하지 않았다.
+
+첫 실행은 수동 image pin의 PG digest 마지막 문자 중복으로 preflight 실패/NOT VERIFIED(exit1)였고 원본 `cloud-packet-20261010T003230Z.json`을 보존했다. inventory 원본과 맞춘 첫 실제 packet probe는 PASS(`cloud-packet-20261010T003250Z.json`). 이후 재실행은 tcpdump stderr의 TextIO/select buffering 때문에 capture readiness AssertionError/NOT VERIFIED(`cloud-packet-20261010T003333Z.json`, cleanup=true)였다. 이를 source `os.read` 기반으로 수정했으며 보안 경계나 성공조건은 완화하지 않았다. 최종 동일 코드 **2회 연속 PASS/각 exit0**, `artifacts/workstation/cloud-packet-20261010T003353Z.json` 및 `cloud-packet-20261010T003358Z.json`. classifier의 positive-control 누락/DNS·bind오류/packet loss/headers 누락/뜻밖 reachability/64자리 image pin/capture 준비 회귀 등 Python5개 **PASS/exit0/0.003초**, 문법 compile·secret findings0. 전체 Security Gate 결과는 `artifacts/security/cloud-packet-security-gate-20261010.json`에 저장한다.
+
+**완료 범위: 현재 Cloud ingress network namespace→PG container5432의 실제 SYN 비도달 및 API 정상 연결 대조 검증.** 특정 iptables 규칙·B VM 모든 경로·병원 A 원본 PACS packet gate까지 완료했다는 주장이 아니다. A/B 도구·현재 network 준비는 확인됐으나 B→A Orthanc는 기존 host ECONNREFUSED inventory만 있고 **multi-host packet gate NOT VERIFIED**다. 다음 한 작업은 A PACS의 정상 listener 대조군과 B source/A host/PACS destination 관측을 연결하는 것이다. Docker subnet 주소가 A/B/Cloud에서 중복되므로 원격 container IP를 다른 VM에서 동일 대상이라고 추정하지 않는다. 모든 신규 host 코드/증적 DRAFT / UNASSIGNED, 배포/commit/push 없음. 전체 MVP/v3 미완료. 아래는 이전 이력이다.
+
+Cloud packet 검증기 추가 후 Security Gate도 **PASS/exit0**로 완료했다(unit54838ms/secret1256ms/dependency1624ms). 실제 pnpm11.7.0 pin 일치/global manifest11.22.0 경고 유지. 이 gate는 Python classifier 실행을 대신하지 않으며 Python5개는 별도 위 명령으로 실행했다.
+
+### 최신 결과: 실제 서버 QR 만료·사용 거부와 동일 Ticket 감사 연결 완료 — 2026-10-10
+
+기존 배포에서 발급한 합성 환자 HP-TEST-PHANTOM-001/A→B/단일 CT Study·Series/VIEW_ONLY의 같은 consent/Ticket을 실제 시간 경과 후 검증했다. `scripts/run-browser-authorization-trace.ps1 -Capstone -MobileQr -MobileQrExpiry -Port 9337` **4검사 PASS/exit0/608.093초**, `artifacts/workstation/b-browser-2026-10-10T00-29-08.680676+00-00/result.json`. 만료 대기602.885초, 서버 read-only 관측2.324초; 서버 HTTP200/EXPIRED, consent·ticket·expiry binding 일치, server Date가 기한 이전이 아님. 실제 사용 요청은 TICKET_EXPIRED/DENIED/토큰없음을 확인했으며 owned consent cleanup PASS다. 클라이언트 QR 제거만으로 성공 판정하지 않았고 시계·TTL·정책 변경 없이 같은 실행을 기다렸다. 이전 ISSUED/서버 기한 이전의 FAIL 증적은 보존한다.
+
+동일 receipt에 `capstone-phantom-audit-check.py --ticket-expiry`를 실행하여 실제 PostgreSQL **5검사 PASS/exit0**를 연결했다: exact Ticket EXPIRED·서버기한경과 및 consent cleanup REVOKED, usedAt/redeemed doctor/hospital 없음, 해당 consent의 token0/key release0/금지 SUCCESS0, 인증된 DOC-B-01의 TICKET_EXPIRED 거부 감사1건, 전체 persisted hash chain7044 PASS. `artifacts/workstation/phantom-audit-2026-10-10T00-29-16.728153+00-00/result.json`. 이는 exact fresh-flow의 저장 기록 부작용 부재이며 패킷 capture/클라우드 서비스 audit 전체 검증이 아니다. wrapper receipt 경계5개 Python test도 PASS다. 인증정보·nonce·키·영상 payload 출력 또는 DB 직접 수정 없음.
+
+완료 범위는 **지정한 QR의 실제 만료→신규 사용 차단→감사/부작용 부재 검증**이다. 실제 camera/native 인증·Viewer 픽셀·모든 QR의 무한 안정성을 이 결과로 주장하지 않는다. 검증한 기존 Control image30141이며 FAQ 및 정확한 millisecond 만료 경계 수정은 아직 미배포다. 이번 과정에서 만든 host 감사 검증기는 신규 DRAFT / UNASSIGNED이며 기존 image에 자동 포함됐다고 주장하지 않는다. 전체 MVP/v3 미완료, 신규 증적 DRAFT / UNASSIGNED. 브라우저 wrapper가 종료됐으며 재시작 없이 끝났고 commit/push 없음. 다음 한 작업은 **최신 실행 구성의 패킷 수준 Orthanc/DB 경계를 positive control과 함께 검증하는 것**이다. FAQ·경계 수정의 후보 이미지 검사/검토/배포 및 핵심 CT/MR 회귀는 후속 미완료로 유지한다. 아래 진행 중 문구는 완료 이전 이력이다.
+
+### 최신 작업: 실제 QR 만료 검증 착수 및 정확한 만료 경계 수정 — 2026-10-10
+
+FAQ 로컬 구현 후 핵심 공유 흐름의 미검증 항목으로 복귀했다. 기존 `scripts/run-browser-authorization-trace.ps1 -Capstone -MobileQr -MobileQrExpiry -Port 9337`를 전용 headless browser/profile로 실행했다. 브라우저 준비 완료를 관측했고 서버 기준 실제10분 만료 대기를 포함한 실행이 진행 중이다. 시계/TTL/모바일 세션 변경, 배포 또는 policy DENY 재시도 없음. 서버 상태 조회만 유한90초 polling하며 실제 만료 확인 후 사용 요청은 한 번 수행한다. 현재 실행의 최종 결과·owned consent cleanup은 아직 NOT VERIFIED이며 이 진행 기록을 PASS로 해석하지 않는다. 최초 서버 만료 FAIL 원본(`b-browser-2026-10-09T09-53-17.776248+00-00/result.json`)은 보존한다. 해당 응답은 ISSUED였고 서버 Date가 기한 이전이었다. 이를 정책 우회/시계 오차의 확정 원인으로 판단하지 않는다.
+
+별도 코드 점검에서 `viewPatientTicketStatus`의 `now >= expiresAt`과 redemption의 `now > expiresAt` 불일치를 발견했다. 정확히 같은 millisecond 및 proof 검증 await 중 기한 도달을 주입한 신규2개 테스트에서 **실제 ALLOWED/기대 DENIED로 FAIL**을 재현했다(exit1/317.3243ms). `src/services.js`의 사용 전·proof 후 비교 두 곳만 `<=`로 맞췄다. URI/API/DDL/권한/TTL 변경 없음. 수정 후 신규2개 **PASS/exit0/370.3455ms**; 관련 QR/UI/HTTP/계약/전송 테스트 전체 **30/30 PASS/exit0/3449.8333ms**. 기한1ms 전 정상 사용 유지, 기한과 같거나 이후 토큰 발급0·USED 전이 없음·TICKET_EXPIRED 거부 감사 확인. proof 테스트는 시간 경계용 service stub이며 실제 DPoP 암호 검증 증적이 아니다. 관련 FR-001~005/014~025/037~041, SEC-QR-01.
+
+읽기 전용 strict SSH로 현재 클라우드 Control **30141f8128a26ab2b3ed987d419078382093e69310c768a4318786a71916b2df / healthy**, exit0을 재확인했다(00:20 UTC). 신규 경계 수정과 FAQ는 이 image에 포함되지 않는다. 따라서 현재 브라우저 검증은 기존 배포의 실시간 만료를 검증하고, 신규 정확한 경계 수정의 배포 검증으로 승계하지 않는다. HEAD4ea53c28b6eb1b59e15b8ee02a3e9cdf37ddc401+dirty 유지. 현재 코드 Security Gate 재실행 결과는 `artifacts/security/qr-expiry-boundary-security-gate-20261010.json`에 저장한다. 신규 코드/증적 DRAFT / UNASSIGNED, commit/push 없음. 다음 한 작업은 실행 중인 동일 QR의 서버 만료·실제 사용 거부·정확한 cleanup 결과를 수집하는 것이다. 전체 MVP/v3 미완료.
+
+경계 수정 후 전체 Security Gate는 **PASS/exit0**(unit54720ms/secret1424ms/dependency1527ms)로 종료했다. pnpm11.7.0 pin 일치/global manifest 차이 경고 유지. 실제 QR 만료 browser 실행은 이 gate와 별도이며 아직 최종 결과 대기 중이다.
+
+실제 QR 만료 대기 중 기존 `workstation-automatic-ops.py boundary-check`를 재실행했다. VMware 로컬 관리 채널의 public host key/MAC 확인→strict SSH의 읽기 전용 진단으로 양쪽 VM을 확인했다. A Orthanc healthy, raw8042/4242 host binding없음, mTLS proxy healthy/127.0.0.1:18443만 bind를 관측했다. B에서 A host8042 접속은 ECONNREFUSED였다. 명령 **exit0**, `artifacts/workstation/automatic-2026-10-10T00-23-05.227798+00-00/result.json`, DRAFT / UNASSIGNED. 이는 **포트 inventory 및 실제 host TCP 직접 접속 거부** 증거이며 정책 DENY·특정 firewall rule·dual-namespace 패킷 capture·컨테이너 IP 우회 전체 검증으로 확대하지 않는다. PACS listener healthy는 Docker health 관측이며 해당 TCP probe의 내부 positive-control은 아니므로 패킷 경계 gate는 여전히 NOT VERIFIED다. 서비스/네트워크/인증서 변경 없음. QR 실행은 동일 handle로 계속 진행 중이며 재시작하지 않았다.
+
+같은 Ticket의 만료 거부와 부작용 부재를 연결하도록 기존 strict SSH 감사 wrapper에 `--ticket-expiry` 모드를 추가했다. `scripts/ticket-expiry-audit-readonly.js`는 exact owned receipt/합성 patient/A→B binding을 확인한 뒤 READ ONLY/REPEATABLE READ 및 query timeout 안에서 EXPIRED·기한경과·USED 흔적없음·토큰/키/금지 SUCCESS 없음·인증 의료진의 TICKET_EXPIRED 감사·전체 hash chain을 확인한다. raw nonce/키/영상 payload 조회·출력 및 DB load/save/migration 없음. 이는 준비된 검증기이며 실제 실행 전 PASS가 아니다. receipt 검증 Python5개 PASS/exit0/0.001초, Node 문법/Python compile/diff check PASS, 최신 Secret Scan findings0. 전체 Security Gate PASS/exit0(unit54540ms/secret1376ms/dependency1619ms), `artifacts/security/qr-expiry-audit-security-gate-20261010.json`; 최종 receipt binding 검증 보강 뒤 Python5개와 secret scan도 재실행 PASS. 관측00:28 UTC, 실제 browser 실행은 같은 handle로 아직 진행 중이다. 신규 검증기/증적 DRAFT / UNASSIGNED. 완료된 실제 만료 receipt에만 `python scripts/capstone-phantom-audit-check.py --ticket-expiry artifacts/workstation/b-browser-<exact-run>/result.json`을 적용한다.
+
+### 최신 작업: 환자 웹·모바일 공통 FAQ 도우미 — 로컬 구현, 미배포 / 2026-10-10
+
+사용자가 승인한 FAQ 이용 안내 범위만 구현했다. `public/ui/faq-catalog.js`의 정적 안내 16개(버전2026-10-10.1)를 `faq-assistant.js`/`faq-assistant.css`로 두 화면에서 공유한다. 외부 AI·RAG·새 API·라이브 상태 조회·자동 승인/철회·새 권한 모델은 추가하지 않는다. 기존 디자인 토큰을 사용하며 웹의 도움말/고정 버튼과 모바일 홈의 이용 도우미에서 연다. 관련 FR-001~005, FR-032~036의 이용 안내 지원이며 해당 업무 기능 완료를 새로 주장하지 않는다. 서버·DB·동의·암호화 계약 변경 없음.
+
+추천 질문, 160자 제한 검색, 등록된 고정 답변, 기존 영상/동의/공유 관리/보안 화면 이동, 대화 지우기·Escape 닫기·초점 복원을 제공한다. 의료 판단 요청·미등록 질문은 답변을 생성하지 않는다. 개인정보/비밀정보 형태 일부를 입력 단계에서 차단하지만 완전한 개인정보 탐지기로 주장하지 않는다. 입력 원문을 대화에 출력하거나 네트워크/로그/storage로 보내지 않고 제출·닫기 때 비운다. `textContent`만 사용하며 대화는 최대8개다. 앱 잠금·환자 변경·웹 역할 변경·pagehide에서 초기화한다. 화면 이동은 고정 allowlist이며 권한 확인이나 실제 동의/철회 처리를 대신하지 않는다. SW는 정적 FAQ 세 파일만 기존 캐시 allowlist에 추가했고 API/영상/환자정보를 캐싱하지 않는다.
+
+검증 환경: HEAD4ea53c2+dirty, loopback 격리 JSON seed 서버8838(개발용 인증/별도 tmp DB/프로세스 내 임시 secret), 웹 정적 서버8837. A/B/클라우드 실행 이미지·기존 DB·volume은 변경하지 않았다. 실제 로컬 브라우저에서 웹 철회 안내→공유 이력 이동, HTML 입력의 안전한 미등록 안내, 의료 판독 요청 거절을 관측했다. 모바일에서 개발용 인증→FAQ→공유 관리 이동, 잠금 후 답변0·입력빈값·dialog닫힘, 재인증 후 초기화, Escape 초점 복원, 대화 지우기를 확인했다. 375×812에서 documentWidth360/dialogWidth322로 가로 넘침 없음. 최종 정적 문구를 재로드한 모바일 증적: `artifacts/workstation/faq-mobile-local-20261010.jpg`.
+
+FAQ+기존 환자 context focused **8/8 PASS/exit0/230.1773ms**. FAQ+Viewer+QR focused **17/17 PASS/exit0/385.5867ms**. 문법 검사4파일과 범위 한정 diff check PASS/exit0(CRLF 경고 유지). 최초 전체 게이트는 기존 VM 기반 테스트의 신규 reset 의존성 누락과 합성 private-key 헤더 marker의 secret-scan 오탐으로 FAIL이었다. 실제 key는 없었다. 테스트 harness에 명시적 reset stub/호출 검증을 추가하고 합성 marker를 런타임에 구성했다. 제품 초기화나 scanner를 제거·완화하지 않았다. 수정 후 전체 Security Gate PASS/exit0(unit54712ms/secret1404ms/audit2033ms). 마지막 문구 변경 후 재실행 결과는 `artifacts/security/faq-local-security-gate-20261010.json`을 기준으로 한다.
+
+재현: `node --test test/faq-assistant.test.js test/patient-context-display.test.js`; PowerShell에서 `$env:HIPASS_SECURITY_GATE_TIMEOUT_MS='120000'; node scripts/security-gate.js`. 120초 timeout은 CLI 인자가 아니라 환경변수로 설정한다. 로컬 이용 순서: 환자 웹 도움말 또는 모바일 개발용 인증→홈 이용 도우미→추천 질문/사용법 검색→화면 이동; 실제 동의/철회는 이동한 화면에서 직접 확인한다.
+
+**판정: FAQ 로컬 구현·한정 브라우저 검증 완료, 신규 증적 DRAFT / UNASSIGNED.** 실제 VM 배포·후보 image 검사·배포 후 기존 CT/MR E2E/rollback·SW 오프라인 실행·실기기/스크린리더 검증은 NOT VERIFIED. AI 챗봇/RAG/네이티브 앱 완료가 아니다. 기존 전체 MVP/v3 미완료와 서버 QR 만료 후 실제 사용 거부 후속 작업을 유지한다. 다음 한 작업은 FAQ 내용·브라우저 증적 검토 후 기존 B 후보 이미지 절차로 반영하고 핵심 시연 경로에 영향이 없는지 재검증하는 것이다. commit/push/merge 없음. 아래는 이전 이력이다.
+
+FAQ 최종 문구 수정 후 게이트도 **PASS/exit0**, unit55122ms/secret1565ms/dependency2382ms로 완료됐다. 실행 pnpm11.7.0은 pin과 일치하며 global manifest11.22.0 차이 경고는 유지한다. 임시 browser tab과 viewport override를 정리하고 이번에 띄운8837/8838 프로세스만 Ctrl-C로 종료했다(각 exit1은 요청한 종료 결과이지 정책 DENY/시험 FAIL이 아니다). 격리 tmp seed는 기존 DB와 분리된 ignored 생성물로 남겼으며 기존 서비스는 중지하지 않았다.
+
+### 최신 상태: 승인된 B 이미지 교체·복구와 CT/MRI 실제 사용자 흐름 재검증 — 2026-10-10
+
+검토된 후보 image **`sha256:27e1bd82f401d9a1753954055f48c3397b7718721b37dcccab09b9c9ae75fe1a`**를 B Portal에만 적용했다. Cloud ingress9c210, Cloud Control/A Gateway30141과 기존 PostgreSQL은 교체 대상이 아니다. HEAD4ea53c2+dirty. `scripts/patient-focus-b-rollout.py --apply`는 검토 manifest7개 hash·HEAD·소스454·24시간 내 scan·실제 로컬 image를 확인하고, strict SSH/MAC pin·concealed credential/stdin·archive SHA 검증으로 같은 image를 전송했다. 정확한 B Compose **portal.yml/encryption.yml/patient.yml**와 공개 배포 환경값을 사용하며 `services.portal.image` 외 설정 변경을 거부한다. 실제 baseline→candidate→baseline rollback→candidate 재적용 **4검사 PASS/exit0/63.716초**, 각 단계 strict TLS/hostname·healthy·runtime environment/mount/command/security/port/network 차이0. 원본 `artifacts/workstation/patient-focus-b-rollout-20261009T234957Z/result.json`. operator는 안전한 읽기 전용 default/명시적 --apply이고 이미 활성화된 candidate를 기존 baseline이라고 간주해 재실행하지 않는다. DB/schema/writer/volume/secret/인증서 교체 없음.
+
+실제 공개 B 환자 모바일 PWA 정상 흐름을 순차 반복했다. 각 실행은 server login·실제 Study 목록·256×256 합성 DICOM 서로 다른2슬라이스·정확한 VIEW_ONLY Grant binding·Viewer close 픽셀 제거와 동일 Study 초점 복구·storage token 없음의6검사 및 owned browser cleanup이 모두 PASS다. MR screenshot을 직접 관측했다. 12개 instance metadata 확인을 모든12장 pixel 검증으로 표현하지 않는다.
+
+| 실행 | artifacts/workstation 원본 | 실제 결과 |
+|---|---|---|
+| 모바일 CT 1 | patient-real-browser-472a04ac1109/result.json | PASS/exit0/12.876초/cleanup=true |
+| 모바일 MR 1 | patient-real-browser-ee6528e3cb05/result.json | PASS/exit0/12.765초/cleanup=true |
+| 모바일 CT 2 | patient-real-browser-08c60cdb05ed/result.json | PASS/exit0/11.800초/cleanup=true |
+| 모바일 MR 2 | patient-real-browser-8eda904ac9f4/result.json | PASS/exit0/15.448초/cleanup=true |
+
+4개의 정확한 receipt에 연결한 read-only PG 감사 **13검사 PASS/exit0**, 키 발급8건 consumed·고정 Vault key version binding·각 auditSession 연결·전체 chain6778 PASS: `artifacts/workstation/patient-public-audit-20261009T235258Z.json`. 본인 열람은 별도 self-view Grant 경로이고 공유 동의 E2E로 대체하지 않는다.
+
+동일 배포에서 **모바일 명시적 승인→QR 연결→실제 의료진 화면 접수 버튼→A Gateway CT/MRI 실제 Viewer→같은 동의 모바일 철회→신규 접근 거부**도 재실행했다. 각7검사 PASS, 합성 환자 HP-TEST-PHANTOM-001/기관 A→B/각 Study 및 Series 하나/VIEW_ONLY. CT `b-browser-2026-10-09T23-54-36.719026+00-00/result.json` **PASS/exit0/87.599초**, MR `b-browser-2026-10-09T23-58-10.306419+00-00/result.json` **PASS/exit0/200.030초**, owned 동의 cleanup PASS. 실제 camera scan/native 생체인증/만료는 이 실행 범위가 아니다.
+
+각 흐름의 **9음성 조건**(Series 범위 밖, 잘못된 병원, 환자 역할로 의료진 토큰 발급, 의료진 ID 위장, 동의 ID 입력 누락, 존재하지 않는 동의, 토큰 변조, DPoP 누락·재사용) 모두 PASS다. 음성 호출은 의료진 UI token을 다른 key로 사용하지 않고 같은 동의의 별도 verifier-key-bound token을 사용한 API 증거다. 각 요청 전후 PG에서 consent scope hash와 token/release/consumed/success counter가 동일함을 확인하고 정확한 denial reason의 audit 증가를 확인했다. 단순403·timeout을 정책 DENY로 처리하지 않았다. 실제 다운로드·Study 범위·철회 거부 사유는 후속 read-only 감사로 연결했다. UI 정상 경로를 API로 대체한 것은 아니다.
+
+공유 CT 감사 `phantom-audit-2026-10-09T23-54-46.823473+00-00/result.json` 및 MR 감사 `phantom-audit-2026-10-09T23-58-28.612784+00-00/result.json` 각각 **6검사 PASS/exit0**: 정확한 동의 REVOKED, 인증 actor 거부, scope/permission/revocation/DPoP 사유, release 각4건 모두 consumed/versioned Vault binding, wrap/precheck/consume linkage. 마지막 전체 persisted chain **6976 PASS**. Azure Vault 서비스 자체 audit log 검증으로 확대하지 않는다.
+
+A병원 실제 mTLS 재검증은 첫 명령이 이름 tag 부재로 기준선 검사에서 **NOT VERIFIED/exit1**였다(`current-mtls-2026-10-09T23-55-08.912304+00-00/result.json`). 읽기 전용 `scripts/patient-current-a-inventory.py`로 실제 Gateway30141/tags=[]/healthy와 PACS·mTLS proxy healthy를 확인했다. `scripts/capstone-mtls-check.py`의 host 인자 검증만 exact immutable image ID 사용을 허용하고 서로 다른 ID는 거부하도록 수정했다(2개 focused Python test PASS). 이는 승인된 image 빌드 이후 host tool 변경이며 과거 source454 snapshot을 최신 전체 host 일치로 주장하지 않는다. 배포 image와 runtime 인증서는 그대로다. exact ID 재실행 `current-mtls-2026-10-09T23-57-33.407009+00-00/result.json`: valid ALLOW, 무인증·wrong issuer/SAN/EKU·expired·bad DENY 및 정확한 owned test key cleanup, **8검사 PASS/exit0**. CA private key 전송·seed·TLS 검증 완화 없음. 최초 미실행 증적은 보존한다.
+
+새 host rollout 경계3개 Python test PASS/0.005초, Viewer/browser10개 Node focused PASS/224.3615ms. Security Gate120초 설정 실제 PASS/exit0(unit54.200초/secret2.469초/dependency2.556초), 실행 pnpm11.7.0/lock9.0/global manifest11.22.0 경고 유지. host tool 최종 변경 후 gate 재실행도 **PASS/exit0**(unit54.635초/secret1.126초/dependency1.527초): `artifacts/security/patient-focus-final-security-gate-20261010.json`. 마지막 Python 경계3개+image reference2개 및 diff check exit0(CRLF 경고 보존). 신규 operator/tests는 기존 image 안에 자동 포함됐다고 주장하지 않는다. 관련 FR-001~005/010~041, 인가·동의·암호화 정책 변경 없음. 신규 실행 증적 **DRAFT / UNASSIGNED**, 기존 사람 승인을 자동 승계하지 않는다. 실행 증거13개(최초 mTLS NOT VERIFIED 포함)와 빌드 이후 host tools/tests5개의 hash는 `artifacts/workstation/patient-focus-runtime-verification-manifest-20261010.json`에 결속했다. commit/push 없음.
+
+**완료 범위:** 지정한 CT/MRI 공유 사용자 흐름의 정상·철회·위9개 API 음성 및 감사 종단 검증. 과거 mobile focus/timeout FAIL·최초 profile cleanup 미완료는 원본으로 보존하며 무한 안정성을 주장하지 않는다. **다음 한 작업: 실제 서버 기한 경과 후 QR 상태 EXPIRED와 실제 사용 거부를 같은 ticket으로 검증한다.** Orthanc 직접 접근/패킷 경계의 최신 조합, 재시작·반복 전체 시연, 전체 P0/v3·B PACS import·네이티브/카메라는 별도 미완료 또는 NOT VERIFIED다. 전체 MVP/v3 완료를 선언하지 않는다. 아래는 이전 이력이다.
+
+### 최신 상태: 현재 검토 대상의 명시적 사람 PASS 기록 — 2026-10-10
+
+사용자의 “모든 검토사항은 검토자 김범희 검토일 해당 날짜 판정 PASS 예외 의견 없음” 응답을 현재 제시된 검토 대상으로 한정하여 기록했다. 검토자 **김범희**, 검토일 **2026-10-10 (Asia/Seoul)**, 판정 **PASS**, 예외·의견 **없음**이다. focus 후보 `sha256:27e1bd82f401d9a1753954055f48c3397b7718721b37dcccab09b9c9ae75fe1a`, HEAD `4ea53c28b6eb1b59e15b8ee02a3e9cdf37ddc401` + dirty와 `artifacts/workstation/patient-focus-review-manifest-20261010.json`에 결속된 7개 증적을 대상으로 한다. 기존 ingress 검토 manifest의 예외·의견도 NOT PROVIDED에서 NONE으로 보완했다. 결속된 원본 증적은 변경하지 않는다.
+
+**검토 PASS는 테스트 PASS가 아니다.** 공개 모바일 안정성의 기존 FOCUS_RESTORE FAIL, focus 후보의 실제 배포·rollback·수정 후 브라우저 검증 NOT VERIFIED, 전체 MVP/v3 미완료 판정은 유지한다. 이 응답은 아직 생성되지 않은 코드·증적에 대한 사전 승인이나 과거 실패의 소급 PASS가 아니다. 신규 실행 증적은 별도 검토 전 DRAFT / UNASSIGNED로 기록한다.
+
+이번 작업은 검토 기록 갱신이며 배포·재시작·새 테스트·commit/push를 실행하지 않았다. **다음 한 작업: 승인된 focus 후보를 B Portal에 한정하여 적용 → 실제 rollback → 재적용하고, 같은 공개 모바일 CT/MR 흐름을 반복 검증한다.** 아래 DRAFT/UNASSIGNED 및 NOT PROVIDED 문구는 승인·보완 이전 이력이다.
+
+### 최신 작업: B병원 후보 차이·실제 활성 설정의 읽기 전용 교체/복구 계획 확인 — 2026-10-10
+
+기존 B 기준 image30141과 focus 후보27e1의 로컬 파일 해시454개 비교에서 **14개 차이**를 확인했다. 실제 public UI 변경은 `public/patient-pixel-viewer.js` 하나지만 전체 image에는 새/수정된 host 검증·운영 scripts12개와 `src/capstone-control-ingress.js`도 포함된다. 후자는 이미 Cloud에서 별도9c210 image로 적용됐으며 B Portal의 이번 UI 요구 변경으로 설명하지 않는다. 전체 후보를 public1파일만의 image로 축소해 표현하지 않는다. 비교 증거 `artifacts/workstation/patient-focus-b-image-delta-20261010.json`; payload·credential·source 본문 없이 경로와hash만 기록한다.
+
+`scripts/patient-focus-b-preflight.py`로 VMware guest에서 public SSH host key 확인 후 RejectPolicy·MAC pin·유한 timeout으로 **B만 읽기 전용** 점검했다. VM credential은 concealed prompt 및 원격 sudo stdin 메모리에만 사용했고 argv/file/stdout에 기록하지 않았다. 실제 `hp-capstone-b-portal-portal-1`은 image30141/Running/healthy, workdir `/home/server/.highpass-app-2026-10-08T21-31-00.357148+00-00`, config list **portal.yml/encryption.yml/patient.yml**다. 같은 operator의 공개 env 구성으로 rendered Portal environment/bind mounts가 actual과 일치함을 확인했다. candidate plan은 `services.portal.image` 한 필드만27e1로 변경·되돌렸을 때 나머지 JSON 동일, **non-image 차이0/PASS/exit0**. 원본 `artifacts/workstation/patient-focus-b-preflight-20261009T233542Z/result.json`, baseline rendered config SHA-256 `1fccfa137092364b911175510f7704e939d8d98015beda8bbdffc47e2e9536d1`.
+
+**범위 한계:** B VM에 image/file 업로드·load·compose up·restart를 하지 않았다. 실제 rollback·수정 후 공개 mobile focus 성공은 NOT VERIFIED다. 원래3개 file list/image를 복구 기준으로 보존하며 patient overlay·key identity·secrets·A PACS·Cloud Control/DB를 변경하지 않는다. 새 host preflight는 빌드 이후 추가됐으므로 후보의 source454 snapshot 안에 포함되지 않는다. syntax/diff exit0(CRLF 경고 보존). 관련 FR-032~036의 안전한 B 배포 준비이며 제품 완료나 보안 회귀 전체 PASS가 아니다.
+
+focus review manifest에는 위delta·actual preflight hash2개를 추가해 총7파일을 결속했다. 후보27e1의 검토는 **DRAFT / UNASSIGNED**, 김범희의 기존 ingress9c210 PASS와 별도다. 다음 한 작업은 정확한 후보·7개 증거를 독립 검토한 후 **B Portal만 적용/실제 rollback/재적용하고 모바일 CT/MR를 반복 검증**하는 것이다. 실제 공개 mobile 안정성은 마지막 FOCUS_RESTORE FAIL로 남고, 최초 profile cleanup·음성·만료·전체 MVP/v3는 미완료다. commit/push 없음. 아래는 이전 이력이다.
+
+### 최신 작업: 모바일 반복 시연의 초점 복구 실패 재현·최소 수정 후보 — 2026-10-10
+
+배포는 직전 조합 그대로이며 수정 후보를 활성화하지 않았다. Playwright skill의 화면 전환 후 재관측 원칙을 기존 Chrome/CDP 흐름에 적용했다. 호스트 검증기 `scripts/lib/patient-browser-integration.js`에 실제 click target hit-test·두 animation frame의 안정 좌표·3초 유한 대기, 모바일 studies 탭 준비 확인, 종료 exitCode **또는 signalCode** 관측, 안전한 lastPhase/cleanupFailure를 추가했다. 실제 signal 종료 자식 프로세스 focused test PASS. 이것이 최초 CT timeout/cleanup 실패의 확정 원인이라고 주장하지 않는다. 최초 실패 profile `342e73c4f68f`는 Chrome0/잔여true, 새 정상 `5bb0c3408abf` profile잔여false를 확인했다. 기존 profile 삭제의 정책 거부를 다른 도구로 우회하지 않았다.
+
+반복 관측(모두 실제 공개 모바일 CT, 토큰 memory/stdin): `patient-real-browser-5bb0c3408abf` **PASS/13.352초/cleanup=true** → `1eb02f37847b` **FAIL/12.316초/VIEWER_CLOSE/cleanup=true**. 후자 screenshot을 직접 보니 Viewer는 이미 닫혀 있었다. close와 focus를 분리해 유한 관측한 뒤 `057d657d3e48` **PASS/11.959초/cleanup=true** → `d534bfead4ae` **FAIL/17.565초/FOCUS_RESTORE/cleanup=true**. 각 원본 result.json을 보존한다. fail-fast 반복 명령은 두 번째 실패 후 exit2, 세 번째 실행은 하지 않았다. 두 실패 모두 실제 256 CT2슬라이스·정확한 Grant binding까지 PASS했으나 close 이후 focus 요구사항 미충족이다. 정상 영상 PASS가 안정적인 반복 시연 전체 PASS라는 뜻이 아니다.
+
+코드에서 모바일 비동기 `loadInitialData/loadStudies`가 목록 버튼을 교체할 수 있고, 공통 Viewer의 replacement identity가 모바일 `data-action-cine`를 포함하지 않음을 확인했다. 회귀 테스트를 먼저 추가해 **6 PASS/1 FAIL/exit1**(모바일 교체 launcher 재현), `public/patient-pixel-viewer.js` identity allowlist에 그 속성 하나 추가 후 focused **12 PASS/exit0/390.005ms**. 같은 컨테이너·같은 Study만 찾으며 다른 Study/disabled/hidden/삭제된 목록에는 focus하지 않는다. 관련 **FR-032~036**, 진료 인가·Grant·DPoP·TLS·암호화·감사 정책 변경 없음. 모든 실제 실패의 원인이 이 하나로 설명됐다고 확정하지 않는다. 수정 후보의 실제 공개 반복 검증이 필요하다.
+
+Security Gate **PASS/exit0**(각120초): unit55.562초/secret2.728초/dependency2.635초, 실행 pnpm11.7.0/lock9.0, global manifest11.22.0 경고 유지. syntax/diff exit0(기존 CRLF 경고). 후보 `highpass-platform-mvp:capstone-patient-focus-20261010`, 실제 image ID **`sha256:27e1bd82f401d9a1753954055f48c3397b7718721b37dcccab09b9c9ae75fe1a`**. 기존 확인 base30141로 `--pull=false --network=none` 빌드 exit0, 기본 FROM ARG 경고 유지. 소스 **454 hash 일치/0 불일치**, `artifacts/workstation/patient-focus-image-source-20261010.json`(HEAD4ea53c2+dirty); 실제 read-only/network-none/UID65532/cap-drop ALL image 검사. same exact image Trivy0.58.2 pinned scan/Container Gate **HIGH0/CRITICAL0/PASS/exit0**, `artifacts/security/container-scan/patient-focus-20261010.json`. 새로운 예외 없음.
+
+`artifacts/workstation/patient-focus-review-manifest-20261010.json`은 source454·scan·공개 focus FAIL2·대조 PASS1의5파일 hash를 결속한다. **DRAFT / UNASSIGNED**, 신규 독립 검토 미완료. 기존 ingress9c210의 사람 PASS는 이 새 UI 후보에 승계하지 않는다. 현재 서버는 그대로이며 공개 **수정 후** 성공은 NOT VERIFIED. 다음 한 작업은 B Portal에 필요한 정확한 image 차이와 rollback context를 검증한 뒤 새 후보를 검토·배포해 같은 모바일 CT/MR 반복 흐름을 끝내는 것이다. 음성·만료·초기 실패 profile cleanup·전체 MVP/v3는 미완료로 유지한다. commit/push 없음. 아래는 이전 이력이다.
+
+### 최신 작업: 승인 ingress 적용·실제 복구와 공개 환자 CT/MR 정상 흐름 확인 — 2026-10-10
+
+사람 검토 범위의 source450·증거5 hash·HEAD·실제 image·24시간 이내 scan을 재확인한 후, 기존 strict SSH/Docker 방식으로 정확한 후보 image를 전송/sha256 검증/load했다. 새 Azure 리소스·비용·VM/Control/DB 변경 없음. `scripts/patient-ingress-rollout.py`의 실제 최초 실행 **PASS/exit0/85.619초**, `artifacts/workstation/patient-ingress-rollout-20261009T231956Z/result.json`: baseline TLS 403/METADATA_ROUTE_REQUIRED → ingress만 후보 교체 → 실제 baseline image와 원래 6개 Compose files 복구 → 후보 재적용, 5검사 PASS. 후보 `{}` 응답은 **400/PATIENT_DATA_PLANE_REQUEST_INVALID**로 인가 로직 도달·잘못된 입력 거부 증거이며 정상 영상 성공으로 해석하지 않는다. Control/PG container identity·환경·mount·command·security/port/network 설정 유지. 이후 operator에 안전한 default 읽기 전용/명시적 `--apply`를 추가했으며 최초 실행 명령에는 이 옵션이 없었다. 새로운 호스트 operator는 기존 후보 image source snapshot 밖이다.
+
+현재 실제 조합: **Cloud ingress `9c210296…`**, Cloud Control/A Gateway/B Portal 기존 승인 **`30141f81…`**, PG **`8d0e686f…`**. ingress 파일목록은 원래6개 + `patient-ingress-reviewed-20261010.yml`(image 한 필드), Control은 기존6개, PG는 기존 별도2개. baseline6을 요구하는 사전검사/rollout은 이미 활성화된7개 조합을 자동 허용하거나 재배포하는 도구가 아니다. 검사 실패를 현재 서비스 장애로 추정하지 않는다.
+
+실제 Chrome→공개 `https://192.168.111.149:9443` 환자 UI 정상 실행(로컬 proxy/API/SQLfixture 없음):
+
+| 흐름 | 원본 result.json (artifacts/workstation 아래) | 결과·시간 |
+|---|---|---|
+| 환자 웹 CT | patient-real-browser-279319ff698b/result.json | PASS/exit0/11.190초/cleanup=true |
+| 환자 웹 MR | patient-real-browser-46a828f0defe/result.json | PASS/exit0/9.343초/cleanup=true |
+| 모바일 PWA CT 재실행 | patient-real-browser-9ee028c9c901/result.json | PASS/exit0/10.639초/cleanup=true |
+| 모바일 PWA MR | patient-real-browser-3c21a65ee520/result.json | PASS/exit0/17.110초/cleanup=true |
+
+각6검사: strict TLS/hostname, 실제 환자 login/server studies(모바일 개발용 unlock), 256×256 정확한 CT/MR 서로 다른2슬라이스, 정확한 patient/Study/Series/VIEW_ONLY/Grant binding, close 픽셀 제거·초점 복구, local/session storage token 없음. CT/MR web viewer.png를 직접 관측했다. 각12장 중2장 표시이지 모든12장 pixel 검증·native/생체/카메라·전체 MVP 성공이 아니다.
+
+**실패 보존:** 첫 모바일 CT `patient-real-browser-342e73c4f68f/result.json` **FAIL/exit1/45.192초/PATIENT_BROWSER_TIMEOUT/cleanup=false**. 화면은 studies 단계였고 Grant receipt NOT VERIFIED, 실패 원인은 미확정이다. 이 실행은 명령 terminal·해당 profile을 사용하는 Chrome0개를 확인한 뒤 별도 새 실행으로 CT를 재검증했다. 최초 timeout을 단순 시계/정책 DENY로 단정하지 않는다. 해당 owned tmp profile은 남아 있으며, exact path·Chrome0 확인 후 수동 Remove-Item은 실행 정책에서 거부됐다. 다른 도구로 우회하지 않았고 최초 cleanup=false를 PASS로 바꾸지 않았다. 민감정보가 있을 수 있는 profile 내용은 열거나 출력하지 않았다.
+
+읽기 전용 authority 계정·parameterized query·유한 timeout·repeatable-read/read-only transaction으로 위4 receipt를 정확히 연결: `scripts/patient-browser-audit-check.py` **PASS/exit0**, `artifacts/workstation/patient-public-audit-20261009T232514Z.json` **13검사 PASS**, release 각2개/총8개 모두 consumed·정확한 versioned Vault binding, Grant/키 발급/소비 auditSession 연결, 전체 hash chain **6642 PASS**. 원본 credential/token/receipt/DEK/ciphertext/임상자료 출력 없음. Azure 서비스 자체 audit log·실제 만료/철회/음성 실행 증거로 확대하지 않는다. PostgreSQL skill의 최소권한·짧은 transaction 원칙 적용, schema/DB writes 없음.
+
+집중 ingress **6 PASS/exit0/720.672ms**, 배포 계획 경계 **7 PASS/exit0/0.003초**, host/remote syntax compile·review binding PASS. 최종 `$env:HIPASS_SECURITY_GATE_TIMEOUT_MS='120000'; node scripts/security-gate.js` **PASS/exit0**: unit58.514초·secret4.047초·dependency audit3.657초, 모든 하위명령 exit0. 실행 pnpm11.7.0/lock9.0, global manifest11.22.0 불일치 경고는 유지. 전체 Node 총수는 gate 출력에 없어 주장하지 않는다. host syntax와 `git diff --check` exit0(기존 CRLF 경고). 신규 실행 증적은 DRAFT / UNASSIGNED다. 기존 모바일→의료진 공유 정상·음성 PASS는 과거 조합의 범위로 보존한다. **다음 한 작업: 공개 환자 흐름의 timeout/cleanup 안정성 원인을 좁히고 같은 활성 ingress 조합에서 만료·범위 밖·위변조·DPoP 음성 및 부작용 부재를 검증한다.** 전체 MVP/v3는 아직 미완료. commit/push 없음. 아래는 이전 이력이다.
+
+### 최신 작업: 신규 ingress 후보 독립 사람 검토 기록 — 2026-10-10
+
+사용자 명시 응답에 따라 검토자 **김범희**, 검토일 **2026-10-10 (Asia/Seoul)**, 판정 **PASS**를 기록했다. 예외·의견은 응답에 없어 **NOT PROVIDED**로 기록하며 '없음'으로 추정하지 않는다. 범위는 HEAD `4ea53c28b6eb1b59e15b8ee02a3e9cdf37ddc401` + dirty 후보의 실제 image `sha256:9c210296445760b659a12fe141830b5ffdc407f3ee12c7ab7bd6589b5f0079cb`, 기존 `patient-ingress-review-manifest-20261010.json`에 결속된 5개 증적 및 직전 ingress-only 사전검사 설명이다. 로컬 후보 image ID와 HEAD를 재확인했다. 원본 실행 증적의 DRAFT 기록은 당시 상태로 보존하고 별도 manifest에 사람 판정을 연결했다.
+
+이 승인은 실제 신규 배포·rollback·공개 환자 CT/MR 픽셀 성공·전체 MVP/v3 완료 판정이 아니다. 공개 본인 열람의 마지막 실제 결과는 여전히 FAIL이며 다음 실행은 **ingress-only 교체/rollback 후 동일 공개 환자 종단 흐름 재검증**이다. 이후 신규 실행 증적은 별도 검토 전 DRAFT / UNASSIGNED로 유지한다. commit/push 없음. 아래 미승인 문구는 승인 이전 이력이다.
+
+### 최신 작업: candidate-active ingress 교체 계획 사전검사 완료 — 2026-10-10
+
+앞선 단독 Compose 렌더링 실패는 필수 배포 환경값을 제공한 재실행에서 해소됐다. 호스트 전용 `scripts/patient-ingress-plan-preflight.py`는 strict SSH·유한 timeout·읽기 전용 Docker inspect/config만 실행한다. Control/ingress의 정확한 patient 포함 6개 파일·프로젝트·workdir 및 승인 runtime image를 고정하고, 기존 operator의 공개 환경값 구성 방식으로 렌더링한다. 인증정보 값을 subprocess 환경에 복사하거나 출력하지 않는다. 렌더링된 Control/ingress 환경과 readonly bind mount를 실제 실행값과 비교한 뒤, 계획 객체에서 ingress image 한 필드만 `30141f81…`→`9c210296…`로 변경한다. Control·PostgreSQL·bootstrap·migration은 변경하지 않는 계획이다. 실제 overlay 생성·업로드·docker load/up는 없다.
+
+최종 실제 사전검사 **PASS/exit0**, `artifacts/workstation/patient-ingress-plan-20261009T230038Z.json`: runtime environment/bind mounts 일치, non-image 차이0, baseline config SHA-256 `52d8021ab2635c00e95f04a15c267a3dcb10fb6b9881a2fe03a3093c8b2df251`. 순수 경계 테스트 `python -m unittest discover -s test -p patient_ingress_plan_test.py` **7 PASS/0.003초/exit0**: foreign project/path·누락/중복/재정렬/외부 파일·비고정 image·Control image/env/mount 변경 거부, 입력 불변, 원격 프로그램 compile. `git diff --check` exit0(기존 CRLF 경고 보존). 관련 FR-014~031/032~041 배포 보존 검증. 이 호스트 operator는 이미 빌드된 후보의 450파일 snapshot에 포함되지 않으며 그 snapshot을 최신 전체 호스트 scripts 검증으로 확대하지 않는다.
+
+**범위 한계:** 계획 비교 PASS는 후보의 실제 적용·rollback·공개 환자 픽셀 성공이 아니다. ingress Docker healthcheck는 NOT CONFIGURED, 실제 HTTPS readiness는 별도 실행 필요. 신규 증적 DRAFT / UNASSIGNED, 신규 독립 사람 검토 미완료. 다음 작업 한 개는 새 source/image/기존 review manifest 및 이 사전검사를 독립 검토한 후 정확한 ingress-only 배포·복구와 공개 환자 CT/MR 정상·거부 흐름을 실행하는 것이다. 전체 MVP/v3 미완료, commit/push 없음.
+
+### 배포 전 읽기 전용 복구 준비 점검 — 2026-10-10
+
+Strict SSH의 실제 Docker inspect에서 Control·ingress는 승인된 `30141f81…` 이미지로 Running, Control은 healthy, PostgreSQL은 기존 `8d0e686f…` 이미지로 Running/healthy였다. ingress에는 Docker Health 상태가 없으므로 healthy로 주장하지 않는다. Control/ingress는 기존 workdir의 control·ingress·mock·key-release·phantom-catalog·patient 6개 Compose 파일을 사용한다. PostgreSQL은 별도 기존 workdir의 2개 파일을 유지한다. 조회 명령 종료0; 전체 환경변수·secret 내용은 출력하지 않았다.
+
+첫 준비 검사는 ingress도 healthy라고 가정해 종료1이었다. 그 가정을 제거한 후의 rendered Compose 비교 명령도 종료1이므로 **ingress-only 배포 계획 비교 및 실제 rollback: NOT VERIFIED**다. 정확한 실패 원인은 아직 확정하지 않는다. 기존 배포 operator는 렌더링에 명시적인 환경변수를 주입하고, 구형 context 검증은 현재 patient 포함 6개 파일을 허용하지 않으므로 그대로 재사용하면 안 된다. 실제 런타임과 기존 operator의 환경 구성 방식을 대조한 candidate-active 사전검사가 필요하다. 이번 점검에서는 파일 업로드·컨테이너 교체·재시작·DB 변경을 실행하지 않았다. 새 후보의 독립 사람 검토는 여전히 미완료이며 기존 승인을 승계하지 않는다.
+
+### 최신 작업: 공개 환자 본인 열람의 첫 차단 재현·ingress 최소 수정, 새 후보 검증 중 — 2026-10-10
+
+공개 B URL에서 실제 환자 로그인·본인 영상 목록·DPoP self-view Grant 발급까지 성공했으나 CT 픽셀 전에 거부됐다. 브라우저 실제 UI 실패 화면을 직접 확인했다. 최초 `artifacts/workstation/patient-real-browser-7bf53411fd06/result.json` **FAIL/exit1/21.183초/owned browser cleanup=true**, 진단 재실행 `...72f9b92ed123/result.json` **FAIL/exit1/23.571초/cleanup=true**. 모두 로컬 API/프록시/SQL fixture 없이 실제 B ingress로 접속했다. 카메라/임상/native·정상 전체 본인 영상 열람을 주장하지 않는다. 기존 모바일→의료진 CT/MR 공유 PASS와 별개다.
+
+현재 Cloud strict image `30141f81…`/healthy 확인 후 실제 private HTTPS에 자기 역할 service credential+잘못된 입력 `{}`를 보내 진단했다. `/gateway/patient-self-view/authorize`, `/ready` 모두 **403 / METADATA_ROUTE_REQUIRED**였다. TLS/hostname 검증 유지, credential은 원격 root process 안에서만 읽고 출력하지 않았다. CLI `python scripts/patient-public-browser-ops.py --ingress-preflight` 종료0은 진단 명령 성공이지 정상 경로 PASS가 아니다. read-only SQL의 첫 Grant는 ACTIVE/미만료/정확한 A/B·scope였고 해당 auditSession에는 발급1개만 있어 실제 authorization 경로에 도달하지 못했음을 확인했다. 최초 보조 원격 진단은 잘못된 CA 파일 경로로 명령 실패했으며, 실제 CA public PEM을 사용하는 검증된 재실행으로 위 결과를 확보했다. TLS 완화 없음.
+
+`src/capstone-control-ingress.js`에 기존 환자 metadata 계약의 정확한5개 endpoint만 추가했다: authorize·ready·package wrap-authorize/prepare/authorize. service token은 이 exact route에서만 전달하고, 일반 API·query 변형·미등록 Gateway route·patient DICOM/Viewer는 그대로 차단한다. 인증·동의·scope·DPoP·Key Vault·DB 정책 변경 없음. 관련 FR-014~031/032~041. 새로운 framework/병렬 권한 모델 없음. `scripts/verify-patient-public-browser.js`, `patient-public-browser-ops.py`와 기존 browser helper의 명시적 public mode는 직접 공개 UI의 정상 검증용이며 isolated SQL 철회/거부를 공개 증거로 승격하지 못하도록 제한했다. 토큰은 RAM·stdin 안에서만 사용, 증거에는 안전한 Grant/audit/Study 식별자만 남긴다. PUBLIC normal-only는 정상·음성 전체 완료 선언이 아니다.
+
+Focused ingress/Viewer/실제 거부 판정/public target boundary **15/15 PASS/exit0/765.902ms**, secret findings0/syntax/diff PASS. Security Gate는 ingress 수정 포함 **PASS/exit0**, unit55.948초/secret3.233초/audit2.824초(각120초); 추가 boundary test 이후 최종 재실행도 **PASS/exit0**, unit56.630초/secret1.571초/audit1.577초였다. gate stdout은 전체 테스트 수를 보존하지 않아 총수를 주장하지 않는다. pnpm11.7.0/lock9.0, global manifest11.22.0 경고 유지.
+
+새 후보 `highpass-platform-mvp:capstone-patient-ingress-20261010`, 실제 Docker image ID **`sha256:9c210296445760b659a12fe141830b5ffdc407f3ee12c7ab7bd6589b5f0079cb`**. 기존 승인 local base30141을 사용해 `--pull=false --network=none` 빌드/exit0, 기본 FROM ARG 미지정 경고 보존. src/public/scripts/db/config **450개 hash 일치/불일치0**, `artifacts/workstation/patient-ingress-image-source-20261010.json`(HEAD4ea53c2+dirty), network-none/read-only/UID65532/cap-drop ALL 실제 image 검사. same image Trivy Scan/Container Gate **HIGH0/CRITICAL0/PASS/exit0**, `artifacts/security/container-scan/patient-ingress-20261010.json`, 신규 예외 없음. 실제 격리 Compose 후보 **11검사 PASS/exit0/317.860초/cleanup=true**, `artifacts/workstation/hp-patient-startup-0b8b6715c473.json`. 자체 project의 컨테이너·volume 잔여0 확인. 이는 격리 Control/등록 CLI·최소권한·잘못된 입력/주체·중복 secret 거부의 증거이며 실제 public ingress·Azure·브라우저 성공을 대신하지 않는다.
+
+실패 브라우저의 Grant2개는 실제 서버 시각 기준 모두 expiresAt 경과·effectiveActive0·release0임을 read-only SQL로 확인했다. 계정/ref/Grant/audit를 삭제하지 않았고, 이 상태 관측을 만료 토큰 사용 거부 실행 증거로 주장하지 않는다.
+
+검토 결속 manifest `artifacts/workstation/patient-ingress-review-manifest-20261010.json`은 소스450·scan·Compose11의 동일 image ID와 공개 browser FAIL2개 원본을 확인하고 증거5개 파일의 SHA-256을 기록한다. 결속 검사 PASS는 독립 검토 PASS가 아니다. ignored 로컬 증거는 clone에 포함되지 않는다. 새 후보와 신규 실행은 계속 DRAFT / UNASSIGNED다.
+
+**다음 작업 한 개: 검증된 새 후보의 정확한 변경·image·증적을 독립 검토한 후 Cloud ingress에 적용/rollback하고 같은 공개 환자 흐름을 재검증한다.** 기존 사람 PASS는 다른 source/image 범위이며 신규 후보에 자동 승계하지 않는다. 새 후보는 아직 실제 Cloud/A/B에 배포하지 않았다. 현재 배포의 본인 픽셀 경로는 FAIL, 모바일 본인 열람·실제 만료/음성/감사·전체 MVP/v3 NOT VERIFIED/미완료. 신규 증거 DRAFT / UNASSIGNED, commit/push 없음. 아래는 이전 이력이다.
+
+### 최신 작업: A/B 환자 경로 배포·rollback 및 최신 모바일→의료진 CT/MR 정상·거부 검증 완료 — 2026-10-10
+
+Cloud와 동일한 승인 runtime image `sha256:30141f8128a26ab2b3ed987d419078382093e69310c768a4318786a71916b2df`를 A Gateway/B Portal에 적용했다. 각 VM에는 자기 역할의 환자 service secret만 encrypted SSH/SFTP로 연결했으며, 원래 의사 secret·TLS/mTLS 인증서·Vault certificate identity는 유지했다. Rendered config에서 image 외 A의 exact 환경값4개/B3개와 자기 역할 readonly mount1개만 달라짐을 확인했다. 기존 image+원래 Compose 파일 목록으로 실제 rollback하여 원래 runtime 설정 차이0을 확인한 뒤 후보+patient overlay로 재활성화했다. A 원본 PACS 컨테이너2개의 ID/image/config/mount/실행 상태 보존. B는 현재 Portal/Viewer만 실행하며 수신 PACS 반입 완료를 주장하지 않는다.
+
+`artifacts/workstation/patient-edge-rollout-20261009T223222Z/result.json`: **4검사 PASS / exit0 / A·B rollback PASS**. 신규 host operator `scripts/capstone-patient-edge-rollout.py`는 기본 inventory, 명시적인 `--apply`에서만 배포하며 신뢰 host identity·기존 image·설정 pin을 확인한다. 이 host operator는 이전 승인 이미지의 COPY 내용으로 주장하지 않는다. 새 overlays는 `infra/workstation/hospital-a-patient.compose.yml`, `hospital-b-patient.compose.yml`. 관련 FR-014~031/032~041, 기존 정책/API 변경 없음. 후보 취약점 검사 image ID 결속 유지, 신규 예외 없음.
+
+최초 배포 실행 `patient-edge-rollout-20261009T223120Z`, 진단 재실행 `...223147Z`는 **NOT VERIFIED**였다. 새 보존 점검이 B에도 PACS를 요구했으나 실제 B에는 Portal만 있었다. image/secret 변경 전에 종료했으며 정책상 DENY가 아니다. A의 원본 PACS 존재는 필수로 유지하고, B는 존재하는 PACS가 있을 때 보존하는 방식으로 실제 승인 Portal 구성에 정렬했다. 원본 결과는 보존한다.
+
+현재 소스 Security Gate **PASS/exit0**: unit54.944초/secret1.269초/dependency audit1.696초, 단계별120초. 테스트 총수는 gate가 보존하지 않아 주장하지 않는다. 실제 pnpm11.7.0/lock9.0 일치, global manifest11.22.0 경고 유지. focused host context/secret 정책 wrapper2 PASS/exit0/448.157ms, 별도 secret scan findings0. 새 브라우저 진단 수정은 이 gate 이후이며 후속 검증이 필요하다.
+
+최신 공개 URL의 실제 Chrome 모바일→의료진 CT 흐름 최초 실행 `artifacts/workstation/b-browser-2026-10-09T22-35-09.338598+00-00/result.json`은 **FAIL / exit1 / 6.577초**. 실제 의료진·환자 로그인2개 PASS이나 생성 동의 binding 검사에서 중단, Viewer·철회·음성 종단 NOT VERIFIED. 해당 결과는 생성 동의 receipt를 보존하지 못했고 cleanup 목록이 비어 있으므로 생성 자산 회수 완료로 주장하지 않는다. 비교 결과만 기록하고 positively owned receipt는 assertion 실패 전 회수 목록에 넣도록 host verifier를 보완했다. 과거 PASS를 최신 배포에 승계하지 않는다.
+
+원인 확인: 실제 Cloud의 제한된 read-only SQL에서 최초 실패 시간 구간의 합성 동의1개를 확인했다. `consent_3deb3c9aef19466`은 suffix15자리이며 환자·HOSP-A→B·VIEW_ONLY·ACTIVE·정확한 CT scope·생성시각 `2026-10-09T22:35:06.504Z`가 모두 일치, token0이었다. 기존 `makeId`는 두 uint32를 0-padding 없이 hex로 연결하므로 suffix2~16자다. 검증기의 고정16자 가정이 잘못됐다. `scripts/lib/capstone-receipt-id.js`로 기존 계약을 표현하고 consent/ticket 수신 검사에 적용했다. 서버 ID·인가·동의 정책은 변경하지 않았다. 최초 실패 동의는 정확한 ID·생성시각·환자·기관·권한·Study를 인증된 환자 API로 재확인한 뒤 철회해 **PASS/exit0**로 회수했다(터미널 기록). 과거 FAIL JSON은 덮어쓰지 않았다.
+
+| 최신 실제 공개 브라우저 흐름 | 결과 | 증적 (`artifacts/workstation/`) |
+|---|---|---|
+| 모바일 명시적 CT 승인→QR→실제 의료진 접수/Viewer→모바일 철회→차단 | browser7 PASS/음성9 PASS/cleanup PASS/exit0/89.591초 | `b-browser-2026-10-09T22-37-21.736012+00-00/result.json` |
+| 모바일 명시적 MR 승인→같은 의료진 Viewer·철회·차단 | browser7 PASS/음성9 PASS/cleanup PASS/exit0/202.175초 | `b-browser-2026-10-09T22-40-55.500349+00-00/result.json` |
+| CT 실제 PG 동의·actor·거부 사유·release·감사 chain | 6 PASS/exit0; release4/consumed4/감사결속4, persisted chain6438 | `phantom-audit-2026-10-09T22-37-29.790893+00-00/result.json` |
+| MR 실제 PG 동의·actor·거부 사유·release·감사 chain | 6 PASS/exit0; release5/consumed5/감사결속5, persisted chain6552 | `phantom-audit-2026-10-09T22-41-05.535500+00-00/result.json` |
+
+두 browser 실행 모두 같은 receipt의 환자·기관·scope 일치, 실제 256×256 픽셀/다음 슬라이스 및 정확한12개 SOP 목록을 확인했다. 모든12개 픽셀을 내려받아 검사했다는 의미는 아니다. Series·기관·환자 역할·의료진 ID·동의 입력 누락·존재하지 않는 동의·토큰 변조·DPoP 누락/재사용은 각각 실제403/정확한 audit reason 증가/토큰·키 발급·성공 행위 count 및 동의 scope 지문 불변/응답의 token·payload 부재를 확인했다. API 음성 probe는 별도 proof-key bound token이며 실제 의료진 UI 정상 경로를 대체하지 않는다. 실제 환자 철회 후 UI 픽셀 제거·기존 토큰 신규 접근 거부도 확인했다. A/B의 기존 실제 AES-GCM/Key Vault 경로를 사용한 runtime이며 PG release/audit 확인은 Azure Vault service audit log 검증을 의미하지 않는다. 카메라 scan·native 생체·이번 실행의 실제 만료·수신 PACS 반입은 **NOT VERIFIED**다.
+
+ID 검사 최종 수정 후 focused3 PASS/exit0/538.611ms, syntax/diff PASS. 최종 Security Gate **PASS/exit0**, unit55.703초/secret1.465초/audit2.103초(단계별120초). 브라우저 CT/MR은 고정길이 진단 수정 이후·최종 가변길이 helper 적용 전 실행이며, 짧은 ID 허용 helper는 focused로 검증했다. helper 적용 후 전체 browser 재실행 결과로 승계하지 않는다.
+
+**이번 한정 결과: 최신 배포의 모바일 환자 승인·QR→의료진 CT/MR Viewer→철회 — 정상·거부 종단 검증 완료.** 신규 증적은 **DRAFT / UNASSIGNED**이며 기존 사람 PASS의 자동 승계나 전체 MVP/v3 완료가 아니다. **다음 작업 한 개: 같은 공개 배포에서 환자 웹·모바일 본인 self-view CT/MR의 실제 암호화 열람·차단·감사를 연결해 검증한다.** 실제 만료·최종 mTLS/경계·반복 리허설·독립 검토와 기타 필수 P0도 남는다. 별도 commit/push 없음. 아래 기록은 이전 이력이다.
+
+### 최신 작업: Cloud 환자 기능 활성화·실제 설정 rollback 완료 — 2026-10-10 (Asia/Seoul)
+
+Cloud Control/ingress를 승인된 candidate `sha256:30141f8128a26ab2b3ed987d419078382093e69310c768a4318786a71916b2df`로 적용하고 기존 Compose context에 `patient.yml`을 명시적으로 추가했다. rendered config 비교에서 image 변경 외 Control의 정확한 환자 환경값8개·readonly secret mount3개만 달라짐을 확인했다. 기존 ingress 공개 범위·TLS·네트워크·DB volume·Vault identity 배치 변경 없음. 실제 파일 읽기·전용 authority 연결·환자 flags3개 활성 상태에서 Control healthy 확인, 기존 PG container/image/mount/healthy 및 감사 count/지문 전후 일치.
+
+**4개 검사 PASS / exit0 / rollback PASS**, `artifacts/workstation/patient-cloud-activation-20261009T222250Z/result.json`. 이전 image `a548790…`와 원래5개 Compose 파일 목록으로 실제 rollback해 환경값·mount·runtime 보안 설정 불변과 patient feature-off readiness를 검증한 다음 후보+patient overlay로 재활성화했다. DB/schema/account/ref/audit 삭제나 downgrade 없음. 최종 상태는 후보 활성 상태다. 새 증적 **DRAFT / UNASSIGNED**이며 A/B 환자 인증 연결·실제 공개 환자 Viewer E2E·전체 MVP 성공을 뜻하지 않는다.
+
+A/B 실제 VM inventory는4 PASS/exit0, `artifacts/workstation/patient-key-inventory-20261009T222028Z/result.json`: A image `2c7b366…`, B `940806…` healthy, NTP synchronized, 별도 Entra certificate auth HTTP200/등록 identity 일치. 이번 turn에 A/B image·identity·secret은 변경하지 않았다. 새 `hospital-a-patient.compose.yml`과 `hospital-b-patient.compose.yml`을 실제 Compose 해석기로 기존 Gateway/Portal+encryption 구성과 비교해 각 exact patient 환경값·자기 역할 readonly secret mount1개 외 변경0을 확인했다(A/B각 PASS/exit0). 실제 VM에는 아직 적용하지 않았다.
+
+기존 `patient-deployment-preflight.py` 기본 실행은 이전 image/context에 고정된 baseline 점검이다. 현재 활성 candidate/6개 config를 이 기본 모드에서 검사하면 기존 pin과 불일치하므로, 이를 실제 서비스 장애나 활성화 실패로 오인하지 않는다. 활성 상태의 권위 증거는 위 실제 rollout/readiness/rollback 결과다. 후속 점검에는 명시적인 candidate-active 검사 모드 정렬이 필요하다.
+
+**다음 작업 한 개: A/B에 자기 역할의 환자 service secret과 최소 overlay·승인 image를 연결하고 기관별 readiness/원래 설정 rollback을 검증한다.** 기존 의사 경로·A PACS·mTLS·각 VM의 Vault 개인키를 보존하고 A secret을 B에 배포하지 않는다. 이후 실제 발표 URL의 환자 웹/모바일→암호화 CT/MR→감사→철회/만료 거부와 기존 의료진 공유 흐름 회귀가 남는다. 아래는 이전 이력이다.
+
+### 최신 작업: 실제 cloud DB 준비·합성 소유권 등록 완료 — 2026-10-10 (Asia/Seoul)
+
+승인된 runtime/operator image `sha256:30141f8128a26ab2b3ed987d419078382093e69310c768a4318786a71916b2df`와 승인 당시 Node 준비/등록 파일 hash 일치를 확인한 뒤 실제 기존 DB에 적용했다. 보호된 전용 파일3개를 기존 root:GID65532/0750 디렉터리에 root:GID65532/0640으로 신규 생성했다. 기존 파일 덮어쓰기·secret 내용 출력·다른 CA/개인키 전송 없음. 기존 Control을 명시적으로 정지하고 app/authority/bootstrap의 다른 DB 연결0을 확인한 유지보수 구간에 준비 CLI preflight→명시적 apply(migration033~036/4개)→등록 CLI preflight→명시적 apply→재등록 거부를 실행했다. 새 역할은 LOGIN이지만 superuser/bypassRLS/role 생성/DB 생성/replication 권한이 없고, account/ref INSERT와 audit DELETE 불가·release INSERT 허용을 실제 SQL로 확인했다.
+
+결과 **7개 검사 PASS / exit0**, `artifacts/workstation/patient-cloud-preparation-20261009T221828Z-5e32ce67/result.json`: 고정 합성 account1/ref2/grant0/release0, 감사 이벤트1개 증가, 신규 감사 ID를 제외한 기존 count/지문 불변, persisted 전체 hash chain 유효, 재등록 거부 시 추가 감사 부작용0. 기존 DB container/volume·원본 합성 PACS 보존. Control을 원래 container ID/image/config/mount로 재시작해 healthy 복귀를 확인했다. ingress/PG의 ID/image/config/mount도 보존했다. 임시 operator overlay·컨테이너는 회수했고, 실제 DB 계정에 사용한 보호된 파일은 후속 활성화를 위해 보존했다. 이는 schema downgrade/DB 삭제 rollback이 아니다.
+
+후속 read-only 점검 `artifacts/workstation/patient-deployment-preflight-20261009T221914Z/result.json`은 보호된 파일3개·전용 table4개/role·기존 서비스 baseline·합성 최소 메타데이터 **PASS**다. 환자 feature3개는 여전히 off이므로 전체 **NOT VERIFIED / exit2**. 기능 활성화·실제 공개 환자 self-view·A/B 신규 서비스 인증·전체 시연·전체 MVP 완료로 승격하지 않는다. 신규 실행 증적 **DRAFT / UNASSIGNED**, 과거 사람 판정은 원래 검토 범위에만 유지한다.
+
+**다음 작업 한 개: 승인된 runtime 후보에 맞춰 cloud 환자 활성화 overlay 및 A/B 서비스 인증의 배포 계약을 실제 구성과 대조하고, 동일 경로의 활성화·readiness·원래 설정 rollback 검증을 진행한다.** 기존 image-only rollout으로 환자 활성화를 대체하지 않으며 DB/계정/ref/감사 삭제를 복구 명령으로 사용하지 않는다. 이후 실제 발표 URL에서 환자 웹/모바일·의료진 정상/거부 종단과 반복 리허설이 남는다. 아래는 이전 이력이다.
+
+### 최신 작업: 비루트 secret 사전점검 정렬 완료 — 2026-10-10 (Asia/Seoul)
+
+기존 host 사전점검의 secret metadata 판정을 `scripts/lib/patient_secret_permissions.py`로 분리했다. root 소유·GID65532·mode0440/0640의 일반 파일만 허용하고, parent는 root 소유0700 또는 root:GID65532/0750만 허용한다. root0600/0400은 비루트 읽기 불가로 거부, world-readable/group-write/special bit/다른 소유자·그룹/파일·parent symlink도 거부한다. secret 내용은 읽거나 출력하지 않는다. 이는 metadata 확인이며 실제 readonly mount·기동 시 읽기·secret 유효성 검사를 대신하지 않는다. 기존 인증·동의·권한·TLS·Vault·DB 정책 변경 없음. 관련 FR-014~020/037~041.
+
+Node focused wrapper1 PASS/exit0/383.9242ms이며 실제 Python unittest3개(정상·파일 음성·parent 음성의 subcase) 실행을 확인한다. 실제 cloud Linux의 고립된 metadata fixture **8개 PASS/exit0/cleanup=true**, `artifacts/workstation/patient-secret-permissions-20261009T214904Z.json`. 해당 fixture는 인증 secret이 아닌 고정 표식이며 실제 DB·기존 파일·서비스에 연결하지 않았다. 실제 cloud 수정된 read-only preflight는 **NOT VERIFIED/exit2**, `artifacts/workstation/patient-deployment-preflight-20261009T214837Z/result.json`: 기존 런타임/합성 최소 메타데이터 PASS, 환자 flags off/준비 객체·파일 미완료를 그대로 표시했다.
+
+현재 소스 Security Gate **PASS/exit0**: unit55.591초/secret1.201초/dependency audit1.646초, 각120초 제한. gate stdout의 테스트 전체 개수는 보존되지 않아 주장하지 않는다. pnpm11.7.0/lock9.0 일치와 global manifest11.22.0 경고 유지. diff 검사 PASS. 새 증적 **DRAFT / UNASSIGNED**. `30141f81…` 후보의 runtime src/public은 바꾸지 않았지만, 새 host 검사 파일은 그 이미지에 포함됐다고 주장하지 않으며 이전445개 attestation을 현재 변경된 scripts 전체에 승계하지 않는다. 별도 commit/push/배포/DB apply/기능 활성화 없음.
+
+**다음 작업 한 개: 승인된 runtime 후보와 기존 Compose context를 유지하며 실제 보호된 전용 파일 준비 및 유지보수 구간의 DB 준비·합성 소유권 등록을 수행한다.** 기존 writer 정지/재로드·최소권한·기존 계정/ref 보존·감사/rollback 조건을 함께 확인한다. 이후 A/B 서비스 인증 및 웹/모바일 배포 정렬과 실제 발표 URL의 정상·거부·복구 검증이 남는다. 아래는 이전 작업 이력이다.
+
+### 검토 후 실제 cloud 준비 CLI 사전검사 — 2026-10-10 (Asia/Seoul)
+
+승인된 후보 image ID `30141f8128a2…`를 cloud에 전송하고 archive SHA-256과 실제 import image ID를 확인했다. 기존 Control/ingress/PG를 교체하지 않았다. 기존 Compose context에 임시 operator 서비스만 추가한 rendered config에서 기존 서비스/네트워크/볼륨 구성 불변을 확인했다. **실제 CLI 사전검사5개 PASS / exit0 / cleanup=true**, `artifacts/workstation/patient-cloud-prepare-preflight-20261009T214214Z-e4897f78/result.json`. 기본 UID65532에서 admin/임시 authority secret 읽기 가능(내용 출력 없음), 준비 CLI **READY / applied:false**, DB table count·authority role 부재·감사 count/지문·기존 컨테이너 ID/image/config/mount/healthy 전후 일치를 확인했다. 기존 원격 서비스·DB·volume 보존. 후보 image는 후속 준비를 위해 cloud에 보관했고, 임시 archive/secret/overlay/일회성 컨테이너는 제거했다. 이는 DB 적용·소유권 등록·기능 활성화·공개 E2E의 증거가 아니다. 새 실행 증적은 **DRAFT / UNASSIGNED**이며 이전 사람 PASS를 자동 승계하지 않는다.
+
+최초 실행 `patient-cloud-prepare-preflight-20261009T214006Z-653ef602/result.json`은 실제 CLI exit1로 **NOT VERIFIED / wrapper exit2 / cleanup=true**였다. root:root0600으로 만든 임시 secret은 UID65532에 맞지 않았다. 기존 admin은 root:GID65532/0640임을 metadata로 확인했고, 새 임시 secret도 이 제한된 그룹 읽기 방식·readonly mount를 사용한 재실행이 통과했다. 최초 CLI는 generic 오류만 반환했으므로 그 실행의 정확한 내부 예외를 확정하지 않는다. 최초 결과의 `importedImageRetained:false`는 전체 PASS 여부에서 계산된 잘못된 요약이다. 실제 image는 load됐으며 후속 `docker image inspect`와 최신 검사로 존재를 확인했다. 원본 FAIL/NOT VERIFIED JSON은 수정하지 않는다.
+
+후속 준비의 발견된 공백: 기존 `patient-deployment-preflight.py`의 root 소유/no-group-bit 메타데이터 조건은 비루트 이미지가 읽는 root:GID65532/0640 파일까지 부적합으로 표시한다. 파일 권한을 world-readable로 완화하거나 operator 컨테이너를 root로 실행하지 않았다. 실제 보호된 secret 준비 전에 이 메타데이터 검사와 비루트 읽기 요건을 일치시키고 focused 정상/음성 검증이 필요하다. **다음 작업 한 개: 보호된 secret 파일의 root 소유·전용 그룹·others 접근 금지 및 비루트 read 조건을 기존 사전점검에 정렬한다.** 이후 유지보수 구간의 명시적 DB 준비/소유권 등록·활성화·공개 정상/거부·rollback이 남는다.
+
+검토 후 실제 cloud 읽기 전용 재확인: `python scripts/patient-deployment-preflight.py`, **exit2 / NOT VERIFIED**, `artifacts/workstation/patient-deployment-preflight-20261009T213747Z/result.json` (UTC 파일명, 관측일 KST 2026-10-10). strict SSH host identity·기존 Control/ingress `a548790…`·PostgreSQL `8d0e686…` 및 기존 Compose context 확인 PASS. SQL readOnly=on/5초 제한, 고정 합성 환자·ACTIVE HOSP-A·CT/MR Study-Series2개 최소 메타데이터 확인 PASS. 환자 feature3개는 false, 보호된 patient secret 파일3개는 미확인, authority4개 table과 전용 LOGIN role은 부재다. 이는 정책상 DENY나 서비스 장애가 아니라 아직 적용하지 않은 배포 준비 공백이다. DB·서비스·파일 변경 없음.
+
+이 읽기 전용 확인 직후의 계획은 후보 전달과 실제 preparation CLI 사전검사였으며, 맨 위 최신 기록에서 완료 결과와 첫 실패를 확인할 수 있다. 활성화·재시작·DB 적용은 아직 수행하지 않았다. 이미지 교체만으로 준비 완료를 선언하지 않는다. Azure 스킬의 `.azure/deployment-plan.md` 전제가 없어 해당 azd workflow는 사용하지 않았으며, 기존 저장소 도구 결과를 Azure skill validation PASS로 표시하지 않는다.
+
+### 최신 사람 검토 판정 — 2026-10-10 (Asia/Seoul)
+
+사용자가 이 채팅에서 직접 제공한 판정: **검토자 김범희 / 검토일 2026-10-10 / PASS / 예외 없음**. 검토 대상은 커밋 `4ea53c28b6eb1b59e15b8ee02a3e9cdf37ddc401`, 후보 image ID `sha256:30141f8128a26ab2b3ed987d419078382093e69310c768a4318786a71916b2df` 및 아래 11개 파일 review manifest로 특정한 합성 환자 등록·환자 self-view 배포 준비의 한정 증적이다. 이전 승인 자동 승계가 아니라 이번 검토 요청에 대한 새 사람 판정이다. 실제 공개 배포·cloud DB 적용·환자 동의 철회 UI·수신 의료진 공유 종단·전체 MVP/v3·운영/법률 적합성은 판정 범위가 아니다.
+
+검토 당시 생성된 원본 JSON의 `DRAFT / UNASSIGNED` 표기는 덮어쓰지 않고 이 문서에 후속 사람 판정을 연결한다. 이후 변경 코드·이미지·신규 실행 증적에는 이 판정을 자동 적용하지 않는다. 독립 검토 대기는 해소됐으며 실제 cloud 사전검사 후의 다음 작업은 문서 맨 위 최신 기록을 따른다. 실제 적용 전 상태 불일치 또는 새 정책 결정이 발견되면 중단하고 보고한다.
 
 ### 최신 관측: 실제 컨테이너 등록 CLI 검증 완료 — 2026-10-10 (Asia/Seoul)
 
 후보 `highpass-platform-mvp:capstone-patient-registration-cli-20261010`, image ID `sha256:30141f8128a26ab2b3ed987d419078382093e69310c768a4318786a71916b2df`의 격리 Compose 검증은 **11개 검사 PASS / exit0 / 297.103초 / cleanup=true**다. 증적: `artifacts/workstation/hp-patient-startup-e96e6d364eed.json` (ignored 로컬 생성물; clone에 포함되지 않음). 고정 합성 카탈로그는 기존 등록 함수를 non-superuser 앱 계정으로 실행한 시험 준비이며 HTTP 인증 증거가 아니다. 실제 operator CLI의 기본 사전검사에서 account/ref/audit 변경0, 명시적 적용에서 account1/ref2/audit1 및 hash chain 유효, 재적용 거부에서 부작용0을 확인했다. 기존 Control 준비·readiness·잘못된 입력/주체 거부·중복 secret 시작 거부 검사도 유지했다. 관련 FR-006~009/014~020/032~041.
 
-이 후보는 기존 검증된 local base에서 `--pull=false --network=none`으로 빌드했고 base image ID 전후 일치, build exit0다. 아래 이전 후보의 소스 해시·컨테이너 취약점 결과를 이 새 image ID에 승계하지 않는다. 신규 후보의 전체 소스 attestation·Container Scan/Gate는 **NOT VERIFIED**다. 실제 cloud DB 등록·기능 활성화·공개 배포·정상/음성·rollback도 **NOT VERIFIED**이며 이번 시험으로 대체하지 않는다. 신규 증적 **DRAFT / UNASSIGNED**, 전체 MVP/v3 미완료. 다음 작업 한 개: 신규 후보의 소스 일치와 Container Scan/Gate를 고정한 뒤 최신 독립 사람 검토에 제출한다. 아래 기록은 이전 이력이다.
+이 후보는 기존 검증된 local base에서 `--pull=false --network=none`으로 빌드했고 base image ID 전후 일치、build exit0다. 2026-10-10 신규 검사에서 HEAD `4ea53c28b6eb1b59e15b8ee02a3e9cdf37ddc401`의 src/public/db/config/scripts **445개 일치 / 불일치0 / exit0**를 확인했다. 증적 `artifacts/workstation/patient-registration-cli-image-source-20261010.json`. 실제 image ID를 지정해 nonroot/network-none/read-only/cap-drop ALL로 검사했으며 임상 payload·생성물은 제외, docs/test는 COPY 대상이 아니다. 같은 image ID의 새 Trivy Scan과 Container Gate는 **HIGH0 / CRITICAL0 / PASS / exit0**, 증적 `artifacts/security/container-scan/patient-registration-cli-20261010.json`. 취약점 예외 추가·수정 없음. 이전 후보 결과의 승계가 아니라 새 image ID에 대해 직접 실행한 결과다.
+
+검토 증적 결속: `artifacts/workstation/patient-registration-cli-review-manifest-20261010.json`은 위 동일 image ID의 소스/Compose/scan과 웹·모바일 CT/MR wrapper 및 browser 결과 **11개 파일의 SHA-256**을 기록한다. manifest 생성 시 image ID 3곳 일치·Compose11/cleanup·HIGH/CRITICAL0·4개 browser의 실제403/PATIENT_ACCESS_DENIED·wrapper에 포함된 browser 결과와 별도 원본 JSON의 일치를 직접 확인했다. **증적 일치 검사 PASS**이지 독립 검토 PASS나 후보 공개 브라우저 E2E PASS가 아니다. 생성물은 ignored/DRAFT이며 clone에 포함되지 않는다. 커밋 전 Security Gate는 터미널 관측이고 이 manifest에 존재하지 않는 원본 파일을 추가하지 않았다.
+
+**독립 검토 요청 당시 범위:** 위 커밋·image ID의 합성 환자 등록 및 환자 self-view 배포 준비。Compose11·소스445·Container Gate·아래 Security Gate와 웹/모바일 CT·MR의 한정 브라우저 증거를 대상으로 요청했다. 요청 당시 UNASSIGNED/미검토였으며, 최신 판정은 맨 위 김범희의 2026-10-10 PASS/예외 없음 기록을 따른다. 기존 release Runbook의 오래된 baseline/rollback은 역사로 분리했으며, image-only rollout을 환자 준비/활성화로 오인하지 않도록 수정했다.
+
+실제 cloud DB 등록·기능 활성화·공개 배포·정상/음성·rollback은 여전히 **NOT VERIFIED**이며 위 시험이나 사람 검토 PASS로 대체하지 않는다. 공개 브라우저 흐름·환자 동의 철회 UI·원래 환자 동의/QR→수신 의료진 공유 흐름은 별도 검증이 남는다. 후속 신규 증적 **DRAFT / UNASSIGNED**, 전체 MVP/v3 미완료. 아래 기록은 이전 이력이다.
 
 커밋 전 현재 소스의 Security Gate는 PASS/exit0: Node 테스트54.502초·secret scan1.161초·dependency audit1.606초, 단계별120초 제한. 직접 focused 등록/정책 거부 테스트6/6 PASS/637.8787ms/exit0 및 staged diff 검사 PASS. 전체 Node 개수는 gate가 보존하지 않아 주장하지 않는다. pnpm 실제11.7.0/lock9.0 일치, global manifest11.22.0 차이 경고 유지. 이 결과는 새 이미지 Container Gate나 배포 승인으로 승계하지 않는다.
 

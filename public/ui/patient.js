@@ -12,6 +12,12 @@ export function icon(kind = 'image') {
     archive:'M3 8h18v13H3zM2 3h20v5H2zM9 12h6',
     shield:'M12 2l8 4v6c0 5-8 10-8 10S4 17 4 12V6zM8 12l3 3 5-6',
     dashboard:'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z',
+    search:'M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0',
+    share:'M18 7a3 3 0 1 0 0-6 3 3 0 0 0 0 6M6 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M18 23a3 3 0 1 0 0-6 3 3 0 0 0 0 6M8.5 10.5l7-5M8.5 13.5l7 5',
+    clock:'M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0M12 6v6l4 2',
+    phone:'M7 2h10v20H7zM11 18h2',
+    help:'M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0M9 8a3 3 0 0 1 6 0c0 2-3 2-3 5M12 17h.01',
+    book:'M12 5v16M12 5C8 2 4 3 2 4v16c3-2 7-2 10 1 3-3 7-3 10-1V4c-2-1-6-2-10 1',
   };
   path.setAttribute('d', paths[kind] || 'M4 3h16v18H4zM7 16l3-4 3 3 2-2 3 4M8 7h.01');
   svg.append(path); return svg;
@@ -20,6 +26,40 @@ function element(tag, className, text) {
   const node = document.createElement(tag); node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
+}
+let presentationStudy, presentationActions;
+export function renderPresentationScenario(context, { study, consent, onView, onShare }) {
+  if (!context?.scenario?.synthetic) return;
+  const home = document.querySelector('#patient-portal-app [data-page="home"]');
+  if (!home) return;
+  presentationStudy = study; presentationActions = { onView, onShare };
+  let panel = home.querySelector('#presentation-referral');
+  if (!panel) {
+    panel = element('section', 'mediq-scenario'); panel.id = 'presentation-referral';
+    const title = element('h2', '', `${context.patientName}님의 다음 진료를 준비해요.`);
+    const summary = element('p', '', context.scenario.referralSummary);
+    const stages = element('ol', '');
+    for (const [title, description, id] of [['내 CT 확인', '다중시기 복부 CT · 4개 시리즈', 'scenario-ct-state'],
+      ['B대학병원에 공유 동의', '환자가 범위와 기간을 선택', 'scenario-consent-state'],
+      ['병원에서 접수·열람', '동의 후 QR로 병원 연결', 'scenario-receive-state']]) {
+      const step = element('li', ''); const detail = element('span', '', description); detail.id = id;
+      step.append(element('strong', '', title), detail); stages.append(step);
+    }
+    const actions = element('div', 'mediq-scenario-actions');
+    for (const [text, kind] of [['내 CT 보기', 'view'], ['전원 공유 준비', 'share']]) {
+      const button = element('button', `btn${kind === 'share' ? ' primary' : ''}`, text); button.type = 'button';
+      button.dataset.scenarioAction = kind;
+      button.addEventListener('click', () => {
+        if (presentationStudy) presentationActions[kind === 'view' ? 'onView' : 'onShare'](presentationStudy);
+      }); actions.append(button);
+    }
+    panel.append(title, summary, stages, actions, element('small', '', '홍길동 · 56세 · 합성 환자 / 진단은 발표용 가상 설정'));
+    home.querySelector('.page-head')?.after(panel);
+  }
+  const state = consent?.status === 'ACTIVE' && Date.parse(consent.validUntil) <= Date.now() ? 'EXPIRED' : consent?.status;
+  panel.querySelector('#scenario-ct-state').textContent = study ? `${study.series?.length ?? 0}개 시리즈 · 승인 후 영상 열람` : 'CT 목록 등록 확인 중';
+  panel.querySelector('#scenario-consent-state').textContent = ({ ACTIVE: '동의 유효 · 범위와 기간 확인', REVOKED: '동의 철회됨 · 신규 접근 차단', EXPIRED: '동의 만료 · 다시 동의 필요', PENDING: '환자 승인 대기' })[state] || '아직 동의하지 않았습니다';
+  for (const button of panel.querySelectorAll('[data-scenario-action]')) button.disabled = !study;
 }
 let overviewSignature;
 let overviewStudies = [], overviewActions, overviewQuery = '';
@@ -49,10 +89,10 @@ export function renderPatientOverview(studies, { onShare, onView }) {
   for (const study of visible) {
     const card = element('article', 'hp-study-card');
     card.dataset.search = `${study.description || ''} ${study.modality || ''} ${study.studyDate || ''}`.toLocaleLowerCase();
-    const art = element('div', 'hp-study-art'); art.append(icon(), element('span', '', `${study.modality || '검사'} · 합성 데이터`));
+    const art = element('div', 'hp-study-art'); art.append(icon(), element('span', 'premium-study-modality', study.modality || '검사'), element('span', 'premium-study-preview-note', '합성 데이터 · 비진단용'), element('span', 'premium-study-preview-note', '영상 보기에서 실제 픽셀을 확인하세요'));
     card.append(art, element('h3', '', study.description || '의료영상'), element('p', '', `${study.sourceHospitalId || '병원 확인 필요'} · ${study.studyDate || '검사일 미확인'}`));
     const actions = element('div', 'hp-study-actions');
-    for (const [label, callback, primary] of [['미리보기', onView, false], ['공유 동의', onShare, true]]) {
+    for (const [label, callback, primary] of [['영상 보기', onView, true], ['공유하기', onShare, false]]) {
       const button = element('button', `hp-button${primary ? ' hp-button--primary' : ''}`, label);
       button.type = 'button'; button.addEventListener('click', () => callback(study)); actions.append(button);
     }
@@ -67,7 +107,8 @@ export function initializePatientComponents() {
     document.querySelector('#patient-portal-app [data-route="home"]')?.click();
     if (overviewActions) renderPatientOverview(overviewStudies, overviewActions);
   });
-  document.querySelectorAll('#patient-portal-app .nav-icon').forEach((node, index) => node.replaceChildren(icon(index === 0 ? 'home' : 'image')));
+  const patientIcons={home:'home',images:'image',consent:'share',activity:'clock',phr:'audit'};
+  document.querySelectorAll('#patient-portal-app .nav-icon').forEach(node => node.replaceChildren(icon(patientIcons[node.parentElement.dataset.route])));
   document.querySelectorAll('#patient-portal-app .action-symbol').forEach(node => node.replaceChildren(icon()));
   document.querySelectorAll('[data-hp-icon]').forEach(node => node.replaceChildren(icon(node.dataset.hpIcon)));
   document.querySelectorAll('#patient-portal-app .summary-card[role="button"]').forEach(node => node.addEventListener('keydown', event => {

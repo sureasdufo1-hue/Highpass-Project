@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" data-capstone="1">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Medi Q - 환자용 의료영상·마이데이터 모바일</title>
   <link rel="manifest" href="/mobile/manifest.json">
-  <meta name="theme-color" content="#2563eb">
+  <meta name="theme-color" content="#3566b8">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -17,6 +17,7 @@
   <link rel="stylesheet" href="/ui/tokens.css">
   <link rel="stylesheet" href="/ui/components.css">
   <link rel="stylesheet" href="/ui/mobile.css">
+  <link rel="stylesheet" href="/ui/faq-assistant.css">
   <link rel="stylesheet" href="/ui/brand.css">
   <script src="/qrcode.js"></script>
   <script src="/mobile/app.js" type="module"></script>
@@ -30,14 +31,7 @@
           <span class="mediq-logo" role="img" aria-label="Medi Q"></span>
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
-          <span class="security-enclave-pill">개발용 · 비운영</span>
-          <button id="btn-lock-app" class="badge" type="button" title="앱 잠금 (로그아웃)" style="background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;cursor:pointer;padding:4px 8px;border-radius:6px;font-size:11px;">🔒 잠금</button>
-          <a href="/" class="saas-switch-btn" title="병원 SaaS 화면으로 전환">🏥 SaaS</a>
-        </div>
-      </div>
-      <div class="header-meta">
-        <div class="patient-info">
-          합성 환자: <strong id="header-patient-name">김가상 (P-1001)</strong> · <span id="header-auth-badge" class="badge badge-good" style="font-size:10px;">개발용 인증 · 실제 본인확인 미연동</span>
+          <button type="button" class="wallet-profile-link" data-tab="profile">내 정보</button>
         </div>
       </div>
     </header>
@@ -56,7 +50,7 @@
 
         <div class="auth-patient-badge">
           <span style="font-size:11px;color:#64748b;">등록된 사용자</span>
-          <strong id="auth-patient-name" style="color:#0f172a;font-size:15px;">김가상 (P-1001)</strong>
+          <strong id="auth-patient-name" style="color:#0f172a;font-size:15px;">로그인 후 표시</strong>
           <span style="font-size:10px;color:#0284c7;font-weight:700;">🛡️ TEE·단말 무결성·위험도: NOT VERIFIED</span>
         </div>
 
@@ -102,9 +96,7 @@
         <div class="auth-demo-switcher">
           <span style="font-size:11px;color:#64748b;">가상 환자 계정 (데모):</span>
           <select id="auth-patient-select" class="auth-select">
-            <option value="P-1001" selected>P-1001 (김가상)</option>
-            <option value="P-1002">P-1002 (이가상)</option>
-            <option value="P-1003">P-1003 (박가상)</option>
+            <option value="" selected disabled>로그인한 합성 환자</option>
           </select>
         </div>
       </div>
@@ -117,24 +109,27 @@
       <!-- Tab 1: Home (MediQ HomeScreen)                                     -->
       <!-- ================================================================= -->
       <section id="tab-home" class="tab-pane active">
+        <h1 class="wallet-greeting"><span id="wallet-patient-name">환자님,</span><br>다음 진료를 준비해요.</h1>
         <!-- MediQ Welcome Hero Banner -->
         <div class="mediq-hero-card">
-          <div class="mediq-hero-tag">내 영상 · 내 동의 · 내 기록</div>
-          <h2 class="mediq-hero-title">내 의료영상을<br>필요한 병원에 공유해요</h2>
-          <p class="mediq-hero-desc">합성 의료영상과 일회용 QR을 사용해<br>가상 병원 간 동의 기반 공유 흐름을 체험하세요.</p>
+          <div class="wallet-scan-stack" aria-hidden="true"><i></i><i></i><i>CT</i></div>
+          <div class="mediq-hero-tag" id="wallet-route">촬영 병원 확인 → 수신 병원 선택</div>
+          <h2 class="mediq-hero-title" id="wallet-study">내 의료영상</h2>
+          <p class="mediq-hero-desc" id="wallet-study-date">검사 목록을 확인하고 공유할 영상을 선택하세요.</p>
+          <p class="wallet-status">공유할 내용을 먼저 확인해요.</p>
           <button id="btn-home-quick-share" class="btn btn-primary mediq-hero-btn" type="button">
-            1회용 QR 공유 시작하기
+            공유 내용 확인 <span aria-hidden="true">→</span>
           </button>
         </div>
 
         <!-- Horizontal Kind Chips (MediQ KindChip) -->
-        <div class="kind-chips-bar" role="tablist">
-          <button class="kind-chip active" data-chip-filter="ALL" type="button">전체</button>
-          <button class="kind-chip" data-chip-filter="IMAGING" type="button">🩻 영상검사</button>
+        <details class="wallet-extra"><summary>다른 시연 기록 보기</summary><div class="kind-chips-bar" role="tablist">
+          <button class="kind-chip" data-chip-filter="ALL" type="button">전체</button>
+          <button class="kind-chip active" data-chip-filter="IMAGING" type="button">🩻 영상검사</button>
           <button class="kind-chip" data-chip-filter="CLINICAL" type="button">📋 진료·처방</button>
           <button class="kind-chip" data-chip-filter="CHECKUP" type="button">🩺 건강검진</button>
           <button class="kind-chip" data-chip-filter="VACCINE" type="button">💉 예방접종</button>
-        </div>
+        </div></details>
 
         <!-- Active Share Status Card (MediQ ShareSession Status) -->
         <div id="home-share-widget" class="home-share-widget card">
@@ -158,23 +153,23 @@
         <!-- Recent Records Section (MediQ WhiteRecordCard) -->
         <div class="section-head" style="margin-top:16px;">
           <div class="section-title">
-            <span>내 의료영상과 최근 기록</span>
+            <span>내 의료영상</span>
             <button id="btn-refresh-home" class="badge" type="button" style="cursor:pointer;border:none;">새로고침</button>
           </div>
-          <p class="section-sub">가상 A병원 영상 목록과 시연용 예시 진료기록입니다. 실제 의료 마이데이터는 연계하지 않습니다.</p>
         </div>
 
         <div id="home-recent-list" class="recent-list-wrap">
           <!-- Dynamic cards injected via app.js -->
         </div>
+        <button type="button" class="wallet-help" data-faq-open>공유가 처음이신가요? <span aria-hidden="true">→</span></button>
 
         <!-- MyData Institution Link Footer Info -->
-        <div class="card" style="margin-top:16px;background:#f0f9ff;border:1px dashed #bae6fd;">
+        <details class="wallet-disclosure"><summary>합성 시연 · 비운영 환경 안내</summary>
           <div style="font-size:12px;font-weight:700;color:#0284c7;margin-bottom:4px;">🏥 공공기관 연계 미구현 · 합성 데이터 시연</div>
           <p style="font-size:11px;color:#64748b;line-height:1.5;margin:0;">
             국민건강보험공단·건강보험심사평가원·질병관리청과 실제 연결하지 않습니다. 법률 적합성·기관 승인 및 모바일 단말 암호화 저장 완료를 주장하지 않습니다.
           </p>
-        </div>
+        </details>
       </section>
 
       <!-- ================================================================= -->
@@ -231,7 +226,7 @@
       <section id="tab-share" class="tab-pane">
         <div class="section-head">
           <div class="section-title">
-            <span>의료기록 공유 및 QR</span>
+            <span>동의와 병원 연결</span>
           </div>
           <p class="section-sub">기록을 선택하고 수신 병원을 지정하여 1회용 QR 코드를 발급받으세요.</p>
         </div>
@@ -285,7 +280,7 @@
             <div class="config-field-group">
               <label class="config-label">담당 의사 (병원 선택 시 자동 매칭)</label>
               <div class="config-readonly-box" id="label-target-doctor">
-                신경과 DOC-B-01 (이신경 전문의)
+                B대학병원 담당 의료진 DOC-B-01
               </div>
             </div>
 
@@ -317,13 +312,13 @@
 
           <!-- Wizard Step 3: Consent & Privacy (ShareConfirmScreen) -->
           <div id="wizard-step-3" class="wizard-step-pane">
-            <div class="wizard-box-title">동의하고 공유하기</div>
+            <div class="wizard-box-title">이 검사를 공유할까요?</div>
             <p class="wizard-box-desc">아래의 내용으로 의료기록을 공유할까요?</p>
 
             <div class="summary-card">
               <div class="summary-row">
                 <span>제공 기관</span>
-                <strong>가상 병원 A (HOSP-A)</strong>
+                <strong id="confirm-source-label">선택한 검사의 촬영 병원</strong>
               </div>
               <div class="summary-row">
                 <span>수신 기관</span>
@@ -331,11 +326,11 @@
               </div>
               <div class="summary-row">
                 <span>공유 목적</span>
-                <strong>진료 의뢰 및 협진 (TREATMENT)</strong>
+                <strong>진료</strong>
               </div>
               <div class="summary-row">
                 <span>열람 권한</span>
-                <strong class="badge badge-good">조회 전용 (VIEW_ONLY)</strong>
+                <strong>영상 열람 · 다운로드 불가</strong>
               </div>
               <div class="summary-row">
                 <span>선택된 항목</span>
@@ -346,6 +341,7 @@
                 <strong id="confirm-duration-label">발급 후 24시간</strong>
               </div>
             </div>
+            <p class="wallet-consent-note">언제든 공유를 중단할 수 있어요.<br><small>이미 열람하거나 허용된 방식으로 저장된 자료까지 회수되지는 않아요.</small></p>
 
             <div class="switch-row card" style="margin-top:12px;display:flex;justify-content:space-between;align-items:center;">
               <div>
@@ -362,20 +358,22 @@
 
             <div style="display:flex;gap:8px;margin-top:14px;">
               <button id="btn-wizard-back-to-2" class="btn btn-secondary" type="button" style="flex:1;">이전</button>
-              <button id="btn-wizard-confirm-submit" class="btn btn-primary" type="button" style="flex:2;">동의하고 1회용 QR 발급</button>
+              <button id="btn-wizard-confirm-submit" class="btn btn-primary" type="button" style="flex:2;">내용을 확인하고 승인</button>
             </div>
           </div>
 
           <!-- Wizard Step 4: One-Time QR Result (ShareResultScreen) -->
           <div id="wizard-step-4" class="wizard-step-pane">
             <div class="qr-container">
+              <h2 id="wallet-qr-heading">수신 병원 접수 시<br>보여주세요.</h2>
               <span id="qr-status-pill" class="badge badge-good">🟢 스캔 대기 중 (1회용)</span>
 
               <div class="qr-box-wrap" id="qr-box-wrap">
                 <!-- SVG QR generated here -->
               </div>
 
-              <div id="qr-countdown-text" class="qr-countdown">⏱️ 유효시간: 24:00:00</div>
+              <div id="qr-countdown-text" class="qr-countdown">QR 유효시간 확인 중</div>
+              <p class="wallet-qr-expiry" id="wallet-consent-expiry">영상 공유 기한 확인 중</p>
 
               <div class="qr-spec-list">
                 <div class="qr-spec-row">
@@ -384,7 +382,7 @@
                 </div>
                 <div class="qr-spec-row">
                   <span>수신 병원</span>
-                  <strong id="qr-target-label">가상 병원 B (신경과)</strong>
+                  <strong id="qr-target-label">B대학병원</strong>
                 </div>
                 <div class="qr-spec-row">
                   <span>발급 번호</span>
@@ -400,7 +398,7 @@
               </div>
 
               <button id="btn-revoke-qr" class="btn btn-danger" type="button" style="margin-top:14px;">
-                🛑 공유 즉시 철회 / QR 폐기
+                공유 중단
               </button>
             </div>
           </div>
@@ -559,6 +557,15 @@
     </div>
 
     <!-- Bottom Tab Navigation (5 MediQ Tabs) -->
+    <section id="tab-profile" class="tab-pane wallet-profile">
+      <h2>내 정보</h2><p id="wallet-profile-name">로그인 후 표시</p><p>합성 데이터 · 개발용 인증 · 비운영 환경</p>
+      <div class="header-meta"><strong id="header-patient-name">로그인 후 표시</strong><span id="header-auth-badge" class="badge">시연 로그인</span></div>
+      <button id="btn-lock-app" class="btn btn-secondary" type="button">앱 잠금 · 로그아웃</button>
+      <button class="btn btn-secondary" type="button" data-tab="records">진료·건강기록 시연</button>
+      <button class="btn btn-secondary" type="button" data-tab="vault">보관함·단말 보안 상태</button>
+      <button class="btn btn-secondary" type="button" data-faq-open>이용 도움말</button>
+      <a href="/" class="wallet-profile-link">의료진 웹으로 이동 · 별도 인증 필요</a>
+    </section>
     <nav class="mobile-nav" aria-label="모바일 탭 네비게이션">
       <button class="nav-item active" type="button" data-tab="home">
         <span class="icon">🏠</span>
@@ -568,17 +575,13 @@
         <span class="icon">🩻</span>
         <span>영상검사</span>
       </button>
-      <button class="nav-item" type="button" data-tab="records">
-        <span class="icon">📋</span>
-        <span>진료기록</span>
-      </button>
       <button class="nav-item" type="button" data-tab="share">
         <span class="icon">📱</span>
-        <span>공유·QR</span>
+        <span>공유 내역</span>
       </button>
-      <button class="nav-item" type="button" data-tab="vault">
+      <button class="nav-item" type="button" data-tab="profile">
         <span class="icon">🛡️</span>
-        <span>보관·보안</span>
+        <span>내 정보</span>
       </button>
     </nav>
   </div>

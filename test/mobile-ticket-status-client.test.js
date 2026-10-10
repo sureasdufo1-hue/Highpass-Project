@@ -4,14 +4,15 @@ import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 const client = readFileSync('public/mobile/app.js', 'utf8');
 const code = client.slice(client.indexOf('function stopTicketStatusPolling('), client.indexOf('async function requestMobileRevocation('));
-function fixture(receipt, { ok = true, change = false, expirePending = false } = {}) {
+function fixture(receipt, { ok = true, change = false, expirePending = false, headerError = null } = {}) {
   const ticket = { ticketId: 'owned-ticket', qr: { payload: 'sensitive-capability', expiresAt: '2026-12-01T00:00:00Z' } };
   const state = { activeTicket: ticket, activeConsent: { consentId: 'owned-consent', status: 'ACTIVE' }, isAuthenticated: true, countdownTimer: 1 };
-  const nodes = new Map(); let stopped = 0, timers = 0;
+  const nodes = new Map(); let stopped = 0, timers = 0, fetches = 0;
   const context = vm.createContext({ state, AbortSignal, encodeURIComponent, Date,
     document: { querySelector: selector => { if (!nodes.has(selector)) nodes.set(selector, {}); return nodes.get(selector); } },
-    clearTimeout() {}, clearInterval() { stopped++; }, setTimeout() { timers++; }, patientHeaders: () => ({ authorization: 'unit-only' }),
+    clearTimeout() {}, clearInterval() { stopped++; }, setTimeout() { timers++; }, patientHeaders: () => { if (headerError) throw headerError; return { authorization: 'unit-only' }; },
     fetch: async (url, options) => {
+      fetches++;
       assert.equal(url, '/api/consents/owned-consent/handoff-tickets/owned-ticket');
       assert.equal(options.cache, 'no-store'); assert.ok(options.signal);
       if (change) state.activeTicket = { ticketId: 'different-ticket' };
@@ -20,9 +21,33 @@ function fixture(receipt, { ok = true, change = false, expirePending = false } =
     },
   });
   vm.runInContext(code, context);
-  return { state, ticket, nodes, run: () => vm.runInContext('refreshActiveTicketStatus()', context), stopped: () => stopped, timers: () => timers, context };
+  return { state, ticket, nodes, run: () => vm.runInContext('refreshActiveTicketStatus()', context), stopped: () => stopped, timers: () => timers, fetches: () => fetches, context };
 }
 const receipt = status => ({ ticketId: 'owned-ticket', consentId: 'owned-consent', expiresAt: '2026-12-01T00:00:00Z', status });
+
+test('expired presenter auth stops status polling without extending or claiming terminal QR state', async () => {
+  const error = Object.assign(new Error('private diagnostic must not be shown'), { code: 'CAPSTONE_SESSION_EXPIRED' });
+  const f = fixture(receipt('ISSUED'), { headerError: error });
+  const deadline = f.ticket.qr.expiresAt;
+  await vm.runInContext('startTicketStatusPolling()', f.context);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(f.nodes.get('#qr-status-pill').textContent, /인증.*만료.*다시 로그인/);
+  assert.doesNotMatch(f.nodes.get('#qr-status-pill').textContent, /private|서버 확인 ·|티켓 사용 완료/);
+  assert.equal(f.ticket.statusAuthExpired, true);
+  assert.equal(f.ticket.terminal, undefined);
+  assert.equal(f.ticket.qr.expiresAt, deadline);
+  assert.equal(f.stopped(), 0); // QR deadline timer remains active.
+  assert.equal(f.fetches(), 0); assert.equal(f.timers(), 0);
+  await f.run(); assert.equal(f.fetches(), 0);
+  assert.equal(f.state.ticketStatusBusy, false);
+});
+
+test('unclassified header failure is not misreported as expired authentication', async () => {
+  const f = fixture(receipt('ISSUED'), { headerError: new Error('CAPSTONE_SESSION_EXPIRED') });
+  await f.run();
+  assert.match(f.nodes.get('#qr-status-pill').textContent, /서버 상태 확인 실패/);
+  assert.equal(f.ticket.statusAuthExpired, undefined); assert.equal(f.fetches(), 0);
+});
 test('an in-flight ISSUED receipt cannot relabel a locally expired QR as usable', async () => {
   const f = fixture(receipt('ISSUED'), {expirePending:true});
   await f.run();

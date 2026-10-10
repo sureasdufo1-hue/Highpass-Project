@@ -5,7 +5,7 @@ import {readFile} from 'node:fs/promises';
 import {createPatientPixelSession,capturePatientViewerFocus} from '../public/patient-pixel-viewer.js';
 const now=Date.now(),iat=Math.floor(now/1000);
 const token='header.'+Buffer.from(JSON.stringify({iat,exp:iat+300})).toString('base64url')+'.signature';
-const study={studyInstanceUid:'1.2.3',series:[{seriesInstanceUid:'1.2.3.1'}]};
+const study={studyInstanceUid:'1.2.3',series:[{seriesInstanceUid:'1.2.3.1',description:'Series 1'}]};
 test('viewer restores a replaced launcher only in its original container and exact Study',()=>{
   const container={id:'studies',querySelectorAll:()=>candidates};let candidates=[],focused;
   const button=(value,options={})=>({isConnected:true,disabled:false,
@@ -19,12 +19,25 @@ test('viewer restores a replaced launcher only in its original container and exa
   candidates.push(replacement);restore();assert.equal(focused,replacement);
   focused=undefined;document.getElementById=()=>null;restore();assert.equal(focused,undefined);
 });
-function fixture({foreign=false,status=200}={}){
+test('mobile cine focus restores only the same Study in the original list after asynchronous rerender',()=>{
+  let candidates=[],focused;
+  const container={id:'studies-list',querySelectorAll:selector=>selector==='[data-action-cine]'?candidates:[]};
+  const button=(value,options={})=>({isConnected:true,disabled:false,getAttribute:name=>name==='data-action-cine'?value:null,
+    parentElement:{closest:()=>container},closest:()=>null,getClientRects:()=>[{}],focus(){focused=this;},...options});
+  const original=button('1.2.3');
+  const document={activeElement:original,getElementById:id=>id===container.id?container:null};
+  const restore=capturePatientViewerFocus(document);original.isConnected=false;
+  candidates=[button('1.2.4'),button('1.2.3',{disabled:true}),button('1.2.3',{getClientRects:()=>[]})];
+  restore();assert.equal(focused,undefined);
+  const replacement=button('1.2.3');candidates.push(replacement);restore();assert.equal(focused,replacement);
+  focused=undefined;document.getElementById=()=>null;restore();assert.equal(focused,undefined);
+});
+function fixture({foreign=false,status=200,selectedSeries}={}){
   const calls=[];
   const fetcher=async(url,options)=>{
     calls.push({url,options});
     if(url.endsWith('/self-view-grants'))return Response.json({accessToken:token,tokenType:'DPoP',permission:'VIEW_ONLY',expiresAt:new Date((iat+300)*1000).toISOString()},{status});
-    if(url.endsWith('/instances'))return Response.json([{'0020000D':{Value:[foreign?'1.2.4':'1.2.3']},'0020000E':{Value:['1.2.3.1']},'00080018':{Value:['1.2.3.1.1']}}]);
+    if(url.endsWith('/instances'))return Response.json([{'0020000D':{Value:[foreign?'1.2.4':'1.2.3']},'0020000E':{Value:[selectedSeries??'1.2.3.1']},'00080018':{Value:['1.2.3.1.1']}}]);
     return new Response(new Uint8Array([1,2,3]),{headers:{'content-type':'image/png'}});
   };
   return {calls,args:{patientId:'SYNTHETIC',study,headers:{authorization:'Bearer synthetic-auth-fixture'},origin:'https://synthetic.invalid',fetcher,webCrypto:webcrypto,clock:()=>now}};
@@ -37,6 +50,21 @@ test('patient viewer issues a single-Series Grant then fetches actual instance p
   for(const c of f.calls){assert.equal(new URL(c.url).search,'');assert.ok(!c.url.includes(token));assert.equal(c.options.cache,'no-store');assert.ok(c.options.signal);}
   assert.equal(f.calls[1].options.headers.get('authorization'),'DPoP '+token);
   s.close();await assert.rejects(s.frame(0),/EXPIRED/);assert.equal(f.calls.length,3);
+});
+test('multi-series CT selects only a Series present in the Study and issues a separately scoped Grant',async()=>{
+  const seriesUid='1.2.3.2',f=fixture({selectedSeries:seriesUid});
+  f.args.study={...study,series:[...study.series,{seriesInstanceUid:seriesUid,description:'Synthetic arterial'}]};
+  const session=await createPatientPixelSession({...f.args,seriesInstanceUid:seriesUid});
+  assert.equal(session.seriesInstanceUid,seriesUid);
+  assert.deepEqual(JSON.parse(f.calls[0].options.body),{seriesInstanceUids:[seriesUid]});
+  assert.ok(f.calls[1].url.includes(`/series/${seriesUid}/instances`));
+  await session.frame(0);
+  assert.ok(f.calls[2].url.includes(`/series/${seriesUid}/instances/`));
+  session.close();
+  const denied=fixture();
+  denied.args.study={...study,series:[...study.series,{seriesInstanceUid:seriesUid,description:'Synthetic arterial'}]};
+  await assert.rejects(createPatientPixelSession({...denied.args,seriesInstanceUid:'1.2.3.99'}),/SCOPE_INVALID/);
+  assert.equal(denied.calls.length,0);
 });
 test('denied Grant and foreign metadata never fall back to mock pixels',async()=>{
   for(const settings of [{status:403},{foreign:true}]){

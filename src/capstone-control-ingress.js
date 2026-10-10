@@ -1,8 +1,10 @@
 import http from "node:http";
 import { signIngress } from "./ingress.js";
 import { keyReleasePaths } from "./key-release-http-handler.js";
+import { patientKeyReleasePaths } from './patient-key-release-http-handler.js';
 
-const servicePaths = ["/gateway/data-plane/authorize", "/gateway/data-plane/ready", ...keyReleasePaths];
+const servicePaths = ["/gateway/data-plane/authorize", "/gateway/data-plane/ready", ...keyReleasePaths,
+  '/gateway/patient-self-view/authorize','/gateway/patient-self-view/ready',...patientKeyReleasePaths];
 
 // Metadata only. Image/Viewer transport has a separate hospital trust boundary.
 export function allowedControlPath(raw) {
@@ -31,7 +33,7 @@ export function createControlIngress({ origin, secret, deadlineMs = 45000 }) {
       if (typeof incoming.headers[name] === "string") headers[name] = incoming.headers[name];
     }
     // The dedicated least-privilege Gateway principal is required for these
-    // two service-only endpoints. Never promote it to a generic API credential.
+    // exact service-only endpoints. Never promote it to a generic API credential.
     if (servicePaths.includes(incoming.url)
         && typeof incoming.headers["x-hipass-service-token"] === "string") {
       headers["x-hipass-service-token"] = incoming.headers["x-hipass-service-token"];

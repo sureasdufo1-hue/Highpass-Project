@@ -6,9 +6,12 @@
    ========================================================================== */
 import { initializeCapstoneAuth } from "/capstone-auth.js";
 import {openPatientPixelViewer} from '/patient-pixel-viewer.js';
-import { initializePatientComponents, renderPatientOverview, createPatientQrController, renderPatientQr } from "/ui/patient.js";
+import {createFaqAssistant} from '/ui/faq-assistant.js';
+let faqAssistant=null;
+import { initializePatientComponents, renderPatientOverview, renderPresentationScenario, createPatientQrController, renderPatientQr } from "/ui/patient.js";
 import { selectConsentForStudy, isRevocationAcknowledged } from "/consent-selection.js";
-import { renderClinicianDetail, clinicianDetailModel, filterClinicalStudies, renderClinicalMetrics, renderClinicalStudyList } from "/ui/clinician.js";
+import { clinicalNextAction, renderClinicalActivity, renderClinicalDossier, renderClinicianDetail, clinicianDetailModel, filterClinicalStudies, renderClinicalMetrics, renderClinicalStudyList } from "/ui/clinician.js";
+import { initializeViewerStudio } from '/ui/viewer-studio.js';
 const capstoneAuth = await initializeCapstoneAuth();
 const patientQrController = createPatientQrController({
   readStatus: (consentId, ticketId) => fetchJson(`/api/consents/${encodeURIComponent(consentId)}/handoff-tickets/${encodeURIComponent(ticketId)}`, { cache: "no-store", signal: AbortSignal.timeout(10000) }),
@@ -29,8 +32,13 @@ const demo = {
 if (capstoneAuth?.context) {
   const profileName = document.querySelector('#patient-portal-app .profile-copy strong');
   const avatar = document.querySelector('#patient-portal-app .profile .avatar');
-  if (profileName) profileName.textContent = `${capstoneAuth.context.patientName} (${demo.patientId})`;
-  if (avatar) avatar.textContent = demo.patientId === 'HP-TEST-PHANTOM-001' ? 'TEST' : '1001';
+  if (profileName) profileName.textContent = capstoneAuth.context.scenario ? `${demo.patientName} · 56세` : `${demo.patientName} (${demo.patientId})`;
+  if (avatar) avatar.textContent = capstoneAuth.context.scenario ? '홍' : demo.patientId === 'HP-TEST-PHANTOM-001' ? 'TEST' : '1001';
+  if (capstoneAuth.context.scenario) {
+    const homeTitle = document.querySelector('#patient-portal-app [data-page="home"] h1');
+    if (homeTitle) homeTitle.textContent = '홍길동님, 다음 진료도 편안하게.';
+    for (const node of document.querySelectorAll('[data-scenario-patient]')) node.textContent = '홍길동 · 56세 · 합성 환자';
+  }
 }
 
 const adminHospitals = [
@@ -76,6 +84,7 @@ let tokenRequestPending = false;
 let dashboardRequestSequence = 0;
 let dashboardAppliedSequence = 0;
 let dashboardLoadsInFlight = 0;
+let clinicalRecentLogs = [];
 let isEasyMode = false;
 let isPreflightPassed = false;
 let wwWlPresetIndex = 0;
@@ -252,7 +261,9 @@ function initNavigation() {
 
   // Hash-based initial persona determination
   const initialHash = (location.hash || "").replace("#", "");
-  if (["DOCTOR", "doctor", "HOSPITAL_ADMIN", "admin"].includes(initialHash)) {
+  if (capstoneAuth?.roles?.length === 1 && capstoneAuth.roles[0] === 'PATIENT') {
+    switchPersona('PATIENT');
+  } else if (capstoneAuth?.context.entryRole === 'DOCTOR' || ["DOCTOR", "doctor", "HOSPITAL_ADMIN", "admin"].includes(initialHash)) {
     switchPersona("DOCTOR", false);
     navigateHospitalScreen("studies");
   } else {
@@ -264,6 +275,11 @@ function initNavigation() {
 }
 
 function switchPersona(persona, updateHash = true) {
+  if (capstoneAuth?.roles && !capstoneAuth.roles.includes(persona)) {
+    showToast('현재 계정은 환자 화면만 이용할 수 있습니다. 의료진은 별도 인증이 필요합니다.');
+    return;
+  }
+  faqAssistant?.reset();
   currentPersona = persona;
   document.querySelector('.hp-skip')?.setAttribute('href', persona === 'PATIENT' ? '#patient-main' : '#clinician-main');
   document.querySelectorAll("[data-persona]").forEach((btn) => {
@@ -404,6 +420,7 @@ function activateView(targetId) {
 // Event Bindings
 // --------------------------------------------------------------------------
 function bindEvents() {
+  initializeViewerStudio({ openViewer });
   // Global & Refresh
   document.querySelector("#refresh")?.addEventListener("click", loadDashboard);
   document.querySelector("#home-refresh-btn")?.addEventListener("click", loadDashboard);
@@ -561,7 +578,22 @@ function bindEvents() {
   });
 
   // Doctor Actions
-  document.querySelector('#clinical-open-viewer')?.addEventListener('click', openViewer);
+  const detailDialog = document.querySelector('#desk-details-dialog');
+  const openDetails = () => { if (detailDialog && !detailDialog.open) detailDialog.showModal(); };
+  document.querySelector('#desk-open-details')?.addEventListener('click',openDetails);
+  document.querySelector('#desk-close-details')?.addEventListener('click',() => detailDialog.close());
+  detailDialog?.querySelectorAll('[data-view-jump]').forEach(button => button.addEventListener('click',() => detailDialog.close()));
+  document.querySelector('#clinical-open-viewer')?.addEventListener('click', async () => {
+    const button=document.querySelector('#clinical-open-viewer');
+    const next=clinicalNextAction(selectedStudy,getConsentForStudy(selectedStudyUid,lastConsents),latestTokenInfo,!viewerImage.hidden);
+    if (next.action==='details') { openDetails(); return; }
+    if (next.action==='qr') { navigateHospitalScreen('qr'); return; }
+    button.disabled=true;
+    try { if (next.action==='refresh') await loadDashboard(); else await openViewer(); }
+    catch { showToast('연결 상태를 확인하고 다시 시도해 주세요.'); }
+    finally { button.disabled=false; refreshClinicalNextAction(); }
+  });
+  if (viewerImage) new MutationObserver(refreshClinicalNextAction).observe(viewerImage,{attributes:true,attributeFilter:['src','hidden']});
   document.querySelector('#clinician-search')?.addEventListener('input', () => renderDoctorStudies(lastStudies));
   document.querySelector('#clinician-filter')?.addEventListener('change', () => renderDoctorStudies(lastStudies));
   document.querySelector("#doctor-request-token")?.addEventListener("click", requestDoctorToken);
@@ -577,7 +609,7 @@ function bindEvents() {
       showToast('목록을 갱신하지 못했습니다. 연결을 확인한 후 다시 시도하세요.');
     } finally {
       button.disabled = false;
-      button.textContent = 'DICOMweb 목록 새로고침';
+      button.textContent = '상태 새로고침';
     }
   });
   document.querySelector("#load-instances")?.addEventListener("click", loadInstancesForSelectedSeries);
@@ -717,8 +749,16 @@ async function fetchDashboardSnapshot(options = {}) {
     syncPatientChoices({ preserveConsentState: true });
     navigatePatientPage("consent");
   } });
+  renderPresentationScenario(capstoneAuth?.context, {
+    study: lastStudies.find(study => study.studyInstanceUid === demo.studyInstanceUid),
+    consent: selectConsentForStudy(lastConsents, { studyUid: demo.studyInstanceUid, targetHospitalId: demo.targetHospitalId, preferredConsentId: latestConsentId }),
+    onView: study => openPatientStudyViewer(study.studyInstanceUid),
+    onShare: study => { selectStudy(study.studyInstanceUid, lastStudies); if (sourceHospitalSelect) sourceHospitalSelect.value = study.sourceHospitalId;
+      if (targetHospitalSelect) targetHospitalSelect.value = demo.targetHospitalId; syncPatientChoices({ preserveConsentState: true }); navigatePatientPage('consent'); },
+  });
   const readState = document.querySelector("#patient-read-state");
   if (readState) { readState.textContent = "서버 정보 확인 · " + new Date().toLocaleTimeString("ko-KR"); readState.dataset.state = "ready"; }
+  clinicalRecentLogs = Array.isArray(logs) ? logs : [];
   renderDoctorStudies(lastStudies);
   renderLogs(Array.isArray(logs) ? logs : []);
   renderAuditTable(Array.isArray(logs) ? logs : []);
@@ -1600,12 +1640,12 @@ function updateSliceControlsUi() {
     slider.value = String(currentSliceIndex + 1);
     slider.disabled = totalSlices <= 1;
   }
-  if (badge) badge.textContent = `${currentSliceIndex + 1} / ${totalSlices}`;
-  if (hudSlice) hudSlice.textContent = `${currentSliceIndex + 1} / ${totalSlices}`;
+  if (badge) badge.textContent = lastInstances.length ? `${currentSliceIndex + 1} / ${totalSlices}` : '—';
+  if (hudSlice) hudSlice.textContent = lastInstances.length ? `${currentSliceIndex + 1} / ${totalSlices}` : '—';
   if (hudStudy) {
     const desc = selectedStudy?.description || "Study";
     const mod = selectedStudy?.modality || "DICOM";
-    hudStudy.textContent = `${demo.patientId} · ${desc} (${mod})`;
+    hudStudy.textContent = `${desc} (${mod})`;
   }
   if (btnPrev) btnPrev.disabled = totalSlices <= 1;
   if (btnNext) btnNext.disabled = totalSlices <= 1;
@@ -1742,7 +1782,8 @@ function startCinePlayback() {
   isCinePlaying = true;
   const btn = document.querySelector("#tool-cine-play");
   if (btn) {
-    btn.textContent = "⏸ Cine 정지";
+    btn.textContent = "일시 정지";
+    btn.setAttribute('aria-pressed', 'true');
     btn.classList.add("active");
   }
 
@@ -1765,7 +1806,8 @@ function stopCinePlayback() {
   isCinePlaying = false;
   const btn = document.querySelector("#tool-cine-play");
   if (btn) {
-    btn.textContent = "▶ Cine 재생";
+    btn.textContent = "재생";
+    btn.setAttribute('aria-pressed', 'false');
     btn.classList.remove("active");
   }
 }
@@ -1775,7 +1817,7 @@ function cycleCineFps() {
   const nextIdx = (speeds.indexOf(cineFps) + 1) % speeds.length;
   cineFps = speeds[nextIdx];
   const btn = document.querySelector("#tool-cine-fps");
-  if (btn) btn.textContent = `속도: ${cineFps} fps`;
+  if (btn) btn.textContent = `${cineFps} fps`;
   if (isCinePlaying) {
     stopCinePlayback();
     startCinePlayback();
@@ -1826,6 +1868,8 @@ async function downloadSelectedInstance() {
 function renderSeries(seriesRows) {
   const container = document.querySelector("#viewer-series-list");
   if (!container) return;
+  const count = document.querySelector('#studio-series-count');
+  if (count) count.textContent = `${seriesRows.length}개`;
 
   if (!seriesRows.length) {
     container.innerHTML = '<div style="font-size:11px;color:#94a3b8;">조회 가능한 Series가 없습니다.</div>';
@@ -1837,18 +1881,19 @@ function renderSeries(seriesRows) {
     const seriesUid = dicomValue(series, "0020000E");
     const description = dicomValue(series, "0008103E") || "Series";
     return `
-      <button type="button" class="mq-thumb ${index === 0 ? "selected" : ""}" data-viewer-series-uid="${escapeHtml(seriesUid)}">
+      <button type="button" class="mq-thumb ${index === 0 ? "selected" : ""}" aria-pressed="${index === 0}" data-viewer-series-uid="${escapeHtml(seriesUid)}">
         <img class="hp-series-preview" alt="승인된 Series 단면 미리보기" hidden>
         <strong>${index + 1}. ${escapeHtml(description)}</strong>
-        <div style="font-size:10px;color:#94a3b8;">${escapeHtml(seriesUid.slice(0, 18))}...</div>
+        <span class="studio-series-meta">시리즈 ${index + 1} · ${escapeHtml(dicomValue(series, "00080060") || 'DICOM')}</span>
       </button>
     `;
   }).join("");
 
   container.querySelectorAll("[data-viewer-series-uid]").forEach((thumb, index) => {
     thumb.addEventListener("click", async () => {
-      container.querySelectorAll(".mq-thumb").forEach((t) => t.classList.remove("selected"));
+      container.querySelectorAll(".mq-thumb").forEach((t) => { t.classList.remove("selected"); t.setAttribute('aria-pressed','false'); });
       thumb.classList.add("selected");
+      thumb.setAttribute('aria-pressed','true');
       selectedSeriesUid = thumb.dataset.viewerSeriesUid;
       selectedSopUid = "";
       hideSeriesImage();
@@ -1982,6 +2027,11 @@ function renderDoctorStudies(studies) {
   renderClinicianDetail(document.querySelector('#clinician-study-detail'),
     studies.find(study => study.studyInstanceUid === selectedStudyUid),
     getConsentForStudy(selectedStudyUid, lastConsents));
+  renderClinicalDossier(document.querySelector('#clinical-dossier'),
+    studies.find(study => study.studyInstanceUid === selectedStudyUid),
+    getConsentForStudy(selectedStudyUid, lastConsents), capstoneAuth?.context);
+  refreshClinicalNextAction();
+  renderClinicalActivity(document.querySelector('#desk-recent-activity'),clinicalRecentLogs,selectedStudyUid);
   const allStudies = studies;
   const consentForStudy = uid => getConsentForStudy(uid, lastConsents);
   renderClinicalMetrics(document.querySelector('#clinician-metrics'), allStudies, consentForStudy);
@@ -2010,6 +2060,22 @@ function renderDoctorStudies(studies) {
 
 }
 
+function refreshClinicalNextAction() {
+  const consent=getConsentForStudy(selectedStudyUid,lastConsents);
+  const study=lastStudies.find(row=>row.studyInstanceUid===selectedStudyUid);
+  const next=clinicalNextAction(study,consent,latestTokenInfo,Boolean(viewerImage && !viewerImage.hidden));
+  const button=document.querySelector('#clinical-open-viewer');
+  const note=document.querySelector('#desk-next-action-note');
+  const tag=document.querySelector('#desk-consent-label');
+  if (button) button.textContent=next.label;
+  if (note) note.textContent=next.note;
+  if (tag) {
+    const value=clinicianDetailModel(study,consent)[2]?.[1] || '검사 선택 대기';
+    tag.textContent=value==='동의 유효 · 서버 검증 필요'?'공유 동의 유효':value;
+    tag.dataset.state=next.action==='viewer'?'ready':'attention';
+  }
+}
+
 async function selectStudy(studyUid, studies = lastStudies) {
   selectedStudyUid = studyUid;
   selectedStudy = studies.find((study) => study.studyInstanceUid === studyUid) ?? selectedStudy;
@@ -2026,10 +2092,15 @@ async function selectStudy(studyUid, studies = lastStudies) {
 
 function syncSelectedStudyUi() {
   if (!selectedStudy) return;
+  for (const [selector, value] of [
+    ['#studio-patient-label', capstoneAuth?.context?.scenario?.age ? `${demo.patientName} · ${capstoneAuth.context.scenario.age}세` : demo.patientName],
+    ['#studio-source-label', selectedStudy.sourceHospitalId || '확인 대기'],
+    ['#studio-date-label', selectedStudy.studyDate || '확인 대기'],
+  ]) { const node = document.querySelector(selector); if (node) node.textContent = value; }
   const label = document.querySelector("#viewer-study-label");
   if (label) label.textContent = `${selectedStudy.description} (${selectedStudy.modality})`;
   const perm = document.querySelector("#viewer-perm-label");
-  if (perm) perm.textContent = latestTokenInfo?.permission || demo.permission;
+  if (perm) perm.textContent = latestTokenInfo?.permission || '서버 검증 대기';
 }
 
 function resetViewerData() {
@@ -2098,6 +2169,7 @@ function hideSeriesImage() {
 function showViewerMessage(message, tone = "info") {
   if (!viewerAlert) return;
   viewerAlert.textContent = message;
+  viewerAlert.title = message;
   viewerAlert.dataset.tone = tone;
 }
 
@@ -2109,6 +2181,7 @@ function setPatientStatus(text) {
 
 function toggleEasyMode() {
   isEasyMode = !isEasyMode;
+  document.querySelector("#patient-portal-app")?.classList.toggle("premium-large-text", isEasyMode);
   const btn1 = document.querySelector("#toggle-easy-mode");
   const btn2 = document.querySelector("#easyModeToggle");
   if (btn1) btn1.textContent = isEasyMode ? "표준 모드 (DICOM 메타)" : "쉬운 모드 (우리말 설명)";
@@ -2251,7 +2324,7 @@ function updateWatermark(sessionInfo) {
 function toggleInvert() {
   isInverted = !isInverted;
   const btn = document.querySelector("#tool-invert");
-  if (btn) btn.classList.toggle("active", isInverted);
+  if (btn) { btn.classList.toggle("active", isInverted); btn.setAttribute('aria-pressed',String(isInverted)); }
   applyViewerFilters();
 }
 
@@ -2260,7 +2333,7 @@ function cycleZoom() {
   const scale = zoomScales[zoomScaleIndex];
   const btn = document.querySelector("#tool-zoom");
   if (btn) {
-    btn.textContent = zoomScaleIndex === 0 ? "Zoom 확대" : `Zoom (${scale}x)`;
+    (btn.querySelector('span') || btn).textContent = zoomScaleIndex === 0 ? "확대" : `${scale}×`;
     btn.classList.toggle("active", zoomScaleIndex > 0);
   }
   applyViewerTransforms();
@@ -2271,7 +2344,8 @@ function togglePan() {
   const box = document.querySelector("#viewer-viewport-box");
   if (btn) {
     const active = btn.classList.toggle("active");
-    if (box) box.style.cursor = active ? "grab" : "";
+    btn.setAttribute('aria-pressed',String(active));
+    if (box) { box.style.cursor = active ? "grab" : ""; box.style.touchAction = active ? 'none' : ''; }
   }
 }
 
@@ -2280,7 +2354,7 @@ function cycleWwWl() {
   const preset = wwWlPresets[wwWlPresetIndex];
   const btn = document.querySelector("#tool-ww-wl");
   if (btn) {
-    btn.textContent = wwWlPresetIndex === 0 ? "W/L 조절" : `W/L (${preset.name})`;
+    (btn.querySelector('span') || btn).textContent = wwWlPresetIndex === 0 ? "화면 대비" : `대비 ${wwWlPresetIndex}`;
     btn.classList.toggle("active", wwWlPresetIndex > 0);
   }
   applyViewerFilters();
@@ -2303,6 +2377,8 @@ function applyViewerFilters() {
   if (preset.contrast !== 1) filters.push(`contrast(${preset.contrast})`);
   if (preset.brightness !== 1) filters.push(`brightness(${preset.brightness})`);
   img.style.filter = filters.join(" ");
+  const hud = document.querySelector('#viewer-hud-ww');
+  if (hud) hud.textContent = `화면 대비 · ${wwWlPresetIndex ? `프리셋 ${wwWlPresetIndex}` : '기본'}`;
 }
 
 function applyViewerTransforms() {
@@ -2319,13 +2395,13 @@ function resetViewerTools() {
   isSideBySideActive = false;
 
   const btnWw = document.querySelector("#tool-ww-wl");
-  if (btnWw) { btnWw.textContent = "W/L 조절"; btnWw.classList.remove("active"); }
+  if (btnWw) { (btnWw.querySelector('span') || btnWw).textContent = "화면 대비"; btnWw.classList.remove("active"); }
   const btnZoom = document.querySelector("#tool-zoom");
-  if (btnZoom) { btnZoom.textContent = "Zoom 확대"; btnZoom.classList.remove("active"); }
+  if (btnZoom) { (btnZoom.querySelector('span') || btnZoom).textContent = "확대"; btnZoom.classList.remove("active"); }
   const btnPan = document.querySelector("#tool-pan");
-  if (btnPan) btnPan.classList.remove("active");
+  if (btnPan) { btnPan.classList.remove("active"); btnPan.setAttribute('aria-pressed','false'); }
   const btnInv = document.querySelector("#tool-invert");
-  if (btnInv) btnInv.classList.remove("active");
+  if (btnInv) { btnInv.classList.remove("active"); btnInv.setAttribute('aria-pressed','false'); }
   const btnSide = document.querySelector("#tool-side-by-side");
   if (btnSide) btnSide.classList.remove("active");
 
@@ -2335,6 +2411,7 @@ function resetViewerTools() {
   const box = document.querySelector("#viewer-viewport-box");
   if (box) {
     box.style.cursor = "";
+    box.style.touchAction = "";
     box.classList.remove("side-by-side-layout");
   }
 }
@@ -3779,6 +3856,7 @@ function drawSyntheticBodyCt(ctx, w, h, progress, preset) {
 // Event handlers and heartbeat callbacks may run while the initial dashboard
 // awaits network I/O; they must not encounter uninitialized proof/viewer state.
 initializePatientComponents();
+faqAssistant=createFaqAssistant({root:document.querySelector('#patient-portal-app'),navigate:navigatePatientPage,available:()=>currentPersona==='PATIENT'});
 initNavigation();
 initConsentDateDefaults();
 renderAdminShell();

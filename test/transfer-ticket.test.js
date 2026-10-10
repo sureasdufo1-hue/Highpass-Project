@@ -44,6 +44,55 @@ function clockAt(startMs) {
   return clock;
 }
 
+test('ticket redemption and status agree at the exact expiry boundary without issuing a token', async () => {
+  for (const offset of [-1, 0, 1]) {
+    let now = Date.parse('2026-06-25T10:00:00.000Z');
+    const { dir, service, store } = await createService({ clock: () => new Date(now).toISOString() });
+    try {
+      const { approval, nonce } = await issueTicket(service);
+      now = Date.parse(approval.ticket.expiresAt) + offset;
+      const status = await service.viewPatientTicketStatus(approval.consentId, approval.ticketId, 'P-1001');
+      const before = store.get('dicomAccessTokenLogs').length;
+      const result = await service.redeemTransferTicket(nonce, redeemInput());
+      if (offset < 0) {
+        assert.equal(status.status, 'ISSUED');
+        assert.equal(result.decision, 'ALLOWED');
+      } else {
+        assert.equal(status.status, 'EXPIRED');
+        assert.equal(result.decision, 'DENIED');
+        assert.equal(result.reasonCode, 'TICKET_EXPIRED');
+        assert.equal(result.accessToken, undefined);
+        assert.equal(store.get('dicomAccessTokenLogs').length, before);
+        const ticket = store.get('transferTickets').find(row => row.ticketId === approval.ticketId);
+        assert.equal(ticket.status, 'EXPIRED');
+        assert.equal(ticket.usedAt, null);
+        assert.ok(store.get('auditLogs').some(row => row.ticketId === approval.ticketId && row.action === 'TICKET_DENIED' && row.reason === 'TICKET_EXPIRED'));
+      }
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  }
+});
+
+test('expiry reached during proof verification cannot consume a ticket or issue a token', async () => {
+  let now = Date.parse('2026-06-25T10:00:00.000Z');
+  const { dir, service, store } = await createService({ clock: () => new Date(now).toISOString() });
+  try {
+    const { approval, nonce } = await issueTicket(service);
+    const deadline = Date.parse(approval.ticket.expiresAt);
+    now = deadline - 1;
+    service.verifyIssuanceProof = async () => { now = deadline; return { valid: true }; };
+    const before = store.get('dicomAccessTokenLogs').length;
+    const result = await service.redeemTransferTicket(nonce, redeemInput(), { dpopProof: 'test-proof-marker' });
+    assert.equal(result.decision, 'DENIED');
+    assert.equal(result.reasonCode, 'TICKET_EXPIRED');
+    assert.equal(result.accessToken, undefined);
+    assert.equal(store.get('dicomAccessTokenLogs').length, before);
+    const ticket = store.get('transferTickets').find(row => row.ticketId === approval.ticketId);
+    assert.equal(ticket.usedAt, null);
+    assert.notEqual(ticket.status, 'USED');
+    assert.ok(store.get('auditLogs').some(row => row.ticketId === approval.ticketId && row.action === 'TICKET_DENIED' && row.reason === 'TICKET_EXPIRED'));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 async function createService(options = {}) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "hipass-ticket-"));
   const store = new JsonStore(path.join(dir, "db.json"));

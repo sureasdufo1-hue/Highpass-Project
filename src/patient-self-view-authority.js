@@ -4,7 +4,7 @@ import { evaluatePatientSelfViewPolicy } from './patient-self-view-policy.js';
 const uid = value => typeof value === 'string' && value.length <= 64 && /^[0-9]+(?:\.[0-9]+)+$/.test(value)
   && value.split('.').every(part => part === '0' || !part.startsWith('0'));
 const unverified = reasonCode => ({ decision: 'DENIED', reasonCode, statusCode: 503 });
-const syntheticPatients = Object.freeze({ 'synthetic-phantom-account': 'HP-TEST-PHANTOM-001', 'synthetic-account-a': 'P-1001' });
+const syntheticPatients = Object.freeze({ 'synthetic-phantom-account': 'HP-TEST-PHANTOM-001', 'synthetic-account-a': 'P-1001', 'synthetic-hcc-account': 'MEDIQ-SYN-HCC-001' });
 
 // Called only with an authenticated server principal. HTTP body/status/owner
 // fields never supply evidence. One bounded, current DB snapshot on every read.

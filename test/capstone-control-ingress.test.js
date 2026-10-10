@@ -61,3 +61,20 @@ test("Gateway dedicated credential is forwarded only to exact service endpoints,
     assert.notEqual(item.headers["x-hipass-ingress-signature"], "spoofed");
   }
 });
+
+test('patient metadata service routes forward only the authenticated service boundary; no patient pixels or wildcard Gateway',t=>{
+  const exact=['/gateway/patient-self-view/authorize','/gateway/patient-self-view/ready',
+    '/gateway/patient-self-view/package/wrap-authorize','/gateway/patient-self-view/package/prepare','/gateway/patient-self-view/package/authorize'];
+  for(const route of exact)assert.equal(allowedControlPath(route),true);
+  for(const route of ['/patient-dicomweb/studies/1.2/series','/gateway/patient-self-view/token','/gateway/patient-self-view/package/download','/gateway/patient-self-view/authorize/extra'])assert.equal(allowedControlPath(route),false);
+  const captured=[];
+  t.mock.method(http,'request',options=>{captured.push(options);const request=new PassThrough();request.on('data',()=>{});return request;});
+  for(const route of [...exact,'/api/health',exact[0]+'?query=unexpected']){
+    const incoming=new PassThrough();incoming.url=route;incoming.method='POST';incoming.socket={remoteAddress:'10.90.88.2'};
+    incoming.headers={'x-hipass-service-token':'synthetic-patient-service-marker','x-forwarded-for':'spoofed'};
+    const outgoing=new EventEmitter();createControlIngress({origin:'http://control:3000',secret:'x'.repeat(32)})(incoming,outgoing);
+    outgoing.emit('close');incoming.end();
+  }
+  for(const row of captured.slice(0,exact.length)){assert.equal(row.headers['x-hipass-service-token'],'synthetic-patient-service-marker');assert.equal(row.headers['x-forwarded-for'],'10.90.88.2');assert.ok(row.headers['x-hipass-ingress-signature']);}
+  for(const row of captured.slice(exact.length))assert.equal(row.headers['x-hipass-service-token'],undefined);
+});

@@ -81,13 +81,14 @@ export function createCapstoneBPortal({ root, ca, origin = "https://192.168.111.
       if (request.method !== "GET") { request.resume(); return fail(405, "METHOD_NOT_ALLOWED"); }
       let file = ["/", "/hipass", "/hipass/"].includes(pathname) ? "index.html" : ["/mobile", "/mobile/"].includes(pathname) ? "mobile/index.html" : pathname.slice(1);
       const mobileManifest = file === "mobile/manifest.json";
-      if (file.startsWith("assets/clinical/") || (!mobileManifest && !/\.(?:html|js|css|png|jpg|jpeg|svg|ico)$/.test(file))) return fail(404, "STATIC_NOT_FOUND");
+      const patientFont = file === "fonts/pretendard/PretendardVariable.woff2";
+      if (file.startsWith("assets/clinical/") || (!mobileManifest && !patientFont && !/\.(?:html|js|css|png|jpg|jpeg|svg|ico)$/.test(file))) return fail(404, "STATIC_NOT_FOUND");
       const target = path.resolve(root, file);
       if (!target.startsWith(root + path.sep) || !statSync(target).isFile() || statSync(target).size > 2097152) return fail(404, "STATIC_NOT_FOUND");
       let body = readFileSync(target);
       if (["index.html", "mobile/index.html"].includes(file)) body = Buffer.from(body.toString("utf8").replace('<html lang="ko">', '<html lang="ko" data-capstone="1">'));
       const extension = path.extname(file);
-      const types = { ".html": "text/html; charset=utf-8", ".js": "application/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".svg": "image/svg+xml", ".ico": "image/x-icon" };
+      const types = { ".html": "text/html; charset=utf-8", ".js": "application/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".svg": "image/svg+xml", ".ico": "image/x-icon", ".woff2": "font/woff2" };
       response.writeHead(200, { "content-type": mobileManifest ? "application/manifest+json; charset=utf-8" : types[extension] });
       response.end(body);
     } catch (error) { diagnostic.finish(503,error); fail(503, "CAPSTONE_PORTAL_UNAVAILABLE"); }

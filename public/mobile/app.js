@@ -3,6 +3,8 @@
 // Security Contract: Zero browser plaintext storage (no localStorage/sessionStorage), Fail-Closed
 import { initializeCapstoneAuth } from "/capstone-auth.js";
 import {openPatientPixelViewer} from '/patient-pixel-viewer.js';
+import {createFaqAssistant} from '/ui/faq-assistant.js';
+let faqAssistant=null;
 let capstoneAuth = null;
 const syncChannel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("HI_PASS_SYNC_CHANNEL") : null;
 const secondarySyncChannel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("hipass_sync") : null;
@@ -26,7 +28,7 @@ const state = {
   currentTab: "home",
   activeSubtabRecords: "clinical",
   activeFilterModality: "ALL",
-  activeChipFilter: "ALL",
+  activeChipFilter: "IMAGING",
   studies: [],
   consents: [],
   clinicalRecords: [],
@@ -76,6 +78,10 @@ async function initializeMobileApp() {
   setupSyncChannel();
   registerServiceWorker();
   setupAuth();
+  faqAssistant=createFaqAssistant({root:document.querySelector('.mobile-shell'),surface:'mobile',navigate:route=>{
+    if(route==='share-manage'){switchTab('share');document.querySelector('#btn-share-sub-manage')?.click();}
+    else switchTab(route);
+  },available:()=>state.isAuthenticated});
   setupCinePlayer();
   setupShareWizard();
 
@@ -89,6 +95,11 @@ async function initializeMobileApp() {
     headerBadge.textContent = "🔒 잠금 상태";
     headerBadge.className = "badge";
   }
+  if (capstoneAuth?.context.scenario) {
+    document.querySelector('.auth-grid-options')?.setAttribute('hidden', '');
+    const authTitle = document.querySelector('.auth-title'); if (authTitle) authTitle.textContent = '홍길동님의 시연 세션 확인';
+    await handleQuickAuth('CAPSTONE_SESSION');
+  }
 }
 const startMobileApp = () => {
   void initializeMobileApp().catch(() => showToast("시연 인증을 확인하지 못했습니다. 새로고침하여 다시 로그인하세요."));
@@ -97,15 +108,34 @@ if (document.readyState === "loading") document.addEventListener("DOMContentLoad
 else startMobileApp();
 
 function setupNavigation() {
+  const home=document.querySelector('#tab-home');
+  const help=home?.querySelector('.wallet-help');
+  if (help) {
+    // Keep the home hierarchy aligned with the approved wallet mockup.
+    // Secondary account information remains available without crowding the home.
+    const profile = document.querySelector('#tab-profile');
+    profile.append(home.querySelector('#home-share-widget'));
+    help.after(home.querySelector('.wallet-extra'));
+  }
+  const paths={home:'M3 10 12 3 21 10 M5 9v12h5v-7h4v7h5V9',studies:'M4 3h16v18H4z M8 8h8 M8 12h8 M8 16h5',share:'M5 3h14v18H5z M8 7h8 M8 12h8 M8 17h5',profile:'M8 7a4 4 0 1 0 8 0a4 4 0 1 0-8 0 M4 21v-2a8 8 0 0 1 16 0v2z'};
+  for(const button of document.querySelectorAll('.mobile-nav [data-tab]')){
+    const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    for(const [key,value] of Object.entries({viewBox:'0 0 24 24',width:'24',height:'24','aria-hidden':'true'}))svg.setAttribute(key,value);
+    const path=document.createElementNS(svg.namespaceURI,'path');
+    for(const [key,value] of Object.entries({d:paths[button.dataset.tab],fill:'none',stroke:'currentColor','stroke-width':'1.7','stroke-linecap':'round','stroke-linejoin':'round'}))path.setAttribute(key,value);
+    svg.append(path);button.querySelector('.icon')?.replaceChildren(svg);
+  }
   document.querySelectorAll("[data-tab]").forEach((btn) => {
     btn.addEventListener("click", () => {
       switchTab(btn.dataset.tab);
+      if (btn.classList.contains('nav-item') && btn.dataset.tab === 'share') document.querySelector('#btn-share-sub-manage')?.click();
     });
   });
 
   // Home Quick Action buttons
   document.querySelector("#btn-home-quick-share")?.addEventListener("click", () => {
     switchTab("share");
+    document.querySelector('#btn-share-sub-wizard')?.click();
     setWizardStep(1);
   });
   document.querySelector("#btn-goto-share-tab")?.addEventListener("click", () => {
@@ -213,7 +243,7 @@ function setupSyncChannel() {
 // 1-Second Quick Authentication
 // --------------------------------------------------------------------------
 function setupAuth() {
-  document.querySelector("#btn-auth-bio")?.addEventListener("click", () => handleQuickAuth("BIO"));
+  document.querySelector("#btn-auth-bio")?.addEventListener("click", () => handleQuickAuth(capstoneAuth?.context.scenario ? 'CAPSTONE_SESSION' : 'BIO'));
   document.querySelector("#btn-auth-pass")?.addEventListener("click", () => handleQuickAuth("PASS"));
   document.querySelector("#btn-auth-kakao")?.addEventListener("click", () => handleQuickAuth("KAKAO"));
   document.querySelector("#btn-auth-pin")?.addEventListener("click", () => handleQuickAuth("PIN"));
@@ -224,6 +254,8 @@ function setupAuth() {
     if (capstoneAuth) {
       patientSelect.replaceChildren(new Option(capstoneAuth.context.patientName, capstoneAuth.context.patientId));
       patientSelect.disabled = true;
+    } else {
+      patientSelect.replaceChildren(new Option('가상환자 1001', 'P-1001'), new Option('가상환자 1002', 'P-1002'), new Option('가상환자 1003', 'P-1003'));
     }
     patientSelect.addEventListener("change", (e) => {
       handlePatientSelect(e.target.value);
@@ -236,6 +268,7 @@ async function handleQuickAuth(method = "BIO") {
   state.isVerifying = true;
 
   const methodMetadata = {
+    CAPSTONE_SESSION: { name: '시연 로그인 세션', badge: '시연 로그인', icon: '✓' },
     BIO: { name: "생체인증 화면 시뮬레이션", badge: "개발용 인증", icon: "👆" },
     PASS: { name: "PASS 화면 시뮬레이션", badge: "실제 PASS 미연동", icon: "📱" },
     KAKAO: { name: "카카오 화면 시뮬레이션", badge: "실제 카카오 미연동", icon: "💬" },
@@ -276,7 +309,7 @@ async function handleQuickAuth(method = "BIO") {
   }
 
   // 1-second scanning pulse
-  await new Promise((resolve) => setTimeout(resolve, 900));
+  if (method !== 'CAPSTONE_SESSION') await new Promise((resolve) => setTimeout(resolve, 900));
 
   if (verifyText) verifyText.textContent = "개발용 서버 인증 확인 중...";
   if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
@@ -337,6 +370,7 @@ async function handleLockApp() {
   if (!state.isAuthenticated) return;
 
   state.isAuthenticated = false;
+  faqAssistant?.reset();
   state.authMethod = null;
   state.authenticatedAt = null;
 
@@ -400,6 +434,7 @@ async function handleLockApp() {
 }
 
 function handlePatientSelect(patientId) {
+  faqAssistant?.reset();
   state.patientId = patientId;
   const names = {
     "HP-TEST-PHANTOM-001": "합성 팬텀 환자",
@@ -408,7 +443,7 @@ function handlePatientSelect(patientId) {
     "P-1003": "박가상 (P-1003)",
   };
   state.patientName = capstoneAuth?.context?.patientId === patientId
-    ? `${capstoneAuth.context.patientName} (${patientId})`
+    ? capstoneAuth.context.scenario ? `${capstoneAuth.context.patientName} · 56세 · 합성 환자` : `${capstoneAuth.context.patientName} (${patientId})`
     : names[patientId] || `${patientId} (합성 환자)`;
 
   const authPatientEl = document.querySelector("#auth-patient-name");
@@ -573,6 +608,16 @@ function initMockMedicalRecords() {
 // Screen 1: Home (MediQ HomeScreen)
 // --------------------------------------------------------------------------
 function renderHomeScreen() {
+  const display = (id,value) => { const node=document.getElementById(id); if(node)node.textContent=value; };
+  display('wallet-patient-name', `${capstoneAuth?.context?.patientName ?? state.patientName}님,`);
+  display('wallet-profile-name', state.patientName);
+  display('header-patient-name', capstoneAuth?.context?.patientName ?? state.patientName);
+  const study=state.studies.find(item=>item.studyInstanceUid===capstoneAuth?.context?.defaultStudyUid) ?? state.studies[0];
+  const hospital=id=>({'HOSP-A':'A대학병원','HOSP-B':'B대학병원','HOSP-C':'C대학병원'}[id] ?? id ?? '촬영 병원 미확인');
+  display('wallet-study',study?.description || '공유할 영상을 확인해 주세요');
+  display('wallet-study-date',study ? `${study.studyDate || '검사일 미확인'} · ${study.modality || 'DICOM'} · 합성 검사` : '현재 조회된 영상이 없습니다. 새로고침해 주세요.');
+  display('wallet-route',study ? `${hospital(study.sourceHospitalId)} → 수신 병원 선택` : '검사 목록 확인 필요');
+  const shareButton=document.querySelector('#btn-home-quick-share');if(shareButton)shareButton.disabled=!study;
   const widgetBadge = document.querySelector("#home-share-badge");
   const widgetDesc = document.querySelector("#home-share-desc");
 
@@ -611,7 +656,7 @@ function renderHomeRecentList() {
         type: "IMAGING",
         title: s.description,
         sub: `${s.modality || "DICOM"} · ${s.sourceHospitalId || "가상 병원 A"}`,
-        date: s.studyDate || "2026-06-20",
+        date: s.studyDate || "검사일 미확인",
         badge: "🩻 영상검사",
         study: s,
       });
@@ -660,18 +705,13 @@ function renderHomeRecentList() {
   }
 
   container.innerHTML = items.map((item) => `
-    <article class="card" style="margin-bottom:10px;">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
-        <div>
-          <strong style="color:#0f172a;font-size:14px;display:block;">${escapeHtml(item.title)}</strong>
-          <span style="font-size:11px;color:#64748b;">${escapeHtml(item.sub)}</span>
-        </div>
-        <span class="badge" style="font-size:10px;">${escapeHtml(item.badge)}</span>
+    <article class="wallet-record">
+      <div class="wallet-record-icon" aria-hidden="true">${escapeHtml(item.study?.modality || "기록")}</div>
+      <div class="wallet-record-copy">
+        <strong>${escapeHtml(item.title)}</strong>
+        <span>${escapeHtml(item.sub)}</span><span>${escapeHtml(item.date)}</span>
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#64748b;margin-top:6px;">
-        <span>📅 ${escapeHtml(item.date)}</span>
-        ${item.study ? `<button class="btn btn-sm btn-outline" data-action-view-study="${escapeHtml(item.study.studyInstanceUid)}" type="button">🔍 영상 보기</button>` : '<span style="color:#0284c7;font-weight:700;">보관 중</span>'}
-      </div>
+      ${item.study ? `<button class="wallet-record-open" aria-label="${escapeHtml(item.title)} 영상 보기" data-action-view-study="${escapeHtml(item.study.studyInstanceUid)}" type="button">›</button>` : ''}
     </article>
   `).join("");
 
@@ -1126,7 +1166,11 @@ function setupShareWizard() {
     const confirmHosp = document.querySelector("#confirm-hosp-label");
     if (confirmHosp) confirmHosp.textContent = hospSelect ? hospSelect.options[hospSelect.selectedIndex].text : "가상 병원 B";
     const confirmCount = document.querySelector("#confirm-items-count");
-    if (confirmCount) confirmCount.textContent = `${state.shareSelectedItems.size}건의 기록`;
+    const selectedStudies=state.studies.filter(item=>state.shareSelectedItems.has(item.studyInstanceUid));
+    const selectedRecords=state.clinicalRecords.filter(item=>state.shareSelectedItems.has(item.id));
+    if (confirmCount) confirmCount.textContent = [...selectedStudies.map(item=>item.description || item.modality || '검사'),...selectedRecords.map(item=>item.title || '합성 진료기록')].join(', ') || '공유할 항목 선택 필요';
+    const sourceLabel=document.querySelector('#confirm-source-label');
+    if(sourceLabel)sourceLabel.textContent=state.sourceHospitalId || '제공 기관 확인 필요';
     const confirmDuration = document.querySelector("#confirm-duration-label");
     if (confirmDuration) confirmDuration.textContent = durSelect ? durSelect.options[durSelect.selectedIndex].text : "발급 후 24시간";
 
@@ -1139,7 +1183,7 @@ function setupShareWizard() {
     const docLabel = document.querySelector("#label-target-doctor");
     const val = e.target.value;
     const doctors = {
-      "HOSP-B": "신경과 DOC-B-01 (이신경 전문의)",
+      "HOSP-B": "B대학병원 담당 의료진 DOC-B-01",
       "HOSP-C": "정형외과 DOC-C-01 (박정형 전문의)",
       "HOSP-SNU": "영상의학과 DOC-SNU-01 (김영상 교수)",
       "HOSP-SEV": "호흡기내과 DOC-SEV-01 (최호흡 교수)",
@@ -1322,7 +1366,11 @@ function renderActiveQrView() {
   }
 
   if (studyLabel) studyLabel.textContent = `${state.shareSelectedItems.size || 1}건의 기록`;
-  if (targetLabel) targetLabel.textContent = `${state.shareTargetHospital} (신경과)`;
+  if (targetLabel) targetLabel.textContent = state.shareTargetHospital === 'HOSP-B' ? 'B대학병원' : state.shareTargetHospital;
+  const heading=document.querySelector('#wallet-qr-heading');if(heading)heading.textContent=`${targetLabel?.textContent || '수신 병원'} 접수 시 보여주세요.`;
+  const consentExpiry=document.querySelector('#wallet-consent-expiry');
+  const deadline=Date.parse(state.activeConsent?.validUntil);
+  if(consentExpiry)consentExpiry.textContent=Number.isFinite(deadline) ? `영상 공유 기한 ${new Date(deadline).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'})} (한국 시간)` : '영상 공유 기한 확인 필요';
   if (refLabel) refLabel.textContent = ticketId;
   if (statusPill) {
     statusPill.textContent = "🟢 스캔 대기 중 (1회용)";
@@ -1389,9 +1437,9 @@ function startTicketStatusPolling() {
   const deadline = Math.min(Date.parse(ticket?.qr?.expiresAt), Date.now() + 600000);
   if (!Number.isFinite(deadline)) return;
   const poll = async () => {
-    if (state.activeTicket !== ticket || !state.isAuthenticated || Date.now() >= deadline) return;
+    if (state.activeTicket !== ticket || !state.isAuthenticated || ticket.statusAuthExpired || Date.now() >= deadline) return;
     await refreshActiveTicketStatus();
-    if (state.activeTicket === ticket && state.isAuthenticated && !ticket.terminal && Date.now() < deadline) state.ticketStatusTimer = setTimeout(poll, 5000);
+    if (state.activeTicket === ticket && state.isAuthenticated && !ticket.terminal && !ticket.statusAuthExpired && Date.now() < deadline) state.ticketStatusTimer = setTimeout(poll, 5000);
   };
   void poll();
 }
@@ -1399,7 +1447,7 @@ function startTicketStatusPolling() {
 async function refreshActiveTicketStatus() {
   const ticket = state.activeTicket;
   const consentId = state.activeConsent?.consentId;
-  if (!state.isAuthenticated || !ticket?.ticketId || !consentId || ticket.terminal || state.ticketStatusBusy) return;
+  if (!state.isAuthenticated || !ticket?.ticketId || !consentId || ticket.terminal || ticket.statusAuthExpired || state.ticketStatusBusy) return;
   state.ticketStatusBusy = true;
   try {
     const response = await fetch(`/api/consents/${encodeURIComponent(consentId)}/handoff-tickets/${encodeURIComponent(ticket.ticketId)}`, {
@@ -1429,10 +1477,22 @@ async function refreshActiveTicketStatus() {
     if (timer) timer.textContent = "티켓 종료 · 서버 상태 확인 완료";
     // Remove the capability from memory as well as from the displayed QR.
     ticket.qr.payload = null;
-  } catch {
+  } catch (error) {
     if (state.activeTicket === ticket && !ticket.terminal && state.isAuthenticated) {
       const status = document.querySelector("#qr-status-pill");
-      if (status) { status.textContent = "서버 상태 확인 실패 · 접수 여부 미확인"; status.className = "badge badge-warn"; }
+      const authExpired = error?.code === "CAPSTONE_SESSION_EXPIRED";
+      if (authExpired) {
+        ticket.statusAuthExpired = true;
+        stopTicketStatusPolling();
+      }
+      // Authentication expiry is not a server Ticket receipt. Keep the QR
+      // deadline running; never refresh credentials or extend the capability.
+      if (status) {
+        status.textContent = authExpired
+          ? "시연 인증 만료 · 새로고침하여 다시 로그인하세요 · 서버 접수 여부 미확인"
+          : "서버 상태 확인 실패 · 접수 여부 미확인";
+        status.className = "badge badge-warn";
+      }
     }
   } finally { state.ticketStatusBusy = false; }
 }
@@ -1517,7 +1577,7 @@ async function handleRevokeCurrentQr() {
   }
 
   const consentId = state.activeConsent.consentId;
-  if (!await confirmMobileAction("현재 선택한 의료영상 공유를 철회하고 QR 코드를 폐기하시겠습니까?")) return;
+  if (!await confirmMobileAction("현재 선택한 의료영상 공유를 중단할까요? 이후 접근은 차단되지만 이미 열람하거나 허용된 방식으로 저장된 자료까지 회수되지는 않습니다.")) return;
   if (state.activeConsent?.consentId !== consentId) {
     showToast("선택한 동의가 변경됐습니다. 현재 상태를 확인한 뒤 다시 시도하세요.");
     return;

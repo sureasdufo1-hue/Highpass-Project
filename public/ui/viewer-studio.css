@@ -1,0 +1,133 @@
+/* Imaging Studio: one protected viewport, compact chrome, quiet controls. */
+body:has(#hospital-saas-app.mq-focus-viewer:not([hidden])) > .mq-demo-tools { display:none; }
+#hospital-saas-app #clinical-preview-host :is(.studio-lock,#studio-open-image,.studio-footnote,#viewer-placeholder small) { display:none; }
+#hospital-saas-app #clinical-preview-host #viewer-placeholder h2 { font-size:16px; font-weight:500; }
+#hospital-saas-app #clinical-preview-host #viewer-placeholder p { font-size:12px; }
+#hospital-saas-app.mq-focus-viewer {
+  --studio-base:#17191d; --studio-panel:#202328; --studio-raised:#2a2e35;
+  --studio-line:#343941; --studio-text:#eceef2; --studio-muted:#a5adb9; --studio-blue:#78a5ed;
+  background:var(--studio-base); color:var(--studio-text);
+}
+#hospital-saas-app.mq-focus-viewer .mq-main { padding:0; min-height:100dvh; height:100dvh; overflow:hidden; }
+#hospital-saas-app.mq-focus-viewer .mq-window { background:var(--studio-base); }
+#hospital-saas-app #viewer-screen:not([hidden]) { display:flex; flex-direction:column; height:100%; min-height:0; }
+#hospital-saas-app #viewer-screen svg { width:19px; height:19px; fill:none; stroke:currentColor; stroke-width:1.65; stroke-linecap:round; stroke-linejoin:round; flex:none; }
+#hospital-saas-app #viewer-screen .studio-topbar { display:flex; align-items:center; gap:16px; min-height:72px; padding:12px 22px; box-sizing:border-box; border-bottom:1px solid var(--studio-line); background:var(--studio-base); }
+#hospital-saas-app #viewer-screen .studio-back { width:40px; min-height:40px; padding:8px; margin:0; background:transparent; border:1px solid var(--studio-line); border-radius:12px; display:grid; place-items:center; }
+#hospital-saas-app #viewer-screen .studio-identity { display:flex; align-items:center; gap:24px; min-width:0; }
+#hospital-saas-app #viewer-screen .studio-wordmark { font-size:19px; font-weight:650; letter-spacing:-.05em; white-space:nowrap; }
+#hospital-saas-app #viewer-screen .studio-wordmark span { color:var(--studio-muted); font-weight:400; margin-left:8px; letter-spacing:-.03em; }
+#hospital-saas-app #viewer-screen #studio-patient-label { font-size:13px; font-weight:500; border-left:1px solid var(--studio-line); padding-left:24px; white-space:nowrap; }
+#hospital-saas-app #viewer-screen .studio-top-actions { margin-left:auto; display:flex; gap:14px; align-items:center; }
+#hospital-saas-app #viewer-screen .mq-countdown-box { display:flex; gap:7px; align-items:center; border:0; padding:0; color:var(--studio-muted); background:transparent; font-size:12px; font-weight:400; white-space:nowrap; }
+#hospital-saas-app #viewer-screen #viewer-countdown { color:var(--studio-text); font-variant-numeric:tabular-nums; }
+#hospital-saas-app #viewer-screen .studio-status { font-size:12px; color:var(--studio-muted); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#hospital-saas-app #viewer-screen .studio-info-toggle { display:flex; align-items:center; gap:8px; min-height:40px; border-radius:10px; padding:8px 12px; background:transparent; font-size:12px; border-color:var(--studio-line); }
+#hospital-saas-app #viewer-screen .studio-info-toggle[aria-expanded=true] { background:var(--studio-raised); color:var(--studio-blue); }
+#hospital-saas-app #viewer-screen .mq-viewer-shell { display:flex; flex-direction:column; flex:1; min-height:0; border:0; border-radius:0; background:var(--studio-base); }
+#hospital-saas-app #viewer-screen .mq-viewer-head { display:flex; align-items:center; gap:16px; min-height:43px; padding:8px 22px; box-sizing:border-box; border-bottom:1px solid var(--studio-line); background:var(--studio-base); }
+#hospital-saas-app #viewer-screen .mq-viewer-meta { display:flex; align-items:center; gap:10px; min-width:0; }
+#hospital-saas-app #viewer-screen .mq-viewer-meta:last-child { margin-left:auto; overflow:hidden; }
+#hospital-saas-app #viewer-screen #viewer-study-label { font-size:13px; font-weight:500; }
+#hospital-saas-app #viewer-screen .studio-synthetic { font-size:10px; border:1px solid #49515c; color:#bdc5d1; border-radius:5px; padding:2px 5px; white-space:nowrap; }
+#hospital-saas-app #viewer-screen #viewer-alert { font-size:11px; color:var(--studio-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#hospital-saas-app #viewer-screen #viewer-alert[data-tone=fail] { color:#f3a59e; }
+#hospital-saas-app #viewer-screen #viewer-alert[data-tone=warning] { color:#e6c793; }
+#hospital-saas-app #viewer-screen .mq-viewer-grid { display:grid; grid-template-columns:186px minmax(0,1fr); flex:1; min-height:0; gap:0; }
+#hospital-saas-app #viewer-screen.studio-inspector-open .mq-viewer-grid { grid-template-columns:186px minmax(0,1fr) 248px; }
+#hospital-saas-app #viewer-screen .mq-viewer-side { background:var(--studio-panel); padding:20px 14px; min-width:0; overflow-y:auto; border:0; border-right:1px solid var(--studio-line); }
+#hospital-saas-app #viewer-screen .mq-viewer-side.right { grid-column:auto; border-right:0; border-left:1px solid var(--studio-line); padding:20px; }
+#hospital-saas-app #viewer-screen [hidden] { display:none!important; }
+#hospital-saas-app #viewer-screen .studio-panel-heading { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
+#hospital-saas-app #viewer-screen .studio-panel-heading h3 { font-size:13px; font-weight:550; margin:0; color:var(--studio-text); }
+#hospital-saas-app #viewer-screen #studio-series-count { font-size:11px; color:var(--studio-muted); font-variant-numeric:tabular-nums; }
+#hospital-saas-app #viewer-screen .studio-series-empty { padding:26px 4px; color:var(--studio-muted); text-align:center; }
+#hospital-saas-app #viewer-screen .studio-series-empty svg { width:32px; height:32px; margin-bottom:20px; color:#737f91; }
+#hospital-saas-app #viewer-screen .studio-series-empty strong { display:block; font-size:12px; font-weight:500; }
+#hospital-saas-app #viewer-screen .studio-series-empty p { font-size:11px; line-height:1.8; }
+#hospital-saas-app #viewer-screen #viewer-series-list { display:grid; gap:10px; }
+#hospital-saas-app #viewer-screen .mq-thumb { display:block; width:100%; padding:8px; border:1px solid var(--studio-line); border-radius:10px; background:#191c21; color:var(--studio-text); text-align:left; transition:border-color .16s,background .16s; }
+#hospital-saas-app #viewer-screen .mq-thumb:hover { background:#282e38; border-color:#69798e; }
+#hospital-saas-app #viewer-screen .mq-thumb.selected { border-color:var(--studio-blue); box-shadow:0 0 0 1px #78a5ed35; background:#263244; }
+#hospital-saas-app #viewer-screen .mq-thumb strong { display:block; font-size:12px; font-weight:500; line-height:1.5; }
+#hospital-saas-app #viewer-screen .studio-series-meta { display:block; margin-top:5px; color:var(--studio-muted); font-size:10px; }
+#hospital-saas-app #viewer-screen .hp-series-preview { height:100px; border-radius:5px; margin:0 0 10px; object-fit:contain; }
+#hospital-saas-app #viewer-screen .mq-viewport-center { min-height:0; overflow:hidden; }
+#hospital-saas-app #viewer-screen .mq-viewer-tools { display:flex; justify-content:center; flex-wrap:wrap; gap:5px; padding:8px 16px; min-height:56px; box-sizing:border-box; background:var(--studio-base); border:0; border-bottom:1px solid #282d35; }
+#hospital-saas-app #viewer-screen .mq-tool { display:inline-flex; justify-content:center; align-items:center; gap:7px; border:1px solid transparent; background:transparent; color:#bdc5d1; font:500 12px var(--hp-font); border-radius:8px; padding:8px 12px; min-height:40px; white-space:nowrap; cursor:pointer; }
+#hospital-saas-app #viewer-screen .mq-tool:hover { background:#2b3038; color:#fff; }
+#hospital-saas-app #viewer-screen .mq-tool.active { background:#2a3b54; border-color:#4c6587; color:#a8c9ff; }
+#hospital-saas-app #viewer-screen .studio-tool-divider { width:1px; height:22px; margin:9px 8px; background:var(--studio-line); }
+#hospital-saas-app #viewer-screen .mq-viewport { display:flex; align-items:center; justify-content:center; min-height:0; height:auto; position:relative; background:#050607; overflow:hidden; isolation:isolate; }
+#hospital-saas-app #viewer-screen #viewer-image { display:block; position:absolute; inset:0; max-width:100%; max-height:100%; width:100%; height:100%; object-fit:contain; user-select:none; -webkit-user-drag:none; }
+#hospital-saas-app #viewer-screen .viewer-hud { padding:0; border:0; background:transparent; font:400 11px/1.5 var(--hp-font); color:#aab1bc; text-shadow:0 1px 3px #000; z-index:2; pointer-events:none; }
+#hospital-saas-app #viewer-screen .viewer-hud.top-left { top:20px; left:22px; }
+#hospital-saas-app #viewer-screen .viewer-hud.top-right { top:20px; right:22px; }
+#hospital-saas-app #viewer-screen .viewer-hud.bottom-left { bottom:20px; left:22px; font-variant-numeric:tabular-nums; }
+#hospital-saas-app #viewer-screen .viewer-hud.bottom-right { bottom:20px; right:22px; }
+#hospital-saas-app #viewer-screen #viewer-watermark { top:auto; bottom:48px; left:22px; max-width:calc(100% - 44px); overflow-wrap:anywhere; background:transparent; padding:0; color:#9aa5b5; opacity:.65; font:400 10px var(--hp-font); }
+#hospital-saas-app #viewer-screen #viewer-placeholder { display:flex; flex-direction:column; align-items:center; padding:40px 20px; text-align:center; color:var(--studio-muted)!important; }
+#hospital-saas-app #viewer-screen .studio-lock { display:grid; place-items:center; width:66px; height:66px; border:1px solid #343c49; border-radius:21px; color:#a6b9d8; background:linear-gradient(145deg,#28303d,#161b23); box-shadow:0 12px 32px #0005,inset 0 1px #ffffff0d; margin-bottom:24px; }
+#hospital-saas-app #viewer-screen .studio-lock svg { width:28px; height:28px; stroke-width:1.3; }
+#hospital-saas-app #viewer-screen #viewer-placeholder h2 { color:#e5e9f0; font-size:23px; font-weight:550; letter-spacing:-.035em; margin:0 0 12px; }
+#hospital-saas-app #viewer-screen #viewer-placeholder p { font-size:13px; line-height:1.8; margin:0 0 24px; }
+#hospital-saas-app #viewer-screen #studio-open-image { background:#3d6094; color:#fff; border-color:#537bb4; border-radius:10px; font-size:13px; padding:11px 20px; box-shadow:inset 0 1px #ffffff14; }
+#hospital-saas-app #viewer-screen #viewer-placeholder small { font-size:10px; color:#8f99a8; margin-top:18px; }
+#hospital-saas-app #viewer-screen .mq-scrubber-bar { display:flex; align-items:center; gap:10px; min-height:64px; padding:10px 20px; box-sizing:border-box; background:var(--studio-base); border-top:1px solid #282d35; }
+#hospital-saas-app #viewer-screen .mq-scrubber-bar .mq-btn { min-height:36px; width:36px; padding:8px; border:0; background:transparent; display:grid; place-items:center; }
+#hospital-saas-app #viewer-screen #viewer-slice-slider { flex:1; min-width:40px; height:3px; accent-color:var(--studio-blue); cursor:pointer; }
+#hospital-saas-app #viewer-screen .mq-slice-badge { color:var(--studio-text); border:0; background:transparent; font:500 12px var(--hp-font); font-variant-numeric:tabular-nums; min-width:65px; text-align:center; }
+#hospital-saas-app #viewer-screen .studio-play { min-width:60px; }
+#hospital-saas-app #viewer-screen .studio-inspector-note { color:var(--studio-muted); font-size:12px; line-height:1.8; margin:0 0 20px; }
+#hospital-saas-app #viewer-screen .mq-statline { border-color:var(--studio-line)!important; font-size:12px; gap:16px; padding:16px 0; }
+#hospital-saas-app #viewer-screen .mq-statline span { color:var(--studio-muted)!important; }
+#hospital-saas-app #viewer-screen .mq-statline strong { color:var(--studio-text)!important; text-align:right; font-weight:500; overflow-wrap:anywhere; }
+#hospital-saas-app #viewer-screen #download-instance { margin-top:8px; border-color:var(--studio-line); background:var(--studio-raised); font-size:12px; }
+#hospital-saas-app #viewer-screen #instance-detail { overflow-wrap:anywhere; }
+#hospital-saas-app #viewer-screen .studio-footnote { display:flex; justify-content:space-between; gap:12px; padding:8px 22px; font-size:10px; color:#a5adb9; background:var(--studio-base); border-top:1px solid var(--studio-line); }
+#hospital-saas-app #viewer-screen :is(button,input):focus-visible { outline:2px solid #aacbff; outline-offset:3px; }
+#hospital-saas-app #viewer-screen button:disabled { opacity:.45; cursor:not-allowed; }
+@media(max-width:1050px) {
+  #hospital-saas-app #viewer-screen .studio-identity { gap:12px; }
+  #hospital-saas-app #viewer-screen #studio-patient-label { padding-left:12px; }
+  #hospital-saas-app #viewer-screen .studio-session-label { display:none; }
+  #hospital-saas-app #viewer-screen .mq-viewer-grid,
+  #hospital-saas-app #viewer-screen.studio-inspector-open .mq-viewer-grid { grid-template-columns:150px minmax(0,1fr); }
+  #hospital-saas-app #viewer-screen .mq-viewer-side.right { position:absolute; right:0; top:115px; bottom:33px; width:260px; box-sizing:border-box; z-index:5; box-shadow:-12px 0 36px #0006; }
+  #hospital-saas-app #viewer-screen #viewer-alert { max-width:330px; }
+}
+@media(max-width:700px) {
+  #hospital-saas-app #viewer-screen .studio-topbar { padding:10px 12px; min-height:62px; gap:10px; }
+  #hospital-saas-app #viewer-screen .studio-wordmark { font-size:16px; }
+  #hospital-saas-app #viewer-screen .studio-wordmark span,#hospital-saas-app #viewer-screen .studio-status { display:none; }
+  #hospital-saas-app #viewer-screen .studio-identity { display:grid; gap:3px; }
+  #hospital-saas-app #viewer-screen #studio-patient-label { font-size:10px; border:0; padding:0; }
+  #hospital-saas-app #viewer-screen .studio-top-actions { gap:10px; }
+  #hospital-saas-app #viewer-screen .studio-info-toggle span { display:none; }
+  #hospital-saas-app #viewer-screen .mq-viewer-head { padding:8px 12px; flex-wrap:wrap; gap:5px; }
+  #hospital-saas-app #viewer-screen .mq-viewer-meta:last-child { margin-left:0; width:100%; }
+  #hospital-saas-app #viewer-screen #viewer-alert { max-width:100%; }
+  #hospital-saas-app #viewer-screen .mq-viewer-grid,#hospital-saas-app #viewer-screen.studio-inspector-open .mq-viewer-grid { display:flex; flex-direction:column; }
+  #hospital-saas-app #viewer-screen .studio-series { flex:none; padding:8px 12px; border-bottom:1px solid var(--studio-line); max-height:106px; }
+  #hospital-saas-app #viewer-screen .studio-series .studio-panel-heading,#hospital-saas-app #viewer-screen .studio-series > div:last-child { display:none; }
+  #hospital-saas-app #viewer-screen #viewer-series-list { display:flex; overflow-x:auto; gap:8px; }
+  #hospital-saas-app #viewer-screen .mq-thumb { min-width:135px; max-width:160px; padding:8px; }
+  #hospital-saas-app #viewer-screen .hp-series-preview { width:42px; height:42px; float:left; margin:0 8px 0 0; }
+  #hospital-saas-app #viewer-screen .studio-series-empty { padding:5px 0; text-align:left; }
+  #hospital-saas-app #viewer-screen .studio-series-empty svg,#hospital-saas-app #viewer-screen .studio-series-empty strong { display:none; }
+  #hospital-saas-app #viewer-screen .studio-series-empty p { margin:0; }
+  #hospital-saas-app #viewer-screen .studio-series-empty br { display:none; }
+  #hospital-saas-app #viewer-screen .mq-viewport-center { flex:1; }
+  #hospital-saas-app #viewer-screen .mq-viewer-tools { padding:6px; gap:2px; min-height:48px; }
+  #hospital-saas-app #viewer-screen .mq-viewer-tools .mq-tool { padding:8px 10px; }
+  #hospital-saas-app #viewer-screen .mq-viewer-tools .mq-tool span { display:none; }
+  #hospital-saas-app #viewer-screen .studio-tool-divider { margin:9px 3px; }
+  #hospital-saas-app #viewer-screen .mq-scrubber-bar { gap:3px; padding:8px; }
+  #hospital-saas-app #viewer-screen #tool-cine-fps { display:none; }
+  #hospital-saas-app #viewer-screen .viewer-hud { font-size:9px; }
+  #hospital-saas-app #viewer-screen .viewer-hud.top-right { display:none; }
+  #hospital-saas-app #viewer-screen #viewer-placeholder h2 { font-size:20px; }
+  #hospital-saas-app #viewer-screen .studio-footnote { padding:8px 12px; font-size:9px; }
+  #hospital-saas-app #viewer-screen .studio-footnote span:last-child { display:none; }
+}
+@media(prefers-reduced-motion:reduce) { #hospital-saas-app #viewer-screen * { transition:none; } }
