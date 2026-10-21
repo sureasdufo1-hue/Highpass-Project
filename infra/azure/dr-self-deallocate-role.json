@@ -1,0 +1,8 @@
+{
+  "Name": "Highpass DR Standby Self Deallocate 20261016",
+  "IsCustom": true,
+  "Description": "Deallocate only the assigned demo standby VM; no database, key, network, token or RBAC operations.",
+  "Actions": ["Microsoft.Compute/virtualMachines/deallocate/action"],
+  "NotActions": [], "DataActions": [], "NotDataActions": [],
+  "AssignableScopes": ["/subscriptions/a3c0e7d4-ce09-4991-946b-88574869edd9/resourceGroups/rg-highpass-dr-standby-20261016"]
+}

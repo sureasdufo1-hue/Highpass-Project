@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { postgresTlsOptions } from './postgres-tls.js';
 import { PatientSelfViewAuthorityReader } from './patient-self-view-authority.js';
 import { createPatientSelfViewPersistence } from './patient-self-view-audit-adapter.js';
 import { PatientSelfViewGrantService } from './patient-self-view-grant-service.js';
@@ -21,7 +22,7 @@ export async function createPatientSelfViewGrantRuntime({store,service,env=proce
     'gateway:patient-self-view-authorize');
   if(env.HIPASS_CAPSTONE_PATIENT_KEY_RELEASE==='1')requireInternalServiceScope(
     new InternalServiceProvider(env).authenticate({headers:{'x-hipass-service-token':env.HIPASS_PATIENT_KEY_RELEASE_SERVICE_TOKEN}}),'gateway:patient-package-key-release');
-  const pool=new pg.Pool({connectionString:env.HIPASS_PATIENT_AUTHORITY_DATABASE_URL,max:2,
+  const pool=new pg.Pool({connectionString:env.HIPASS_PATIENT_AUTHORITY_DATABASE_URL,...postgresTlsOptions(env.HIPASS_PATIENT_AUTHORITY_DATABASE_URL,env),max:2,
     connectionTimeoutMillis:5000,query_timeout:5000,statement_timeout:4000,
     options:'-c lock_timeout=2000 -c search_path=public,pg_catalog'});
   pool.on('error',()=>console.warn('PATIENT_AUTHORITY_DATABASE_UNAVAILABLE'));

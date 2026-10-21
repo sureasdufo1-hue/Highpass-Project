@@ -1,4 +1,5 @@
 import { createHash, createHmac, createPublicKey, randomBytes, timingSafeEqual, verify } from "node:crypto";
+import {safeHelperMetadata} from './helper-audit-metadata.js';
 import { createKeyProvider } from "./key-provider.js";
 import {validateHealthRecordSelection,healthRecordScope} from './shared-health-records.js';
 import { orderStoredAuditChain } from "./audit-chain-order.js";
@@ -3092,6 +3093,7 @@ export function buildAuditLog(input, previousHash, createdAt, auditId = makeId('
     sopInstanceUid: input.sopInstanceUid ?? null, ipAddress: input.ipAddress ?? null, userAgent: input.userAgent ?? null,
     ja3Fingerprint: input.ja3Fingerprint ?? null, createdAt, result: input.result, reason: reasonCode, reasonCode,
     previousHash, recordHash: null };
+  if(input.action==='HEALTH_HELPER_REQUEST'&&input.helperMetadata)log.helperMetadata=safeHelperMetadata(input.helperMetadata);
   log.recordHash = auditRecordHash(log);
   return log;
 }
@@ -3120,6 +3122,7 @@ function auditRecordHash(log) {
     reasonCode: log.reasonCode ?? log.reason ?? null,
     previousHash: log.previousHash ?? null,
   };
+  if(log.helperMetadata)payload.helperMetadata=safeHelperMetadata(log.helperMetadata);
   return `sha256:${createHash("sha256").update(JSON.stringify(payload)).digest("hex")}`;
 }
 

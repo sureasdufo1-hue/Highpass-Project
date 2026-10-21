@@ -1,0 +1,68 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": { "scope": "SYNTHETIC DATABASE STANDBY ONLY; no public app, PACS, DB, key access or promotion" },
+  "parameters": {
+    "adminPublicKey": { "type": "string" },
+    "operatorCidr": { "type": "string" },
+    "primaryCidr": { "type": "string" }
+  },
+  "variables": {
+    "location": "eastasia", "vmName": "vm-highpass-dr-standby",
+    "nsgName": "nsg-highpass-dr-standby", "vnetName": "vnet-highpass-dr-standby",
+    "ipName": "pip-highpass-dr-standby", "nicName": "nic-highpass-dr-standby",
+    "tags": { "project": "Highpass", "purpose": "synthetic-dr-standby", "managedBy": "highpass-dr-standby", "demoEndUtc": "2026-10-20T14:59:00Z", "automaticDeallocation": "not-configured" },
+    "cloudInit": "#cloud-config\npackage_update: true\npackages:\n  - docker.io\n  - ca-certificates\n  - openssl\nruncmd:\n  - [systemctl, enable, --now, docker]\n  - [install, -d, -m, '0700', /opt/highpass/dr-standby]\n"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/networkSecurityGroups", "apiVersion": "2023-11-01",
+      "name": "[variables('nsgName')]", "location": "[variables('location')]", "tags": "[variables('tags')]",
+      "properties": { "securityRules": [
+        { "name": "ssh-operator-and-source-only", "properties": { "priority": 100, "direction": "Inbound", "access": "Allow", "protocol": "Tcp", "sourceAddressPrefixes": ["[parameters('operatorCidr')]", "[parameters('primaryCidr')]"], "sourcePortRange": "*", "destinationAddressPrefix": "*", "destinationPortRange": "22" } },
+        { "name": "deny-other-inbound", "properties": { "priority": 200, "direction": "Inbound", "access": "Deny", "protocol": "*", "sourceAddressPrefix": "*", "sourcePortRange": "*", "destinationAddressPrefix": "*", "destinationPortRange": "*" } }
+      ] }
+    },
+    {
+      "type": "Microsoft.Network/virtualNetworks", "apiVersion": "2023-11-01",
+      "name": "[variables('vnetName')]", "location": "[variables('location')]", "tags": "[variables('tags')]",
+      "properties": { "addressSpace": { "addressPrefixes": ["10.91.0.0/24"] }, "subnets": [{ "name": "standby", "properties": { "addressPrefix": "10.91.0.0/27" } }] }
+    },
+    {
+      "type": "Microsoft.Network/publicIPAddresses", "apiVersion": "2023-11-01",
+      "name": "[variables('ipName')]", "location": "[variables('location')]", "tags": "[variables('tags')]",
+      "sku": { "name": "Standard" },
+      "properties": { "publicIPAllocationMethod": "Static", "publicIPAddressVersion": "IPv4" }
+    },
+    {
+      "type": "Microsoft.Network/networkInterfaces", "apiVersion": "2023-11-01",
+      "name": "[variables('nicName')]", "location": "[variables('location')]", "tags": "[variables('tags')]",
+      "dependsOn": ["[resourceId('Microsoft.Network/networkSecurityGroups',variables('nsgName'))]", "[resourceId('Microsoft.Network/virtualNetworks',variables('vnetName'))]", "[resourceId('Microsoft.Network/publicIPAddresses',variables('ipName'))]"],
+      "properties": {
+        "networkSecurityGroup": { "id": "[resourceId('Microsoft.Network/networkSecurityGroups',variables('nsgName'))]" },
+        "ipConfigurations": [{ "name": "standby", "properties": { "privateIPAllocationMethod": "Dynamic", "subnet": { "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets',variables('vnetName'),'standby')]" }, "publicIPAddress": { "id": "[resourceId('Microsoft.Network/publicIPAddresses',variables('ipName'))]" } } }]
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines", "apiVersion": "2024-07-01",
+      "name": "[variables('vmName')]", "location": "[variables('location')]", "tags": "[variables('tags')]",
+      "dependsOn": ["[resourceId('Microsoft.Network/networkInterfaces',variables('nicName'))]"],
+      "identity": { "type": "SystemAssigned" },
+      "properties": {
+        "hardwareProfile": { "vmSize": "Standard_B2als_v2" },
+        "storageProfile": {
+          "imageReference": { "publisher": "Canonical", "offer": "ubuntu-24_04-lts", "sku": "server", "version": "24.04.202609040" },
+          "osDisk": { "createOption": "FromImage", "diskSizeGB": 32, "managedDisk": { "storageAccountType": "StandardSSD_LRS" }, "deleteOption": "Detach" }
+        },
+        "osProfile": {
+          "computerName": "highpass-dr-standby", "adminUsername": "highpassadmin",
+          "customData": "[base64(variables('cloudInit'))]",
+          "linuxConfiguration": { "disablePasswordAuthentication": true, "provisionVMAgent": true, "ssh": { "publicKeys": [{ "path": "/home/highpassadmin/.ssh/authorized_keys", "keyData": "[parameters('adminPublicKey')]" }] } }
+        },
+        "networkProfile": { "networkInterfaces": [{ "id": "[resourceId('Microsoft.Network/networkInterfaces',variables('nicName'))]", "properties": { "primary": true, "deleteOption": "Detach" } }] },
+        "diagnosticsProfile": { "bootDiagnostics": { "enabled": true } },
+        "securityProfile": { "securityType": "TrustedLaunch", "uefiSettings": { "secureBootEnabled": true, "vTpmEnabled": true } }
+      }
+    }
+  ]
+}

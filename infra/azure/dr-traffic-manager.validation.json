@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": { "scope": "ISOLATED DISABLED VALIDATION ONLY; no application routing, standby, DNS cutover or DB promotion" },
+  "resources": [
+    {
+      "type": "Microsoft.Network/trafficManagerProfiles",
+      "apiVersion": "2022-04-01",
+      "name": "highpass-dr-lab-4869edd9",
+      "location": "global",
+      "tags": {
+        "project": "Highpass", "purpose": "isolated-dr-validation",
+        "managedBy": "highpass-dr-validation", "review": "DRAFT-UNASSIGNED",
+        "demoEndUtc": "2026-10-20T14:59:00Z", "automaticCleanup": "not-configured"
+      },
+      "properties": {
+        "profileStatus": "Disabled",
+        "trafficRoutingMethod": "Priority",
+        "trafficViewEnrollmentStatus": "Disabled",
+        "dnsConfig": { "relativeName": "highpass-dr-lab-4869edd9", "ttl": 30 },
+        "monitorConfig": {
+          "protocol": "HTTPS", "port": 443, "path": "/",
+          "intervalInSeconds": 30, "timeoutInSeconds": 10, "toleratedNumberOfFailures": 3,
+          "expectedStatusCodeRanges": [{ "min": 200, "max": 200 }]
+        },
+        "endpoints": [
+          {
+            "name": "primary-reference-disabled",
+            "type": "Microsoft.Network/trafficManagerProfiles/externalEndpoints",
+            "properties": {
+              "target": "highpass-demo.japaneast.cloudapp.azure.com",
+              "endpointStatus": "Disabled", "priority": 1, "alwaysServe": "Disabled"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "scope": { "type": "string", "value": "DISABLED validation resource; no standby endpoint or live failover" }
+  }
+}

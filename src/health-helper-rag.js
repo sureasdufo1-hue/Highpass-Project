@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import {helperResultMetadata} from './helper-audit-metadata.js';
 import { retrieveVisitGuidance, validateVisitQuestions, VISIT_VERSION } from './health-helper-visit.js';
 import { HELPER_CORPUS, retrieveHelperEvidence, canonicalHelperTopic, isReviewedChunk,
   retrieveKdcaLinks, KDCA_LINK_INDEX_VERSION, isClearedHelperSource } from './health-helper-corpus.js';
@@ -50,9 +51,13 @@ export class HealthHelperRag {
   }
   async ask(principal, body) {
     const requestId = randomUUID();
-    const log = async (result, reasonCode) => this.audit({ auditSessionId: requestId,
+    const log = async (result, reasonCode, response = {}) => this.audit({ auditSessionId: requestId,
       actorType: principal?.role ?? 'UNKNOWN', actorId: principal?.subject ?? 'unauthenticated',
-      action: 'HEALTH_HELPER_REQUEST', result, reasonCode });
+      action: 'HEALTH_HELPER_REQUEST', result, reasonCode,
+      helperMetadata:helperResultMetadata({...response,
+        generationUsed:response.generationUsed??(result==='FAIL'||reasonCode.endsWith('_STARTED')?undefined:reasonCode.endsWith('_GENERATED')),
+        generationFailureReason:response.generationFailureReason??(result==='FAIL'?reasonCode:undefined)},
+        process.env.HIPASS_HEALTH_HELPER_MODEL==='ollama'?'qwen3.5:4b':null) });
     const reject = async (status, code) => { await log('FAIL', code); throw new HelperError(status, code); };
     if (principal?.role !== 'PATIENT' || !principal.patientId || !principal.subject) return reject(403, 'HELPER_PATIENT_REQUIRED');
     if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).join(',') !== 'question'
@@ -84,14 +89,14 @@ export class HealthHelperRag {
         await log('SUCCESS','HELPER_TRANSLATION_RAG_STARTED');
         const result=await Promise.race([this.translationRag(question,{signal:controller.signal}),
           new Promise((_,fail)=>{timer=setTimeout(()=>{controller.abort();fail(new HelperError(504,'HELPER_MODEL_TIMEOUT'));},this.timeoutMs);})]);
-        await log('SUCCESS',result.generationUsed?'HELPER_TRANSLATION_ANSWER_GENERATED':'HELPER_TRANSLATION_EVIDENCE_DELIVERED');
+        await log('SUCCESS',result.generationUsed?'HELPER_TRANSLATION_ANSWER_GENERATED':'HELPER_TRANSLATION_EVIDENCE_DELIVERED',result);
         return {requestId,...result};
       }catch(error){const code=error instanceof HelperError?error.code:'HELPER_UNAVAILABLE';await log('FAIL',code);throw new HelperError(error.statusCode??503,code);}
       finally{clearTimeout(timer);controller.abort();this.active.delete(key);}
     }
     if (this.mode === 'SOURCE_GUIDANCE') {
       const sources = retrieveKdcaLinks(question);
-      await log('SUCCESS', sources.length ? 'HELPER_SOURCE_GUIDANCE' : 'HELPER_EVIDENCE_INSUFFICIENT');
+      await log('SUCCESS', sources.length ? 'HELPER_SOURCE_GUIDANCE' : 'HELPER_EVIDENCE_INSUFFICIENT',{sources,corpusVersion:KDCA_LINK_INDEX_VERSION,generationUsed:false});
       return { requestId, status: sources.length ? 'SOURCE_GUIDANCE' : 'INSUFFICIENT_EVIDENCE',
         answer: sources.length
           ? '질문 주제와 관련된 질병관리청 원문을 찾았어요. 아래 자료를 직접 확인해 주세요. 이 안내는 개인 검사 결과의 해석이나 진단이 아닙니다.'
@@ -125,19 +130,20 @@ export class HealthHelperRag {
         new Promise((_, rejectTimeout) => { timer = setTimeout(() => { controller.abort(); rejectTimeout(new HelperError(504, 'HELPER_MODEL_TIMEOUT')); }, this.timeoutMs); }),
       ]);
       if (visit) {
+        const {modelVersion,...visitOutput}=generated??{};
         let questions;
-        try { questions = validateVisitQuestions(generated); } catch { throw new HelperError(502, 'HELPER_OUTPUT_REJECTED'); }
-        await log('SUCCESS', 'HELPER_VISIT_QUESTIONS_GENERATED');
+        try { questions = validateVisitQuestions(visitOutput); } catch { throw new HelperError(502, 'HELPER_OUTPUT_REJECTED'); }
         const sources = retrieveKdcaLinks(question);
+        await log('SUCCESS', 'HELPER_VISIT_QUESTIONS_GENERATED',{sources,corpusVersion:VISIT_VERSION,generationUsed:true,modelVersion});
         const answerTail = sources.some(source => source.id === 'kdca-cirrhosis-6560' && source.topics.includes('AFP'))
           ? ' 아래 질병관리청 자료는 간경변증 진료 맥락이며 AFP 전용 설명은 아닙니다.'
           : ' 아래 원문은 관련 참고자료이며 개인 기록의 해석은 의료진과 확인해 주세요.';
         return {requestId,status:'VISIT_PREPARATION',answer:`${visit.topic}에 관해 다음 진료에서 물어볼 질문을 정리했어요. 오른쪽에서 담거나 내 말로 바꿔보세요.${answerTail}`,
-          questions,sources,questionOrigin:'LOCAL_QWEN',generationUsed:true,
+          questions,sources,questionOrigin:'LOCAL_QWEN',generationUsed:true,modelVersion:modelVersion??null,
           corpusVersion:VISIT_VERSION,recordContext:'NOT_CONNECTED',medicalContentGeneration:false};
       }
       const validated = validateHelperOutput(generated, evidence, this.corpus);
-      await log('SUCCESS', 'HELPER_ANSWER_GENERATED');
+      await log('SUCCESS', 'HELPER_ANSWER_GENERATED',{sources:validated.sources,corpusVersion:this.corpus.version,generationUsed:true});
       return { requestId, status: 'GENERATED', ...validated, corpusVersion: this.corpus.version,
         recordContext: 'NOT_CONNECTED', disclaimer: '일반적인 검사 설명이며 개인 기록 해석·진단·처방이 아닙니다.' };
     } catch (error) {

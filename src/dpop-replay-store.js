@@ -1,4 +1,5 @@
 import pg from "pg";
+import { postgresTlsOptions } from './postgres-tls.js';
 
 // 2*60s proof window + 2*30s allowed node/DB skew + rounding/latency margin.
 export const DPOP_REPLAY_TTL_SECONDS = 200;
@@ -48,7 +49,7 @@ export class PostgresDPoPReplayStore {
   scope = "SHARED_POSTGRES";
   attempts = 0;
   constructor(connectionString, { pool } = {}) {
-    this.pool = pool ?? new pg.Pool({ connectionString, max: 4, connectionTimeoutMillis: 5000,
+    this.pool = pool ?? new pg.Pool({ connectionString, ...postgresTlsOptions(connectionString), max: 4, connectionTimeoutMillis: 5000,
       idleTimeoutMillis: 5000, statement_timeout: 4000, query_timeout: 5000,
       options: "-c lock_timeout=3000" });
     this.pool.on?.("error", () => console.warn("DPOP_REPLAY_POOL_UNAVAILABLE"));

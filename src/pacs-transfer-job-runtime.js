@@ -1,4 +1,5 @@
 import pg from "pg";
+import { postgresTlsOptions } from './postgres-tls.js';
 import {readFileSync} from 'node:fs';
 import { PostgresPacsTransferJobRepository } from "./pacs-transfer-jobs.js";
 import { createPacsTransferJobHttpHandler } from "./pacs-transfer-job-http.js";
@@ -15,7 +16,7 @@ export async function createPacsTransferJobRuntime({ env = process.env, service,
     throw new Error("PACS_TRANSFER_JOB_PROFILE_REQUIRED");
   }
 
-  const pool = new Pool({ connectionString: databaseUrl, max: 4,
+  const pool = new Pool({ connectionString: databaseUrl, ...postgresTlsOptions(databaseUrl,env), max: 4,
     connectionTimeoutMillis: 5000, idleTimeoutMillis: 5000, statement_timeout: 5000,
     query_timeout: 6000, options: "-c search_path=public -c lock_timeout=3000" });
   pool.on("error", () => console.warn("PACS_TRANSFER_JOB_DATABASE_UNAVAILABLE"));

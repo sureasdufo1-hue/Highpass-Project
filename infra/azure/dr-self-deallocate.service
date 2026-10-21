@@ -1,0 +1,18 @@
+[Unit]
+Description=Deallocate only this approved Highpass standby after demo deadline
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=3600
+StartLimitBurst=5
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/highpass/dr-standby/self-deallocate.py
+TimeoutStartSec=40
+Restart=on-failure
+RestartSec=60
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+UMask=0077

@@ -1,0 +1,14 @@
+[Unit]
+Description=Highpass rate-limited key-filtered DR base backup (never promote)
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/highpass/dr-standby/replica.py backup
+TimeoutStartSec=900
+Nice=15
+CPUQuota=50%
+MemoryMax=256M
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077

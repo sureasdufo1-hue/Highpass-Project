@@ -52,7 +52,7 @@ function trendChart(items){
   return svg;
 }
 
-export function showSecurityReport(report,{actionLabel=value=>value,reasonLabel=value=>value}={}){
+export function showSecurityReport(report,{actionLabel=value=>value,reasonLabel=value=>value,reasonDescription=()=>''}={}){
   const period=report.mode==='PERIOD',basis=period?'기간·필터 일치 수집 이벤트':'선택 이벤트';
   let stylesheet=document.querySelector('link[data-security-report-style]');if(!stylesheet){stylesheet=node('link');stylesheet.rel='stylesheet';stylesheet.href='/ui/security-report.css';stylesheet.dataset.securityReportStyle='true';document.head.append(stylesheet);}
   const stats=summarizeSecurityReport(report),dialog=node('dialog',null,'sr-dialog');dialog.setAttribute('aria-label','보안 사건 보고서 미리보기');
@@ -71,6 +71,8 @@ export function showSecurityReport(report,{actionLabel=value=>value,reasonLabel=
   const evidence=node('article',null,'sr-sheet sr-evidence'),flow=section('시간순 사건 기록','시간순 정렬이며 동일한 감사 세션이 없는 기록의 인과 관계를 추정하지 않습니다.');
   const timeline=node('ol',null,'sr-timeline');for(const[eventIndex,event]of report.events.entries()){const row=node('li');row.dataset.result=event.resultGroup;row.append(node('span',String(eventIndex+1).padStart(2,'0'),'sr-sequence'),node('time',dateLabel(event.time)),node('strong',actionLabel(event.action)),node('span',`${event.resultGroup||event.result} · ${sourceLabel(event.source)}`));timeline.append(row);}flow.append(timeline);evidence.append(flow);
   const review=section('검토 기록과 후속 확인','기존 이벤트에 저장된 검토 기록을 표시합니다. 추가 작성 칸은 아직 저장된 검토가 아닙니다.');
+  const guideRows=stats.reasons.filter(item=>reasonDescription(item.label)).map(item=>[reasonLabel(item.label),reasonDescription(item.label)]);
+  if(guideRows.length){const guides=section('거부 사유 해설','코드별 참고 설명입니다. 개별 사건의 원인이나 공격 여부를 확정하는 판단은 아닙니다.');guides.append(table(['사유·코드','의미와 확인할 조치'],guideRows));evidence.append(guides);}
   const reviewed=report.events.filter(event=>event.review);if(reviewed.length)review.append(table(['이벤트','검토자·검토일','상태·운영 메모'],reviewed.map(event=>[actionLabel(event.action),`${event.review.actorId||'미작성'} / ${dateLabel(event.review.recordedAt)}`,`${reviewLabels[event.review.status]||'미확인'} · ${event.review.note||'메모 미작성'}`])));else review.append(node('p','저장된 검토 기록 없음 · 검토자, 검토일, 판정 미작성','sr-empty'));
   const form=node('div',null,'sr-review-fields');for(const label of ['검토 의견','조치 내용','후속 확인 사항']){const field=node('div');field.append(node('strong',label),node('p','미작성'));form.append(field);}const sign=node('div',null,'sr-sign');for(const label of ['검토자','검토일','판정'])sign.append(node('span',`${label}: 미작성`));form.append(sign);review.append(form);evidence.append(review);dialog.append(evidence);
   const appendix=node('article',null,'sr-sheet sr-appendix'),details=section('상세 근거 목록',`${report.events.length}건 · 원본 로그를 수정하지 않은 조회 결과`);details.append(table(['시각·출처','행위·결과','사유·기관','이벤트 참조'],report.events.map(event=>[`${dateLabel(event.time)} / ${sourceLabel(event.source)}`,`${actionLabel(event.action)} / ${event.result}`,`${reasonLabel(event.reasonCode)} / ${event.hospitalId||'미확인'}`,event.eventRef])));appendix.append(details);

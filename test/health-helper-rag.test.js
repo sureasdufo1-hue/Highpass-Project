@@ -41,7 +41,8 @@ test('grounded AFP generation uses canonical topic, not original text or identit
   const {service,calls,logs}=fixture();const result=await service.ask(patient,{question:'홍길동 AFP는 어떤 검사인가요?'});
   assert.equal(result.status,'GENERATED');assert.equal(result.recordContext,'NOT_CONNECTED');assert.equal(result.sources[0].url,AFP_SOURCE.url);
   assert.doesNotMatch(JSON.stringify(calls),/홍길동|synthetic-account|synthetic-patient/);
-  assert.doesNotMatch(JSON.stringify(logs),/홍길동|어떤 검사|answer|sourceIds/);
+  assert.doesNotMatch(JSON.stringify(logs),/홍길동|어떤 검사|"answer"/);
+  assert.deepEqual(logs.at(-1).helperMetadata.sourceIds,[AFP_SOURCE.id]);
 });
 test('wrong role and missing identity denied without model call',async()=>{
   for(const principal of [null,{...patient,role:'DOCTOR'},{...patient,patientId:null}]){

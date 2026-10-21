@@ -1,0 +1,23 @@
+[Unit]
+Description=Highpass isolated DR outbound replication tunnel (no DB promotion)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/highpass/dr-source/primary.py watch
+Restart=on-failure
+RestartSec=15
+Nice=15
+CPUQuota=10%
+MemoryMax=64M
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+PrivateTmp=true
+RestrictAddressFamilies=AF_INET AF_UNIX
+ReadWritePaths=/opt/highpass/dr-source
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

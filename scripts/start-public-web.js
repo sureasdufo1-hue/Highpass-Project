@@ -34,6 +34,7 @@ const routes=[
  ['GET',/^\/api\/security\/proof-policy$/],
   ['GET',/^\/api\/security\/overview$/],
   ['GET',/^\/api\/security\/events$/],
+  ['GET',/^\/api\/security\/protection$/],
   ['POST',/^\/api\/security\/reports$/],
  ['POST',/^\/api\/security\/reviews$/],
 ];

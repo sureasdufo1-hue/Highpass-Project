@@ -1,6 +1,7 @@
 import { applyDemoDataMigrations, createSeedData } from "./seed.js";
 import { PostgresDPoPReplayStore, dpopReplaySchemaSql } from "./dpop-replay-store.js";
 import { orderStoredAuditChain } from "./audit-chain-order.js";
+import { postgresTlsOptions } from './postgres-tls.js';
 
 const tableOrder = [
   "patients",
@@ -35,7 +36,7 @@ export class PostgresStore {
 
   async load() {
     const { Client } = await import("pg");
-    this.client = new Client({ connectionString: this.connectionString, connectionTimeoutMillis: 5000,
+    this.client = new Client({ connectionString: this.connectionString, ...postgresTlsOptions(this.connectionString), connectionTimeoutMillis: 5000,
       statement_timeout: 25000, query_timeout: 30000, options: "-c lock_timeout=3000" });
     this.client.on("error", () => console.warn("POSTGRES_CONNECTION_UNAVAILABLE"));
     await this.client.connect();
@@ -520,9 +521,9 @@ export class PostgresStore {
            audit_id, audit_session_id, actor_type, actor_id, hospital_id, patient_id, consent_id, ticket_id,
            source_hospital_id, target_hospital_id, action, study_instance_uid, series_instance_uid,
            sop_instance_uid, ip_address, user_agent, created_at, result, reason, reason_code,
-           previous_hash, record_hash
+           previous_hash, record_hash, helper_metadata
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
         [
           row.auditId,
           row.auditSessionId,
@@ -546,6 +547,7 @@ export class PostgresStore {
           row.reasonCode ?? row.reason ?? null,
           row.previousHash ?? null,
           row.recordHash ?? null,
+          row.helperMetadata ? JSON.stringify(row.helperMetadata) : null,
         ],
       );
     }
@@ -784,6 +786,7 @@ const rowMappers = {
     result: row.result,
     reason: row.reason,
     reasonCode: row.reason_code ?? row.reason,
+    ...(row.helper_metadata?{helperMetadata:row.helper_metadata}:{}),
     previousHash: row.previous_hash,
     recordHash: row.record_hash,
   }),
@@ -1083,6 +1086,7 @@ ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS sop_instance_uid varchar;
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS reason_code varchar;
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS previous_hash varchar;
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS record_hash varchar;
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS helper_metadata jsonb;
 
 CREATE TABLE IF NOT EXISTS transfer_usage_logs (
   usage_id varchar PRIMARY KEY,

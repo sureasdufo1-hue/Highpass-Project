@@ -4,7 +4,7 @@ const modelFailure=reasonCode=>Object.assign(new Error('CANDIDATE_MODEL_FAILED')
 
 // This transport is for the isolated translation candidate preview only.
 // It accepts retrieved evidence, not patient records or the raw user question.
-export async function generateCandidateAnswer(retrieval,{fetchImpl=fetch,signal=AbortSignal.timeout(120000)}={}){
+export async function generateCandidateAnswer(retrieval,{fetchImpl=fetch,signal=AbortSignal.timeout(120000),requireModelVersion=false}={}){
   const payload=educationPayload(retrieval);
   let response;
   try{
@@ -40,5 +40,8 @@ export async function generateCandidateAnswer(retrieval,{fetchImpl=fetch,signal=
     throw modelFailure('MODEL_RESPONSE_INCOMPLETE');
   let value;
   try{value=JSON.parse(result.message.content);}catch{throw modelFailure('MODEL_OUTPUT_JSON_INVALID');}
-  return validateEducationOutput(value,retrieval);
+  const version=typeof result.modelVersion==='string'&&/^[a-f0-9]{64}$/.test(result.modelVersion)?result.modelVersion:null;
+  if(requireModelVersion&&!version)throw modelFailure('MODEL_VERSION_UNVERIFIED');
+  const answer=validateEducationOutput(value,retrieval);
+  return version?{...answer,modelVersion:version}:answer;
 }

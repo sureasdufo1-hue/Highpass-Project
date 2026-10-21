@@ -1,0 +1,11 @@
+[Unit]
+Description=Highpass standby deadline 2026-10-20 23:59 KST (not daily)
+
+[Timer]
+OnCalendar=2026-10-20 14:59:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=highpass-dr-self-deallocate.service
+
+[Install]
+WantedBy=timers.target

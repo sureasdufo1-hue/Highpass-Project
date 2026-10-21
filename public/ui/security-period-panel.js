@@ -20,7 +20,7 @@ export function matchesPeriod(event,query){
   if(query.review&&query.review!==(event.review?.status||'UNREVIEWED'))return false;
   return !query.q||[event.action,event.result,event.reasonCode,event.hospitalId,event.category,event.eventRef,event.actorType].some(v=>String(v||'').toLocaleLowerCase('ko-KR').includes(query.q.toLocaleLowerCase('ko-KR')));
 }
-export function createPeriodReportPanel({root,getApi,getData,onRange,getSelected,printReport,reportCsv,saveFile}){
+export function createPeriodReportPanel({root,rangeRoot,getApi,getData,onRange,getSelected,printReport,reportCsv,saveFile}){
   const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n;};
   const button=(text,fn)=>{const b=el('button',text,'sc-button');b.type='button';b.addEventListener('click',fn);return b;};
   let busy=true,failed=false,draft=null,snapshot=null,exporting=false,version=0;
@@ -34,7 +34,8 @@ export function createPeriodReportPanel({root,getApi,getData,onRange,getSelected
     const data=getData();draft={query:structuredClone(data.query),scope:reportScope(data),count:data.total,sources:structuredClone(data.sources),events:getSelected().filter(e=>matchesPeriod(e,data.query)).slice(0,50).map(e=>({source:e.source,eventRef:e.eventRef}))};snapshot=null;status.textContent='범위를 담았습니다. 초안 생성 시 다시 조회해 집계와 상세를 고정합니다.';draw();
   });add.classList.add('sc-primary');form.append(apply,add);
   const status=el('p','선택한 기간에 수집된 기록 전체를 집계하며, 상세 근거는 최대 50건입니다.','sc-period-status');status.setAttribute('role','status');
-  const card=el('div',null,'sc-period-card');root.append(title,form,status,card);
+  const card=el('div',null,'sc-period-card');root.append(title,status,card);
+  if(rangeRoot){label.firstChild.textContent='조회 기간';rangeRoot.append(form);root.insertBefore(add,status);}else root.insertBefore(form,status);
   form.addEventListener('submit',async e=>{e.preventDefault();if(exporting||busy)return;try{const range=periodRange(preset.value,inputs[0].value,inputs[1].value);await onRange(range);}catch(error){status.textContent=error.message;}});
   function draw(){
     card.replaceChildren();if(!draft){card.hidden=true;return;}card.hidden=false;

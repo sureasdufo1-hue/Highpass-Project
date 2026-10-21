@@ -68,7 +68,7 @@ export async function createPatientTranslationRag({env=process.env,generateAnswe
  const supplement=await loadSchoolDemoMedicalTestAddendum();
  const corpus={...base,chunks:[...base.chunks,...supplement.chunks],held:[...base.held,...supplement.held],
   heldDocuments:[...base.heldDocuments,...supplement.held]};
- const generate=generateAnswer??((retrieval,{signal})=>generateCandidateAnswer(retrieval,{signal,fetchImpl:patientTranslationFetch(env)}));
+ const generate=generateAnswer??((retrieval,{signal})=>generateCandidateAnswer(retrieval,{signal,fetchImpl:patientTranslationFetch(env),requireModelVersion:true}));
  const metadata={corpusVersion:base.version,medicalTestsVersion:supplement.version,
   profile:'SCHOOL_DEMO_TRANSLATION_RAG',clinicalUse:false,recordContext:'NOT_CONNECTED'};
  return async(question,{signal})=>{

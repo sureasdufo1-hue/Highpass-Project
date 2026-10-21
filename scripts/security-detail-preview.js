@@ -1,0 +1,16 @@
+// Loopback-only synthetic UI verification; no patient/production authentication.
+import {createServer} from 'node:http';import {readFile} from 'node:fs/promises';
+import {buildEventIndex,parseEventQuery} from '../src/security-console.js';
+const now=new Date(),at=new Date(now-3000).toISOString(),end=new Date(now-1000).toISOString();
+const logs=[{auditId:'preview-start',auditSessionId:'preview-request',action:'HEALTH_HELPER_REQUEST',reasonCode:'HELPER_TRANSLATION_RAG_STARTED',createdAt:at,result:'SUCCESS'},
+ {auditId:'preview-end',auditSessionId:'preview-request',action:'HEALTH_HELPER_REQUEST',reasonCode:'HELPER_TRANSLATION_EVIDENCE_DELIVERED',createdAt:end,result:'SUCCESS',helperMetadata:{corpusVersion:'preview-kb',sourceIds:['preview-source'],generationUsed:false,fallbackUsed:true}},
+ ...['TICKET_ISSUED','TICKET_REDEEMED','TICKET_DENIED'].map((action,i)=>({auditId:'preview-ticket-'+i,ticketId:'preview-only',action,result:i===2?'FAIL':'SUCCESS',reasonCode:i===2?'TICKET_ALREADY_USED':'OK',createdAt:new Date(now-3000+i*1000).toISOString()}))];
+const absent={status:'unavailable',events:[]};
+const server=createServer(async(req,res)=>{try{
+ const u=new URL(req.url,'http://127.0.0.1');res.setHeader('cache-control','no-store');
+ if(/^\/ui\/security-[a-z-]+\.(js|css)$/.test(u.pathname)){res.setHeader('content-type',u.pathname.endsWith('js')?'text/javascript':'text/css');res.end(await readFile(new URL('../public'+u.pathname,import.meta.url)));return;}
+ if(u.pathname==='/api/security/events'){const {allEvents,filteredEvents,...data}=buildEventIndex(logs,absent,[],parseEventQuery(u.searchParams),absent,absent);res.setHeader('content-type','application/json');res.end(JSON.stringify({...data,helperConnection:{observedAt:now.toISOString(),transport:'UNAVAILABLE',relay:'UNKNOWN',model:'UNKNOWN'}}));return;}
+ if(u.pathname==='/api/security/protection'){res.setHeader('content-type','application/json');res.end(JSON.stringify({database:{status:'PASS',version:'TLSv1.3',observedAt:now.toISOString(),scope:'합성 UI 표본'},snapshot:{checks:[{id:'disk',status:'PASS',observedAt:now.toISOString(),summary:'합성 UI 표본: 플랫폼 관리 키 암호화',source:'UI 검증 fixture'}]}}));return;}
+ if(u.pathname!=='/'){res.writeHead(404).end();return;}
+ res.setHeader('content-type','text/html;charset=utf-8');res.end(`<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/security-console.css"><style>body{margin:0;background:#eef2f8;font-family:Malgun Gothic,sans-serif}main{max-width:1400px;margin:20px auto;padding:0 12px}.preview{padding:12px;background:#fff3c8}</style><div class="preview">합성 UI 검증 · Azure 실적 화면이 아닙니다.</div><main><section id="root"></section></main><script type="module">import {renderSecurityConsole} from '/ui/security-console.js';const api={state:'ready',overview:{applicationAudit:{integrity:{ok:true,checked:5}}},fetchJson:async u=>{const r=await fetch(u);if(!r.ok)throw Error();return r.json();},postJson:async()=>{throw Error('read-only preview')},refresh:()=>renderSecurityConsole(document.querySelector('#root'),api)};api.refresh();</script></html>`);
+ }catch{res.writeHead(500).end();}});server.listen(34892,'127.0.0.1',()=>console.log('PREVIEW_READY'));

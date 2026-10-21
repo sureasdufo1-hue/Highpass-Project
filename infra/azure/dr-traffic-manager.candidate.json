@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "scope": "DISABLED SYNTHETIC DR CANDIDATE ONLY; no DNS cutover or DB promotion",
+    "requirements": "FR-014..025, FR-026..036, FR-037..041; existing security invariants"
+  },
+  "parameters": {
+    "profileName": { "type": "string", "defaultValue": "highpass-dr-demo-4869edd9", "allowedValues": ["highpass-dr-demo-4869edd9"] },
+    "primaryHostname": { "type": "string", "defaultValue": "highpass-demo.japaneast.cloudapp.azure.com", "allowedValues": ["highpass-demo.japaneast.cloudapp.azure.com"] },
+    "standbyHostname": { "type": "string", "metadata": { "description": "Verified standby endpoint hostname, not a shared DB or PACS URL" } },
+    "commonHostname": { "type": "string", "metadata": { "description": "Operator-controlled public DNS hostname, exact TLS and Entra registration required" } }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/trafficManagerProfiles",
+      "apiVersion": "2022-04-01",
+      "name": "[parameters('profileName')]",
+      "location": "global",
+      "tags": { "project": "Highpass", "environment": "synthetic-dr-candidate", "review": "DRAFT-UNASSIGNED", "demoEndUtc": "2026-10-20T14:59:00Z" },
+      "properties": {
+        "profileStatus": "Disabled",
+        "trafficRoutingMethod": "Priority",
+        "dnsConfig": { "relativeName": "[parameters('profileName')]", "ttl": 30 },
+        "monitorConfig": {
+          "protocol": "HTTPS", "port": 443, "path": "/health/dr-route",
+          "intervalInSeconds": 30, "timeoutInSeconds": 10, "toleratedNumberOfFailures": 3,
+          "customHeaders": [{ "name": "Host", "value": "[parameters('commonHostname')]" }],
+          "expectedStatusCodeRanges": [{ "min": 200, "max": 200 }]
+        },
+        "endpoints": [
+          {
+            "name": "primary-japaneast", "type": "Microsoft.Network/trafficManagerProfiles/externalEndpoints",
+            "properties": { "target": "[parameters('primaryHostname')]", "endpointStatus": "Disabled", "priority": 1, "alwaysServe": "Disabled" }
+          },
+          {
+            "name": "standby", "type": "Microsoft.Network/trafficManagerProfiles/externalEndpoints",
+            "properties": { "target": "[parameters('standbyHostname')]", "endpointStatus": "Disabled", "priority": 2, "alwaysServe": "Disabled" }
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "scope": { "type": "string", "value": "CANDIDATE ONLY: profile and endpoints disabled, no DNS record changes" }
+  }
+}

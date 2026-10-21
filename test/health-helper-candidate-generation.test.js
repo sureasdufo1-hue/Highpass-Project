@@ -14,6 +14,12 @@ function retrieval(){
 const selection={evidenceIds:['E1'],claimEvidence:[{evidenceId:'E1',sentenceIndexes:[0]}]};
 const envelope=content=>JSON.stringify({done:true,done_reason:'stop',message:{content}});
 const modelResponse=value=>new Response(envelope(JSON.stringify(value)));
+test('patient generation requires a verified relay weights version',async()=>{
+ await assert.rejects(()=>generateCandidateAnswer(retrieval(),{requireModelVersion:true,fetchImpl:async()=>modelResponse(selection)}),e=>e.reasonCode==='MODEL_VERSION_UNVERIFIED');
+ const digest='a'.repeat(64);
+ const output=await generateCandidateAnswer(retrieval(),{requireModelVersion:true,fetchImpl:async()=>new Response(JSON.stringify({done:true,done_reason:'stop',modelVersion:digest,message:{content:JSON.stringify(selection)}}))});
+ assert.equal(output.modelVersion,digest);
+});
 const expectReason=(operation,reasonCode)=>assert.rejects(operation,error=>{
  assert.equal(error.reasonCode,reasonCode);
  assert.ok(['CANDIDATE_MODEL_FAILED','EDUCATION_OUTPUT_REJECTED'].includes(error.message));

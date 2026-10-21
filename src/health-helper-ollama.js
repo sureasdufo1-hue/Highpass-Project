@@ -9,7 +9,7 @@ export function createOllamaHelperModel(env = process.env) {
     const req = request({socketPath:env.HIPASS_HELPER_SOCKET,path:'/visit-questions',method:'POST',signal,
       headers:{'content-type':'application/json'}}, res => {
       let data='';res.setEncoding('utf8');res.on('data', chunk => {data+=chunk;if(data.length>8192)res.destroy(new Error('Response too large'));});
-      res.on('error',reject);res.on('end',()=>{try {if(res.statusCode!==200)throw new Error('Model unavailable');resolve(JSON.parse(data));}catch(e){reject(e);}});
+      res.on('error',reject);res.on('end',()=>{try {if(res.statusCode!==200)throw new Error('Model unavailable');const result=JSON.parse(data);if(!/^[a-f0-9]{64}$/.test(result.modelVersion??''))throw Error('Model version unverified');resolve(result);}catch(e){reject(e);}});
     });req.on('error',reject);req.end(JSON.stringify(input));
   })};
 }

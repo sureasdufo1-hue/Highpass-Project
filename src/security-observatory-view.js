@@ -1,3 +1,5 @@
+import {safeHelperMetadata} from './helper-audit-metadata.js';
+import {ticketReference} from './security-detail-data.js';
 const SAFE_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const SAFE_REASON_CODE = /^[A-Z0-9][A-Z0-9_:-]{0,95}$/u;
 
@@ -16,6 +18,8 @@ export function toSecurityAuditView(log) {
     action: safeIdentifier(log.action, 'UNKNOWN'),
     result: safeIdentifier(log.result, 'UNKNOWN'),
     reasonCode,
+    ...(log.action==='HEALTH_HELPER_REQUEST'&&log.helperMetadata?{helperMetadata:safeHelperMetadata(log.helperMetadata)}:{}),
+    ...(log.action?.startsWith('TICKET_')?{ticketRef:ticketReference(log.ticketId)}:{}),
     createdAt: typeof log.createdAt === 'string' ? log.createdAt.slice(0, 40) : '',
   };
 }
